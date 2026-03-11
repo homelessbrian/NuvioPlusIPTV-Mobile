@@ -325,10 +325,9 @@ final class MPVPlayerViewController: UIViewController {
 
     func destroyPlayer() {
         NotificationCenter.default.removeObserver(self)
-        if let mpv = mpv {
-            mpv_terminate_destroy(mpv)
-        }
-        mpv = nil
+        guard let ctx = mpv else { return }
+        mpv = nil  // nil first so event loop stops reading
+        mpv_terminate_destroy(ctx)
     }
 
     // MARK: - State Update
@@ -416,8 +415,6 @@ final class MPVPlayerViewController: UIViewController {
                         }
                     }
                 case MPV_EVENT_SHUTDOWN:
-                    mpv_terminate_destroy(mpv)
-                    self.mpv = nil
                     return
                 case MPV_EVENT_LOG_MESSAGE:
                     if let msg = UnsafeMutablePointer<mpv_event_log_message>(OpaquePointer(eventPtr.pointee.data)) {

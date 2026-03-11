@@ -192,5 +192,6 @@ actual fun PlatformPlayerSurface(
     UIKitViewController(
         factory = { bridge.createPlayerViewController() },
         modifier = modifier,
+        interactive = false,
     )
 }
