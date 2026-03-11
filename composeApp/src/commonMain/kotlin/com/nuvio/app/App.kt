@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
@@ -17,14 +19,16 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.navigation.NavDestination
-import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.compose.ui.zIndex
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import coil3.ImageLoader
@@ -37,6 +41,7 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaDetailsScreen
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
+import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.streams.StreamsRepository
@@ -44,13 +49,7 @@ import com.nuvio.app.features.streams.StreamsScreen
 import kotlinx.serialization.Serializable
 
 @Serializable
-object HomeRoute
-
-@Serializable
-object SearchRoute
-
-@Serializable
-object SettingsRoute
+object TabsRoute
 
 @Serializable
 data class DetailRoute(val type: String, val id: String)
@@ -86,6 +85,29 @@ enum class AppScreenTab {
     Settings,
 }
 
+@Composable
+fun AppScreen(
+    tab: AppScreenTab,
+    modifier: Modifier = Modifier,
+    onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
+    onPosterClick: ((MetaPreview) -> Unit)? = null,
+) {
+    when (tab) {
+        AppScreenTab.Home -> HomeScreen(
+            modifier = modifier,
+            onCatalogClick = onCatalogClick,
+            onPosterClick = onPosterClick,
+        )
+        AppScreenTab.Search -> SearchScreen(
+            modifier = modifier,
+            onPosterClick = onPosterClick,
+        )
+        AppScreenTab.Settings -> SettingsScreen(
+            modifier = modifier,
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Preview
@@ -97,10 +119,7 @@ fun App() {
     }
     NuvioTheme {
         val navController = rememberNavController()
-        val navBackStackEntry = navController.currentBackStackEntryAsState().value
-        val currentDestination = navBackStackEntry?.destination
-        val currentTab = AppScreenTab.entries.firstOrNull { tab -> tab.matches(currentDestination) }
-        val showBottomBar = currentTab != null
+        var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
 
         val onPlay: (String, String, String, String?, String?, String?, Int?, Int?, String?, String?) -> Unit =
             { type, videoId, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail ->
@@ -143,148 +162,119 @@ fun App() {
                 containerColor = MaterialTheme.colorScheme.background,
                 contentWindowInsets = WindowInsets(0),
                 bottomBar = {
-                    if (showBottomBar) {
-                        NavigationBar(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            windowInsets = WindowInsets(0),
-                        ) {
-                            AppScreenTab.entries.forEach { tab ->
-                                NavigationBarItem(
-                                    selected = currentTab == tab,
-                                    onClick = { navController.navigateToTab(tab) },
-                                    icon = {
-                                        Icon(
-                                            imageVector = tab.icon(),
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    label = { Text(tab.label()) },
-                                )
-                            }
-                        }
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        windowInsets = WindowInsets(0),
+                    ) {
+                        NavigationBarItem(
+                            selected = selectedTab == AppScreenTab.Home,
+                            onClick = { selectedTab = AppScreenTab.Home },
+                            icon = { Icon(Icons.Rounded.Home, contentDescription = null) },
+                            label = { Text("Home") },
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == AppScreenTab.Search,
+                            onClick = { selectedTab = AppScreenTab.Search },
+                            icon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                            label = { Text("Search") },
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == AppScreenTab.Settings,
+                            onClick = { selectedTab = AppScreenTab.Settings },
+                            icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                            label = { Text("Settings") },
+                        )
                     }
                 },
             ) { innerPadding ->
-                NavHost(
-                    navController = navController,
-                    startDestination = HomeRoute,
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding),
                 ) {
-                    composable<HomeRoute> {
-                        HomeScreen(
-                            modifier = Modifier.fillMaxSize(),
+                    AppScreenTab.entries.forEach { tab ->
+                        val tabAlpha by animateFloatAsState(
+                            targetValue = if (selectedTab == tab) 1f else 0f,
+                            animationSpec = tween(durationMillis = 220),
+                            label = "tab_alpha_${tab.name}",
+                        )
+                        AppScreen(
+                            tab = tab,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .alpha(tabAlpha)
+                                .zIndex(if (selectedTab == tab) 1f else 0f),
                             onCatalogClick = onCatalogClick,
                             onPosterClick = { meta ->
                                 navController.navigate(DetailRoute(type = meta.type, id = meta.id))
                             },
                         )
                     }
-                    composable<SearchRoute> {
-                        SearchScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            onPosterClick = { meta ->
-                                navController.navigate(DetailRoute(type = meta.type, id = meta.id))
-                            },
-                        )
-                    }
-                    composable<SettingsRoute> {
-                        SettingsScreen(
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                    composable<DetailRoute> { backStackEntry ->
-                        val route = backStackEntry.toRoute<DetailRoute>()
-                        MetaDetailsScreen(
-                            type = route.type,
-                            id = route.id,
-                            onBack = {
-                                MetaDetailsRepository.clear()
-                                navController.popBackStack()
-                            },
-                            onPlay = onPlay,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                    composable<StreamRoute> { backStackEntry ->
-                        val route = backStackEntry.toRoute<StreamRoute>()
-                        StreamsScreen(
-                            type = route.type,
-                            videoId = route.videoId,
-                            title = route.title,
-                            logo = route.logo,
-                            poster = route.poster,
-                            background = route.background,
-                            seasonNumber = route.seasonNumber,
-                            episodeNumber = route.episodeNumber,
-                            episodeTitle = route.episodeTitle,
-                            episodeThumbnail = route.episodeThumbnail,
-                            onBack = {
-                                StreamsRepository.clear()
-                                navController.popBackStack()
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                    composable<CatalogRoute> { backStackEntry ->
-                        val route = backStackEntry.toRoute<CatalogRoute>()
-                        CatalogScreen(
-                            title = route.title,
-                            subtitle = route.subtitle,
-                            manifestUrl = route.manifestUrl,
-                            type = route.type,
-                            catalogId = route.catalogId,
-                            supportsPagination = route.supportsPagination,
-                            genre = route.genre,
-                            onBack = {
-                                CatalogRepository.clear()
-                                navController.popBackStack()
-                            },
-                            onPosterClick = { meta ->
-                                navController.navigate(DetailRoute(type = meta.type, id = meta.id))
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
                 }
             }
-        }
-    }
-}
 
-private fun AppScreenTab.matches(destination: NavDestination?): Boolean =
-    when (this) {
-        AppScreenTab.Home -> destination?.hasRoute<HomeRoute>() == true
-        AppScreenTab.Search -> destination?.hasRoute<SearchRoute>() == true
-        AppScreenTab.Settings -> destination?.hasRoute<SettingsRoute>() == true
-    }
-
-private fun AppScreenTab.icon() =
-    when (this) {
-        AppScreenTab.Home -> Icons.Rounded.Home
-        AppScreenTab.Search -> Icons.Rounded.Search
-        AppScreenTab.Settings -> Icons.Rounded.Settings
-    }
-
-private fun AppScreenTab.label(): String =
-    when (this) {
-        AppScreenTab.Home -> "Home"
-        AppScreenTab.Search -> "Search"
-        AppScreenTab.Settings -> "Settings"
-    }
-
-private fun androidx.navigation.NavHostController.navigateToTab(tab: AppScreenTab) {
-    val route = when (tab) {
-        AppScreenTab.Home -> HomeRoute
-        AppScreenTab.Search -> SearchRoute
-        AppScreenTab.Settings -> SettingsRoute
-    }
-    navigate(route) {
-        launchSingleTop = true
-        restoreState = true
-        popUpTo(graph.findStartDestination().id) {
-            saveState = true
+            NavHost(
+                navController = navController,
+                startDestination = TabsRoute,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                composable<TabsRoute> {
+                    Unit
+                }
+                composable<DetailRoute> { backStackEntry ->
+                    val route = backStackEntry.toRoute<DetailRoute>()
+                    MetaDetailsScreen(
+                        type = route.type,
+                        id = route.id,
+                        onBack = {
+                            MetaDetailsRepository.clear()
+                            navController.popBackStack()
+                        },
+                        onPlay = onPlay,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                composable<StreamRoute> { backStackEntry ->
+                    val route = backStackEntry.toRoute<StreamRoute>()
+                    StreamsScreen(
+                        type = route.type,
+                        videoId = route.videoId,
+                        title = route.title,
+                        logo = route.logo,
+                        poster = route.poster,
+                        background = route.background,
+                        seasonNumber = route.seasonNumber,
+                        episodeNumber = route.episodeNumber,
+                        episodeTitle = route.episodeTitle,
+                        episodeThumbnail = route.episodeThumbnail,
+                        onBack = {
+                            StreamsRepository.clear()
+                            navController.popBackStack()
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                composable<CatalogRoute> { backStackEntry ->
+                    val route = backStackEntry.toRoute<CatalogRoute>()
+                    CatalogScreen(
+                        title = route.title,
+                        subtitle = route.subtitle,
+                        manifestUrl = route.manifestUrl,
+                        type = route.type,
+                        catalogId = route.catalogId,
+                        supportsPagination = route.supportsPagination,
+                        genre = route.genre,
+                        onBack = {
+                            CatalogRepository.clear()
+                            navController.popBackStack()
+                        },
+                        onPosterClick = { meta ->
+                            navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
         }
     }
 }
