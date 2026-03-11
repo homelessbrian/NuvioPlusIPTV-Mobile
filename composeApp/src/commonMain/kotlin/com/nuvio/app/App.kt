@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
@@ -191,11 +193,16 @@ fun App() {
                         .padding(innerPadding),
                 ) {
                     AppScreenTab.entries.forEach { tab ->
+                        val tabAlpha by animateFloatAsState(
+                            targetValue = if (selectedTab == tab) 1f else 0f,
+                            animationSpec = tween(durationMillis = 220),
+                            label = "tab_alpha_${tab.name}",
+                        )
                         AppScreen(
                             tab = tab,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .alpha(if (selectedTab == tab) 1f else 0f)
+                                .alpha(tabAlpha)
                                 .zIndex(if (selectedTab == tab) 1f else 0f),
                             onCatalogClick = onCatalogClick,
                             onPosterClick = { meta ->
