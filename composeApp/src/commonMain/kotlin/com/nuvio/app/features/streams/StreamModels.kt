@@ -36,11 +36,19 @@ data class AddonStreamGroup(
     val error: String? = null,
 )
 
+enum class StreamsEmptyStateReason {
+    NoAddonsInstalled,
+    NoCompatibleAddons,
+    NoStreamsFound,
+    StreamFetchFailed,
+}
+
 data class StreamsUiState(
     val groups: List<AddonStreamGroup> = emptyList(),
     val activeAddonIds: Set<String> = emptySet(),
     val selectedFilter: String? = null,
     val isAnyLoading: Boolean = false,
+    val emptyStateReason: StreamsEmptyStateReason? = null,
 ) {
     val filteredGroups: List<AddonStreamGroup>
         get() = if (selectedFilter == null) groups

@@ -417,8 +417,8 @@ private fun StreamList(
     modifier: Modifier = Modifier,
 ) {
     val filteredGroups = uiState.filteredGroups
+    val hasGroups = filteredGroups.isNotEmpty()
     val hasAnyStreams = filteredGroups.any { it.streams.isNotEmpty() }
-    val allLoading = filteredGroups.all { it.isLoading }
     val anyLoading = filteredGroups.any { it.isLoading }
 
     LazyColumn(
@@ -430,15 +430,15 @@ private fun StreamList(
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         when {
-            allLoading && !hasAnyStreams -> {
+            hasGroups && anyLoading && !hasAnyStreams -> {
                 item {
                     LoadingStateBlock()
                 }
             }
 
-            !hasAnyStreams && !anyLoading -> {
+            !hasAnyStreams && !uiState.isAnyLoading -> {
                 item {
-                    EmptyStateBlock()
+                    EmptyStateBlock(reason = uiState.emptyStateReason)
                 }
             }
 
@@ -667,7 +667,35 @@ private fun LoadingStateBlock(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EmptyStateBlock(modifier: Modifier = Modifier) {
+private fun EmptyStateBlock(
+    reason: StreamsEmptyStateReason?,
+    modifier: Modifier = Modifier,
+) {
+    val title: String
+    val message: String
+
+    when (reason) {
+        StreamsEmptyStateReason.NoAddonsInstalled -> {
+            title = "No addons installed"
+            message = "Install an addon first to load streams for this title."
+        }
+
+        StreamsEmptyStateReason.NoCompatibleAddons -> {
+            title = "No stream addon available"
+            message = "Your installed addons do not provide streams for this type of title."
+        }
+
+        StreamsEmptyStateReason.StreamFetchFailed -> {
+            title = "Could not load streams"
+            message = "The installed stream addons failed to return a valid stream response."
+        }
+
+        StreamsEmptyStateReason.NoStreamsFound, null -> {
+            title = "No streams found"
+            message = "None of your installed addons returned streams for this title."
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -683,7 +711,7 @@ private fun EmptyStateBlock(modifier: Modifier = Modifier) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "No streams found",
+            text = title,
             style = MaterialTheme.typography.bodyLarge.copy(
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -691,7 +719,7 @@ private fun EmptyStateBlock(modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "None of your installed addons returned streams for this title.",
+            text = message,
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             textAlign = TextAlign.Center,

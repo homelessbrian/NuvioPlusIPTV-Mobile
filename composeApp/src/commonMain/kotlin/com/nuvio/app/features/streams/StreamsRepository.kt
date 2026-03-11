@@ -33,7 +33,16 @@ object StreamsRepository {
         activeJob?.cancel()
         _uiState.value = StreamsUiState()
 
-        val streamAddons = AddonRepository.uiState.value.addons
+        val installedAddons = AddonRepository.uiState.value.addons
+        if (installedAddons.isEmpty()) {
+            _uiState.value = StreamsUiState(
+                isAnyLoading = false,
+                emptyStateReason = StreamsEmptyStateReason.NoAddonsInstalled,
+            )
+            return
+        }
+
+        val streamAddons = installedAddons
             .mapNotNull { it.manifest }
             .filter { manifest ->
                 manifest.resources.any { resource ->
@@ -47,7 +56,10 @@ object StreamsRepository {
         log.d { "Found ${streamAddons.size} addons for stream type=$type id=$videoId" }
 
         if (streamAddons.isEmpty()) {
-            _uiState.value = StreamsUiState(isAnyLoading = false)
+            _uiState.value = StreamsUiState(
+                isAnyLoading = false,
+                emptyStateReason = StreamsEmptyStateReason.NoCompatibleAddons,
+            )
             return
         }
 
@@ -64,6 +76,7 @@ object StreamsRepository {
             groups = initialGroups,
             activeAddonIds = streamAddons.map { it.id }.toSet(),
             isAnyLoading = true,
+            emptyStateReason = null,
         )
 
         activeJob = scope.launch {
@@ -111,9 +124,11 @@ object StreamsRepository {
                     val updated = current.groups.map { group ->
                         if (group.addonId == result.addonId) result else group
                     }
+                    val anyLoading = updated.any { it.isLoading }
                     current.copy(
                         groups = updated,
-                        isAnyLoading = updated.any { it.isLoading },
+                        isAnyLoading = anyLoading,
+                        emptyStateReason = updated.toEmptyStateReason(anyLoading),
                     )
                 }
             }
@@ -132,4 +147,16 @@ object StreamsRepository {
     // Encode id segment so colons and slashes don't break URL path parsing on addons
     private fun String.encodeForPath(): String =
         replace("%", "%25").replace(" ", "%20")
+}
+
+private fun List<AddonStreamGroup>.toEmptyStateReason(anyLoading: Boolean): StreamsEmptyStateReason? {
+    if (anyLoading || any { it.streams.isNotEmpty() }) {
+        return null
+    }
+
+    return if (isNotEmpty() && all { !it.error.isNullOrBlank() }) {
+        StreamsEmptyStateReason.StreamFetchFailed
+    } else {
+        StreamsEmptyStateReason.NoStreamsFound
+    }
 }
