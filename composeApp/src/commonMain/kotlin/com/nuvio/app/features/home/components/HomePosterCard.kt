@@ -18,7 +18,7 @@ fun HomePosterCard(
         imageUrl = item.poster,
         modifier = modifier,
         shape = item.posterShape.toNuvioPosterShape(),
-        detailLine = listOfNotNull(item.releaseInfo, item.imdbRating?.let { "IMDb $it" }).joinToString(" • "),
+        detailLine = item.releaseInfo,
         onClick = onClick,
     )
 }

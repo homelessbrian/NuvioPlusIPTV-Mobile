@@ -38,7 +38,7 @@ fun DetailActionButtons(
 
                 .weight(1f)
                 .height(50.dp),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(40.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.onBackground,
                 contentColor = MaterialTheme.colorScheme.background,
@@ -61,7 +61,7 @@ fun DetailActionButtons(
             modifier = Modifier
                 .weight(1f)
                 .height(50.dp),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(40.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         ) {
             Icon(

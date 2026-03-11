@@ -279,7 +279,7 @@ private fun DiscoverPosterTile(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        val detail = item.releaseInfo ?: item.imdbRating?.let { "IMDb $it" }
+        val detail = item.releaseInfo
         if (detail != null) {
             Text(
                 text = detail,

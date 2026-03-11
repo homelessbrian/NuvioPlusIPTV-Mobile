@@ -12,6 +12,7 @@ import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
+import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeSkeletonRow
 
 @Composable
@@ -48,6 +49,7 @@ fun HomeScreen(
     NuvioScreen(
         modifier = modifier,
         horizontalPadding = 0.dp,
+        topPadding = if (homeUiState.heroItems.isNotEmpty()) 0.dp else null,
     ) {
         when {
             addonsUiState.addons.none { it.manifest != null } -> {
@@ -66,7 +68,7 @@ fun HomeScreen(
                 }
             }
 
-            homeUiState.sections.isEmpty() -> {
+            homeUiState.sections.isEmpty() && homeUiState.heroItems.isEmpty() -> {
                 item {
                     HomeEmptyStateCard(
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -78,6 +80,15 @@ fun HomeScreen(
             }
 
             else -> {
+                if (homeUiState.heroItems.isNotEmpty()) {
+                    item {
+                        HomeHeroSection(
+                            items = homeUiState.heroItems,
+                            modifier = Modifier.padding(bottom = 0.dp),
+                            onItemClick = onPosterClick,
+                        )
+                    }
+                }
                 items(
                     count = homeUiState.sections.size,
                     key = { index -> homeUiState.sections[index].key },

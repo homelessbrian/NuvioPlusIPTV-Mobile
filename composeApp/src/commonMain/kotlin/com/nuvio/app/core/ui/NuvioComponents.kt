@@ -54,6 +54,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 fun NuvioScreen(
     modifier: Modifier = Modifier,
     horizontalPadding: Dp = 16.dp,
+    topPadding: Dp? = null,
     content: LazyListScope.() -> Unit,
 ) {
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -63,7 +64,7 @@ fun NuvioScreen(
             .background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(
             start = horizontalPadding,
-            top = 10.dp + statusBarTop + nuvioPlatformExtraTopPadding,
+            top = topPadding ?: 10.dp + statusBarTop + nuvioPlatformExtraTopPadding,
             end = horizontalPadding,
             bottom = 18.dp + nuvioPlatformExtraBottomPadding,
         ),

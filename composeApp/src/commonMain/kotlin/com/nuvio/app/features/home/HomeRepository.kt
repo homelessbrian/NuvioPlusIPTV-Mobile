@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 object HomeRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -64,7 +65,8 @@ object HomeRepository {
     }
 
     fun applyCurrentSettings() {
-        val preferences = HomeCatalogSettingsRepository.snapshot()
+        val snapshot = HomeCatalogSettingsRepository.snapshot()
+        val preferences = snapshot.preferences
         val sections = currentDefinitions
             .sortedBy { definition -> preferences[definition.key]?.order ?: Int.MAX_VALUE }
             .mapNotNull { definition ->
@@ -78,8 +80,21 @@ object HomeRepository {
                 )
             }
 
+        val heroItems = if (snapshot.heroEnabled) {
+            currentDefinitions
+                .filter { definition -> preferences[definition.key]?.heroSourceEnabled != false }
+                .mapNotNull { definition -> cachedSections[definition.key] }
+                .flatMap { section -> section.items }
+                .distinctBy { item -> "${item.type}:${item.id}" }
+                .shuffled(Random.Default)
+                .take(HOME_HERO_ITEM_LIMIT)
+        } else {
+            emptyList()
+        }
+
         _uiState.value = HomeUiState(
             isLoading = false,
+            heroItems = heroItems,
             sections = sections,
             errorMessage = if (sections.isEmpty()) lastErrorMessage else null,
         )
@@ -107,3 +122,5 @@ object HomeRepository {
         )
     }
 }
+
+private const val HOME_HERO_ITEM_LIMIT = 8

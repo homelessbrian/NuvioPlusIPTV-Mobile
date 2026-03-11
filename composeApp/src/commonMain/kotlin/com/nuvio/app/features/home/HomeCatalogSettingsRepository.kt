@@ -15,6 +15,7 @@ data class HomeCatalogSettingsItem(
     val addonName: String,
     val customTitle: String = "",
     val enabled: Boolean = true,
+    val heroSourceEnabled: Boolean = true,
     val order: Int = 0,
 ) {
     val displayTitle: String
@@ -22,18 +23,31 @@ data class HomeCatalogSettingsItem(
 }
 
 data class HomeCatalogSettingsUiState(
+    val heroEnabled: Boolean = true,
     val items: List<HomeCatalogSettingsItem> = emptyList(),
 ) {
     val signature: String
-        get() = items.joinToString(separator = "|") { item ->
-            "${item.key}:${item.order}:${item.enabled}:${item.customTitle}"
+        get() = buildString {
+            append(heroEnabled)
+            append('|')
+            append(
+                items.joinToString(separator = "|") { item ->
+                    "${item.key}:${item.order}:${item.enabled}:${item.heroSourceEnabled}:${item.customTitle}"
+                }
+            )
         }
 }
 
 internal data class HomeCatalogPreference(
     val customTitle: String,
     val enabled: Boolean,
+    val heroSourceEnabled: Boolean,
     val order: Int,
+)
+
+internal data class HomeCatalogSettingsSnapshot(
+    val heroEnabled: Boolean,
+    val preferences: Map<String, HomeCatalogPreference>,
 )
 
 @Serializable
@@ -41,7 +55,14 @@ private data class StoredHomeCatalogPreference(
     val key: String,
     val customTitle: String = "",
     val enabled: Boolean = true,
+    val heroSourceEnabled: Boolean = true,
     val order: Int = 0,
+)
+
+@Serializable
+private data class StoredHomeCatalogSettingsPayload(
+    val heroEnabled: Boolean = true,
+    val items: List<StoredHomeCatalogPreference> = emptyList(),
 )
 
 object HomeCatalogSettingsRepository {
@@ -56,6 +77,7 @@ object HomeCatalogSettingsRepository {
     private var hasLoaded = false
     private var definitions: List<HomeCatalogDefinition> = emptyList()
     private var preferences: MutableMap<String, StoredHomeCatalogPreference> = mutableMapOf()
+    private var heroEnabled = true
 
     fun syncCatalogs(addons: List<ManagedAddon>) {
         ensureLoaded()
@@ -65,14 +87,32 @@ object HomeCatalogSettingsRepository {
         persist()
     }
 
-    internal fun snapshot(): Map<String, HomeCatalogPreference> {
+    internal fun snapshot(): HomeCatalogSettingsSnapshot {
         ensureLoaded()
-        return preferences.mapValues { (_, value) ->
-            HomeCatalogPreference(
-                customTitle = value.customTitle,
-                enabled = value.enabled,
-                order = value.order,
-            )
+        return HomeCatalogSettingsSnapshot(
+            heroEnabled = heroEnabled,
+            preferences = preferences.mapValues { (_, value) ->
+                HomeCatalogPreference(
+                    customTitle = value.customTitle,
+                    enabled = value.enabled,
+                    heroSourceEnabled = value.heroSourceEnabled,
+                    order = value.order,
+                )
+            },
+        )
+    }
+
+    fun setHeroEnabled(enabled: Boolean) {
+        ensureLoaded()
+        heroEnabled = enabled
+        publish()
+        persist()
+        HomeRepository.applyCurrentSettings()
+    }
+
+    fun setHeroSourceEnabled(key: String, enabled: Boolean) {
+        updatePreference(key) { preference ->
+            preference.copy(heroSourceEnabled = enabled)
         }
     }
 
@@ -103,11 +143,21 @@ object HomeCatalogSettingsRepository {
         val payload = HomeCatalogSettingsStorage.loadPayload().orEmpty().trim()
         if (payload.isEmpty()) return
 
-        val stored = runCatching {
+        val parsedPayload = runCatching {
+            json.decodeFromString<StoredHomeCatalogSettingsPayload>(payload)
+        }.getOrNull()
+
+        if (parsedPayload != null) {
+            heroEnabled = parsedPayload.heroEnabled
+            preferences = parsedPayload.items.associateBy { it.key }.toMutableMap()
+            return
+        }
+
+        val legacyItems = runCatching {
             json.decodeFromString<List<StoredHomeCatalogPreference>>(payload)
         }.getOrDefault(emptyList())
 
-        preferences = stored.associateBy { it.key }.toMutableMap()
+        preferences = legacyItems.associateBy { it.key }.toMutableMap()
     }
 
     private fun normalizePreferences() {
@@ -132,6 +182,7 @@ object HomeCatalogSettingsRepository {
                 key = definition.key,
                 customTitle = stored?.customTitle.orEmpty(),
                 enabled = stored?.enabled ?: true,
+                heroSourceEnabled = stored?.heroSourceEnabled ?: true,
                 order = index,
             )
         }
@@ -149,17 +200,24 @@ object HomeCatalogSettingsRepository {
                     addonName = definition.addonName,
                     customTitle = preference?.customTitle.orEmpty(),
                     enabled = preference?.enabled ?: true,
+                    heroSourceEnabled = preference?.heroSourceEnabled ?: true,
                     order = preference?.order ?: 0,
                 )
             }
 
-        _uiState.value = HomeCatalogSettingsUiState(items = items)
+        _uiState.value = HomeCatalogSettingsUiState(
+            heroEnabled = heroEnabled,
+            items = items,
+        )
     }
 
     private fun persist() {
         HomeCatalogSettingsStorage.savePayload(
             json.encodeToString(
-                preferences.values.sortedBy { it.order },
+                StoredHomeCatalogSettingsPayload(
+                    heroEnabled = heroEnabled,
+                    items = preferences.values.sortedBy { it.order },
+                ),
             ),
         )
     }

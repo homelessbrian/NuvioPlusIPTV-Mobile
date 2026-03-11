@@ -73,12 +73,14 @@ fun SettingsScreen(
             TabletSettingsScreen(
                 page = page,
                 onPageChange = { currentPage = it.name },
+                heroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenSettings = homescreenSettingsUiState.items,
             )
         } else {
             MobileSettingsScreen(
                 page = page,
                 onPageChange = { currentPage = it.name },
+                heroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenSettings = homescreenSettingsUiState.items,
             )
         }
@@ -89,6 +91,7 @@ fun SettingsScreen(
 private fun MobileSettingsScreen(
     page: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
+    heroEnabled: Boolean,
     homescreenSettings: List<HomeCatalogSettingsItem>,
 ) {
     NuvioScreen {
@@ -111,10 +114,11 @@ private fun MobileSettingsScreen(
                 onHomescreenClick = { onPageChange(SettingsPage.Homescreen) },
             )
             SettingsPage.Addons -> addonsSettingsContent()
-            SettingsPage.Homescreen -> homescreenSettingsContent(
-                isTablet = false,
-                items = homescreenSettings,
-            )
+                SettingsPage.Homescreen -> homescreenSettingsContent(
+                    isTablet = false,
+                    heroEnabled = heroEnabled,
+                    items = homescreenSettings,
+                )
         }
     }
 }
@@ -123,6 +127,7 @@ private fun MobileSettingsScreen(
 private fun TabletSettingsScreen(
     page: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
+    heroEnabled: Boolean,
     homescreenSettings: List<HomeCatalogSettingsItem>,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
@@ -196,6 +201,7 @@ private fun TabletSettingsScreen(
                 SettingsPage.Addons -> addonsSettingsContent()
                 SettingsPage.Homescreen -> homescreenSettingsContent(
                     isTablet = true,
+                    heroEnabled = heroEnabled,
                     items = homescreenSettings,
                 )
             }

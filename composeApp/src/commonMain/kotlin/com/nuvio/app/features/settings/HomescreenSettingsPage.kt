@@ -11,8 +11,44 @@ import com.nuvio.app.features.home.components.HomeEmptyStateCard
 
 internal fun LazyListScope.homescreenSettingsContent(
     isTablet: Boolean,
+    heroEnabled: Boolean,
     items: List<HomeCatalogSettingsItem>,
 ) {
+    item {
+        SettingsSection(
+            title = "HERO",
+            isTablet = isTablet,
+        ) {
+            SettingsSwitchRow(
+                title = "Show Hero",
+                description = "Display a featured hero carousel at the top of Home.",
+                checked = heroEnabled,
+                isTablet = isTablet,
+                onCheckedChange = HomeCatalogSettingsRepository::setHeroEnabled,
+            )
+        }
+    }
+    item {
+        if (items.isNotEmpty()) {
+            SettingsSection(
+                title = "HERO SOURCES",
+                isTablet = isTablet,
+            ) {
+                items.forEachIndexed { index, item ->
+                    SettingsSwitchRow(
+                        title = item.displayTitle,
+                        description = item.addonName,
+                        checked = item.heroSourceEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = { HomeCatalogSettingsRepository.setHeroSourceEnabled(item.key, it) },
+                    )
+                    if (index < items.lastIndex) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+            }
+        }
+    }
     item {
         if (items.isEmpty()) {
             HomeEmptyStateCard(
