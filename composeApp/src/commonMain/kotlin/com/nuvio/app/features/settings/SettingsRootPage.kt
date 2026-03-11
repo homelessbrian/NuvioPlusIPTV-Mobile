@@ -4,8 +4,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
 
 internal fun LazyListScope.settingsRootContent(
     isTablet: Boolean,
@@ -24,7 +22,6 @@ internal fun LazyListScope.settingsRootContent(
                 isTablet = isTablet,
                 onClick = onPlaybackClick,
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SettingsNavigationRow(
                 title = "Content & Discovery",
                 description = "Manage addons and discovery sources.",

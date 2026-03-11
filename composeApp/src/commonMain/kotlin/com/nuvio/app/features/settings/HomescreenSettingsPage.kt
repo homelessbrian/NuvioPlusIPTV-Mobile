@@ -2,8 +2,6 @@ package com.nuvio.app.features.settings
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
@@ -34,7 +32,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                 title = "HERO SOURCES",
                 isTablet = isTablet,
             ) {
-                items.forEachIndexed { index, item ->
+                items.forEach { item ->
                     SettingsSwitchRow(
                         title = item.displayTitle,
                         description = item.addonName,
@@ -42,9 +40,6 @@ internal fun LazyListScope.homescreenSettingsContent(
                         isTablet = isTablet,
                         onCheckedChange = { HomeCatalogSettingsRepository.setHeroSourceEnabled(item.key, it) },
                     )
-                    if (index < items.lastIndex) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
                 }
             }
         }
@@ -72,9 +67,6 @@ internal fun LazyListScope.homescreenSettingsContent(
                         onMoveUp = { HomeCatalogSettingsRepository.moveUp(item.key) },
                         onMoveDown = { HomeCatalogSettingsRepository.moveDown(item.key) },
                     )
-                    if (index < items.lastIndex) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
                 }
             }
         }

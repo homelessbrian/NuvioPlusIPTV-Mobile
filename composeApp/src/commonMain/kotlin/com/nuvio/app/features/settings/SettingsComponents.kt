@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -41,6 +40,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioSectionLabel
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
+
+@Composable
+private fun SettingsCard(
+    isTablet: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(if (isTablet) 20.dp else 16.dp),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+        ),
+    ) {
+        Column(content = content)
+    }
+}
 
 @Composable
 internal fun TabletPageHeader(
@@ -137,17 +155,12 @@ internal fun SettingsSection(
     isTablet: Boolean,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(if (isTablet) 10.dp else 8.dp),
+    ) {
         NuvioSectionLabel(text = title)
         Spacer(modifier = Modifier.height(if (isTablet) 12.dp else 10.dp))
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(if (isTablet) 20.dp else 16.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(content = content)
-        }
+        content()
     }
 }
 
@@ -164,59 +177,61 @@ internal fun SettingsNavigationRow(
     val verticalPadding = if (isTablet) 16.dp else 14.dp
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    SettingsCard(isTablet = isTablet) {
         Row(
             modifier = Modifier
-                .padding(end = 12.dp)
-                .widthIn(max = if (isTablet) 560.dp else 320.dp),
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                modifier = Modifier.size(iconSize),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(iconRadius),
+            Row(
+                modifier = Modifier
+                    .padding(end = 12.dp)
+                    .widthIn(max = if (isTablet) 560.dp else 320.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                Surface(
+                    modifier = Modifier.size(iconSize),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(iconRadius),
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(if (isTablet) 16.dp else 14.dp))
+                Column {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.alpha(0.92f),
                     )
                 }
             }
-            Spacer(modifier = Modifier.width(if (isTablet) 16.dp else 14.dp))
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.alpha(0.92f),
-                )
-            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -231,44 +246,46 @@ internal fun SettingsSwitchRow(
     val verticalPadding = if (isTablet) 16.dp else 14.dp
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
+    SettingsCard(isTablet = isTablet) {
+        Row(
             modifier = Modifier
-                .padding(end = 12.dp)
-                .widthIn(max = if (isTablet) 560.dp else 280.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!checked) }
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-            )
-            if (!description.isNullOrBlank()) {
+            Column(
+                modifier = Modifier
+                    .padding(end = 12.dp)
+                    .widthIn(max = if (isTablet) 560.dp else 280.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
                 )
+                if (!description.isNullOrBlank()) {
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+                ),
+            )
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-            ),
-        )
     }
 }
 
@@ -286,79 +303,83 @@ internal fun HomescreenCatalogRow(
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
     val verticalPadding = if (isTablet) 18.dp else 16.dp
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
+    SettingsCard(isTablet = isTablet) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(end = 12.dp)
-                    .widthIn(max = if (isTablet) 560.dp else 260.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
             ) {
-                Text(
-                    text = item.displayTitle,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = item.addonName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Column(
+                    modifier = Modifier
+                        .padding(end = 12.dp)
+                        .widthIn(max = if (isTablet) 560.dp else 260.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = item.displayTitle,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = item.addonName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = item.enabled,
+                    onCheckedChange = onEnabledChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+                    ),
                 )
             }
-            Switch(
-                checked = item.enabled,
-                onCheckedChange = onEnabledChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+
+            OutlinedTextField(
+                value = item.customTitle,
+                onValueChange = onTitleChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Display Name") },
+                placeholder = { Text(item.defaultTitle) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface,
                 ),
             )
-        }
 
-        OutlinedTextField(
-            value = item.customTitle,
-            onValueChange = onTitleChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("Display Name") },
-            placeholder = { Text(item.defaultTitle) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                disabledContainerColor = MaterialTheme.colorScheme.surface,
-            ),
-        )
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MoveActionChip(
-                label = "Move Up",
-                icon = Icons.Rounded.KeyboardArrowUp,
-                enabled = canMoveUp,
-                onClick = onMoveUp,
-            )
-            MoveActionChip(
-                label = "Move Down",
-                icon = Icons.Rounded.KeyboardArrowDown,
-                enabled = canMoveDown,
-                onClick = onMoveDown,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MoveActionChip(
+                    label = "Move Up",
+                    icon = Icons.Rounded.KeyboardArrowUp,
+                    enabled = canMoveUp,
+                    onClick = onMoveUp,
+                )
+                MoveActionChip(
+                    label = "Move Down",
+                    icon = Icons.Rounded.KeyboardArrowDown,
+                    enabled = canMoveDown,
+                    onClick = onMoveDown,
+                )
+            }
         }
     }
 }
