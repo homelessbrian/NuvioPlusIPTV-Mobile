@@ -1,0 +1,107 @@
+package com.nuvio.app.features.details
+
+import co.touchlab.kermit.Logger
+import com.nuvio.app.features.addons.AddonManifest
+import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.httpGetText
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+object MetaDetailsRepository {
+    private val log = Logger.withTag("MetaDetailsRepo")
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val _uiState = MutableStateFlow(MetaDetailsUiState())
+    val uiState: StateFlow<MetaDetailsUiState> = _uiState.asStateFlow()
+    private var activeRequestKey: String? = null
+
+    fun load(type: String, id: String) {
+        log.d { "load() called — type=$type id=$id" }
+        val requestKey = "$type:$id"
+        val currentState = _uiState.value
+
+        if (currentState.meta?.type == type && currentState.meta.id == id && !currentState.isLoading) {
+            log.d { "Skipping reload for cached meta — type=$type id=$id" }
+            activeRequestKey = requestKey
+            return
+        }
+
+        if (currentState.isLoading && activeRequestKey == requestKey) {
+            log.d { "Request already in flight — type=$type id=$id" }
+            return
+        }
+
+        activeRequestKey = requestKey
+        _uiState.value = MetaDetailsUiState(isLoading = true)
+
+        scope.launch {
+            val manifests = AddonRepository.uiState.value.addons
+                .mapNotNull { it.manifest }
+                .filter { manifest ->
+                    manifest.resources.any { resource ->
+                        resource.name == "meta" &&
+                            resource.types.contains(type) &&
+                            (resource.idPrefixes.isEmpty() || resource.idPrefixes.any { id.startsWith(it) })
+                    }
+                }
+
+            if (manifests.isEmpty()) {
+                log.w { "No addon provides meta for type=$type id=$id" }
+                _uiState.value = MetaDetailsUiState(
+                    errorMessage = "No addon provides meta for this content.",
+                )
+                activeRequestKey = null
+                return@launch
+            }
+
+            for (manifest in manifests) {
+                val result = tryFetchMeta(manifest, type, id)
+                if (result != null) {
+                    _uiState.value = MetaDetailsUiState(meta = result)
+                    activeRequestKey = requestKey
+                    return@launch
+                }
+            }
+
+            _uiState.value = MetaDetailsUiState(
+                errorMessage = "Could not load details from any addon.",
+            )
+            activeRequestKey = null
+        }
+    }
+
+    fun clear() {
+        activeRequestKey = null
+        _uiState.value = MetaDetailsUiState()
+    }
+
+    private suspend fun tryFetchMeta(
+        manifest: AddonManifest,
+        type: String,
+        id: String,
+    ): MetaDetails? {
+        return try {
+            val baseUrl = manifest.transportUrl
+                .substringBefore("?")
+                .removeSuffix("/manifest.json")
+            val url = "$baseUrl/meta/$type/$id.json"
+            log.d { "Fetching meta from: $url" }
+            val payload = httpGetText(url)
+            log.d { "Raw payload length=${payload.length}, first 500 chars: ${payload.take(500)}" }
+            val result = MetaDetailsParser.parse(payload)
+            log.d { "Parsed meta: type=${result.type}, name=${result.name}, videos=${result.videos.size}" }
+            if (result.videos.isNotEmpty()) {
+                val first = result.videos.first()
+                log.d { "First video: id=${first.id} title=${first.title} s=${first.season} e=${first.episode}" }
+            }
+            result
+        } catch (e: Throwable) {
+            log.e(e) { "Failed to fetch/parse meta from ${manifest.transportUrl}" }
+            null
+        }
+    }
+}

@@ -1,0 +1,214 @@
+package com.nuvio.app.core.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+
+enum class NuvioPosterShape {
+    Poster,
+    Square,
+    Landscape,
+}
+
+@Composable
+fun <T> NuvioShelfSection(
+    title: String,
+    entries: List<T>,
+    modifier: Modifier = Modifier,
+    headerHorizontalPadding: Dp = 0.dp,
+    rowContentPadding: PaddingValues = PaddingValues(0.dp),
+    onViewAllClick: (() -> Unit)? = null,
+    key: ((T) -> Any)? = null,
+    itemContent: @Composable (T) -> Unit,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        NuvioShelfSectionHeader(
+            title = title,
+            modifier = Modifier.padding(horizontal = headerHorizontalPadding),
+            onViewAllClick = onViewAllClick,
+        )
+        LazyRow(
+            contentPadding = rowContentPadding,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (key != null) {
+                items(
+                    items = entries,
+                    key = key,
+                ) { entry ->
+                    itemContent(entry)
+                }
+            } else {
+                items(entries) { entry ->
+                    itemContent(entry)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NuvioPosterCard(
+    title: String,
+    imageUrl: String?,
+    modifier: Modifier = Modifier,
+    shape: NuvioPosterShape = NuvioPosterShape.Poster,
+    detailLine: String? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    Column(
+        modifier = modifier
+            .width(110.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(shape.aspectRatio)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (imageUrl != null) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = title,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Text(
+                    text = title,
+                    modifier = Modifier.padding(horizontal = 14.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (!detailLine.isNullOrBlank()) {
+            Text(
+                text = detailLine,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Box(modifier = Modifier.height(0.dp))
+        }
+    }
+}
+
+@Composable
+private fun NuvioShelfSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    onViewAllClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Box(
+                modifier = Modifier
+                    .padding(top = 6.dp)
+                    .width(60.dp)
+                    .height(4.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(999.dp),
+                    ),
+            )
+        }
+        NuvioViewAllPill(
+            onClick = onViewAllClick,
+        )
+    }
+}
+
+@Composable
+private fun NuvioViewAllPill(
+    onClick: (() -> Unit)?,
+) {
+    Row(
+        modifier = Modifier
+            .background(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(20.dp),
+            )
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "View All",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private val NuvioPosterShape.aspectRatio: Float
+    get() = when (this) {
+        NuvioPosterShape.Poster -> 0.675f
+        NuvioPosterShape.Square -> 1f
+        NuvioPosterShape.Landscape -> 1.77f
+    }
