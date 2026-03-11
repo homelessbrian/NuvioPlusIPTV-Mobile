@@ -21,6 +21,7 @@ object StreamsRepository {
     val uiState: StateFlow<StreamsUiState> = _uiState.asStateFlow()
 
     private var activeJob: Job? = null
+    private var activeRequestKey: String? = null
 
     /**
      * Loads streams for a given type + videoId from all installed addons that declare
@@ -30,6 +31,26 @@ object StreamsRepository {
      * For series: videoId == "{metaId}:{season}:{episode}" (e.g. "tt0898266:9:17")
      */
     fun load(type: String, videoId: String) {
+        load(type = type, videoId = videoId, forceRefresh = false)
+    }
+
+    fun reload(type: String, videoId: String) {
+        load(type = type, videoId = videoId, forceRefresh = true)
+    }
+
+    private fun load(type: String, videoId: String, forceRefresh: Boolean) {
+        val requestKey = "$type::$videoId"
+        val currentState = _uiState.value
+        if (
+            !forceRefresh &&
+            activeRequestKey == requestKey &&
+            (currentState.groups.isNotEmpty() || currentState.emptyStateReason != null || currentState.isAnyLoading)
+        ) {
+            log.d { "Skipping stream reload for unchanged request type=$type id=$videoId" }
+            return
+        }
+
+        activeRequestKey = requestKey
         activeJob?.cancel()
         _uiState.value = StreamsUiState()
 
@@ -144,6 +165,7 @@ object StreamsRepository {
 
     fun clear() {
         activeJob?.cancel()
+        activeRequestKey = null
         _uiState.value = StreamsUiState()
     }
 
