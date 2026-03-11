@@ -1,0 +1,509 @@
+import Foundation
+import UIKit
+import Libmpv
+import ComposeApp
+
+// MARK: - Player Bridge Implementation (Kotlin protocol conformance)
+
+final class MPVPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
+
+    private var playerVC: MPVPlayerViewController?
+
+    func createPlayerViewController() -> UIViewController {
+        let vc = MPVPlayerViewController()
+        self.playerVC = vc
+        return vc
+    }
+
+    func loadFile(url: String) { playerVC?.loadFile(url) }
+    func play() { playerVC?.playPlayback() }
+    func pause() { playerVC?.pausePlayback() }
+    func seekTo(positionMs: Int64) { playerVC?.seekToMs(positionMs) }
+    func seekBy(offsetMs: Int64) { playerVC?.seekByMs(offsetMs) }
+    func retry() { playerVC?.retryPlayback() }
+    func setPlaybackSpeed(speed: Float) { playerVC?.setSpeed(speed) }
+    func setResizeMode(mode: Int32) { playerVC?.setResize(Int(mode)) }
+
+    // Audio tracks
+    func getAudioTrackCount() -> Int32 { Int32(playerVC?.audioTracks.count ?? 0) }
+    func getAudioTrackIndex(at: Int32) -> Int32 {
+        guard let t = playerVC?.audioTracks, Int(at) < t.count else { return 0 }
+        return Int32(t[Int(at)].index)
+    }
+    func getAudioTrackId(at: Int32) -> String {
+        guard let t = playerVC?.audioTracks, Int(at) < t.count else { return "0" }
+        return "\(t[Int(at)].id)"
+    }
+    func getAudioTrackLabel(at: Int32) -> String {
+        guard let t = playerVC?.audioTracks, Int(at) < t.count else { return "" }
+        return t[Int(at)].title
+    }
+    func getAudioTrackLang(at: Int32) -> String {
+        guard let t = playerVC?.audioTracks, Int(at) < t.count else { return "" }
+        return t[Int(at)].lang
+    }
+    func isAudioTrackSelected(at: Int32) -> Bool {
+        guard let t = playerVC?.audioTracks, Int(at) < t.count else { return false }
+        return t[Int(at)].selected
+    }
+
+    // Subtitle tracks
+    func getSubtitleTrackCount() -> Int32 { Int32(playerVC?.subtitleTracks.count ?? 0) }
+    func getSubtitleTrackIndex(at: Int32) -> Int32 {
+        guard let t = playerVC?.subtitleTracks, Int(at) < t.count else { return 0 }
+        return Int32(t[Int(at)].index)
+    }
+    func getSubtitleTrackId(at: Int32) -> String {
+        guard let t = playerVC?.subtitleTracks, Int(at) < t.count else { return "0" }
+        return "\(t[Int(at)].id)"
+    }
+    func getSubtitleTrackLabel(at: Int32) -> String {
+        guard let t = playerVC?.subtitleTracks, Int(at) < t.count else { return "" }
+        return t[Int(at)].title
+    }
+    func getSubtitleTrackLang(at: Int32) -> String {
+        guard let t = playerVC?.subtitleTracks, Int(at) < t.count else { return "" }
+        return t[Int(at)].lang
+    }
+    func isSubtitleTrackSelected(at: Int32) -> Bool {
+        guard let t = playerVC?.subtitleTracks, Int(at) < t.count else { return false }
+        return t[Int(at)].selected
+    }
+
+    func selectAudioTrack(trackId: Int32) { playerVC?.selectAudio(Int(trackId)) }
+    func selectSubtitleTrack(trackId: Int32) { playerVC?.selectSubtitle(Int(trackId)) }
+    func setSubtitleUrl(url: String) { playerVC?.addSubtitleUrl(url) }
+    func clearExternalSubtitle() { playerVC?.removeExternalSubtitles() }
+    func clearExternalSubtitleAndSelect(trackId: Int32) { playerVC?.removeExternalSubtitlesAndSelect(Int(trackId)) }
+
+    // State - refreshes position from mpv on each call (polled from Kotlin every 250ms)
+    func getIsLoading() -> Bool { playerVC?.refreshPlaybackState(); return playerVC?.isPlayerLoading ?? true }
+    func getIsPlaying() -> Bool { return playerVC?.isPlayerPlaying ?? false }
+    func getIsEnded() -> Bool { return playerVC?.isPlayerEnded ?? false }
+    func getDurationMs() -> Int64 { return playerVC?.durationMs ?? 0 }
+    func getPositionMs() -> Int64 { return playerVC?.positionMs ?? 0 }
+    func getBufferedMs() -> Int64 { return playerVC?.bufferedMs ?? 0 }
+    func getPlaybackSpeed() -> Float { playerVC?.currentSpeed ?? 1.0 }
+
+    func destroy() {
+        playerVC?.destroyPlayer()
+        playerVC = nil
+    }
+}
+
+// MARK: - Track Info
+
+struct TrackInfo {
+    let index: Int
+    let id: Int
+    let type: String
+    let title: String
+    let lang: String
+    let selected: Bool
+}
+
+// MARK: - MPV Player View Controller
+
+final class MPVPlayerViewController: UIViewController {
+
+    private var metalLayer = MetalLayer()
+    private var mpv: OpaquePointer?
+    private lazy var eventQueue = DispatchQueue(label: "mpv-events", qos: .userInitiated)
+
+    // Cached track lists
+    var audioTracks: [TrackInfo] = []
+    var subtitleTracks: [TrackInfo] = []
+
+    // State (polled from Kotlin every 250ms)
+    var isPlayerLoading: Bool = true
+    var isPlayerPlaying: Bool = false
+    var isPlayerEnded: Bool = false
+    var durationMs: Int64 = 0
+    var positionMs: Int64 = 0
+    var bufferedMs: Int64 = 0
+    var currentSpeed: Float = 1.0
+
+    // MARK: - Lifecycle
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+
+        metalLayer.frame = view.bounds
+        metalLayer.contentsScale = UIScreen.main.nativeScale
+        metalLayer.framebufferOnly = true
+        metalLayer.backgroundColor = UIColor.black.cgColor
+        view.layer.addSublayer(metalLayer)
+
+        setupMpv()
+        setupNotifications()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        metalLayer.frame = view.bounds
+    }
+
+    // MARK: - MPV Setup
+
+    private func setupMpv() {
+        mpv = mpv_create()
+        guard mpv != nil else {
+            print("[MPV] Failed to create mpv instance")
+            return
+        }
+
+#if DEBUG
+        checkError(mpv_request_log_messages(mpv, "warn"))
+#else
+        checkError(mpv_request_log_messages(mpv, "no"))
+#endif
+
+        checkError(mpv_set_option(mpv, "wid", MPV_FORMAT_INT64, &metalLayer))
+        checkError(mpv_set_option_string(mpv, "vo", "gpu-next"))
+        checkError(mpv_set_option_string(mpv, "gpu-api", "vulkan"))
+        checkError(mpv_set_option_string(mpv, "gpu-context", "moltenvk"))
+        checkError(mpv_set_option_string(mpv, "hwdec", "videotoolbox"))
+        checkError(mpv_set_option_string(mpv, "video-rotate", "no"))
+        checkError(mpv_set_option_string(mpv, "subs-match-os-language", "yes"))
+        checkError(mpv_set_option_string(mpv, "subs-fallback", "yes"))
+        checkError(mpv_set_option_string(mpv, "keep-open", "yes"))
+        checkError(mpv_set_option_string(mpv, "target-colorspace-hint", "yes"))
+
+        checkError(mpv_initialize(mpv))
+
+        // Observe properties
+        mpv_observe_property(mpv, 0, "pause", MPV_FORMAT_FLAG)
+        mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG)
+        mpv_observe_property(mpv, 0, "core-idle", MPV_FORMAT_FLAG)
+        mpv_observe_property(mpv, 0, "eof-reached", MPV_FORMAT_FLAG)
+        mpv_observe_property(mpv, 0, "seeking", MPV_FORMAT_FLAG)
+        mpv_observe_property(mpv, 0, "track-list/count", MPV_FORMAT_INT64)
+
+        mpv_set_wakeup_callback(mpv, { ctx in
+            let vc = unsafeBitCast(ctx, to: MPVPlayerViewController.self)
+            vc.readEvents()
+        }, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
+    }
+
+    private func setupNotifications() {
+        NotificationCenter.default.addObserver(self, selector: #selector(enterBackground),
+                                               name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(enterForeground),
+                                               name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    @objc private func enterBackground() {
+        guard mpv != nil else { return }
+        pausePlayback()
+        checkError(mpv_set_option_string(mpv, "vid", "no"))
+    }
+
+    @objc private func enterForeground() {
+        guard mpv != nil else { return }
+        checkError(mpv_set_option_string(mpv, "vid", "auto"))
+        playPlayback()
+    }
+
+    // MARK: - Playback API
+
+    func loadFile(_ urlString: String) {
+        guard mpv != nil else { return }
+        isPlayerLoading = true
+        isPlayerEnded = false
+        command("loadfile", args: [urlString, "replace"])
+    }
+
+    func playPlayback() {
+        guard mpv != nil else { return }
+        setFlag("pause", false)
+    }
+
+    func pausePlayback() {
+        guard mpv != nil else { return }
+        setFlag("pause", true)
+    }
+
+    func seekToMs(_ ms: Int64) {
+        guard mpv != nil else { return }
+        let seconds = Double(ms) / 1000.0
+        command("seek", args: [String(format: "%.3f", seconds), "absolute"])
+    }
+
+    func seekByMs(_ ms: Int64) {
+        guard mpv != nil else { return }
+        let seconds = Double(ms) / 1000.0
+        command("seek", args: [String(format: "%.3f", seconds), "relative"])
+    }
+
+    func retryPlayback() {
+        guard mpv != nil else { return }
+        if let path = getString("path") {
+            let pos = getDouble("time-pos")
+            command("loadfile", args: [path, "replace"])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.command("seek", args: [String(format: "%.3f", pos), "absolute"])
+            }
+        }
+    }
+
+    func setSpeed(_ speed: Float) {
+        guard mpv != nil else { return }
+        var s = Double(speed)
+        mpv_set_property(mpv, "speed", MPV_FORMAT_DOUBLE, &s)
+    }
+
+    func setResize(_ mode: Int) {
+        guard mpv != nil else { return }
+        switch mode {
+        case 1: // Fill
+            checkError(mpv_set_option_string(mpv, "panscan", "1.0"))
+            checkError(mpv_set_option_string(mpv, "video-unscaled", "no"))
+        case 2: // Zoom
+            checkError(mpv_set_option_string(mpv, "panscan", "0.0"))
+            checkError(mpv_set_option_string(mpv, "video-unscaled", "downscale-big"))
+        default: // Fit
+            checkError(mpv_set_option_string(mpv, "panscan", "0.0"))
+            checkError(mpv_set_option_string(mpv, "video-unscaled", "no"))
+        }
+    }
+
+    // MARK: - Track selection
+
+    func selectAudio(_ trackId: Int) {
+        guard mpv != nil else { return }
+        var id = Int64(trackId)
+        mpv_set_property(mpv, "aid", MPV_FORMAT_INT64, &id)
+    }
+
+    func selectSubtitle(_ trackId: Int) {
+        guard mpv != nil else { return }
+        if trackId < 0 {
+            checkError(mpv_set_option_string(mpv, "sid", "no"))
+        } else {
+            var id = Int64(trackId)
+            mpv_set_property(mpv, "sid", MPV_FORMAT_INT64, &id)
+        }
+    }
+
+    func addSubtitleUrl(_ url: String) {
+        guard mpv != nil else { return }
+        command("sub-add", args: [url, "select"])
+    }
+
+    func removeExternalSubtitles() {
+        guard mpv != nil else { return }
+        let count = getInt("track-list/count")
+        for i in stride(from: count - 1, through: 0, by: -1) {
+            let type = getString("track-list/\(i)/type") ?? ""
+            let external = getFlag("track-list/\(i)/external")
+            if type == "sub" && external {
+                let id = getInt("track-list/\(i)/id")
+                command("sub-remove", args: ["\(id)"], checkForErrors: false)
+            }
+        }
+        checkError(mpv_set_option_string(mpv, "sid", "no"))
+    }
+
+    func removeExternalSubtitlesAndSelect(_ trackId: Int) {
+        guard mpv != nil else { return }
+        let count = getInt("track-list/count")
+        for i in stride(from: count - 1, through: 0, by: -1) {
+            let type = getString("track-list/\(i)/type") ?? ""
+            let external = getFlag("track-list/\(i)/external")
+            if type == "sub" && external {
+                let id = getInt("track-list/\(i)/id")
+                command("sub-remove", args: ["\(id)"], checkForErrors: false)
+            }
+        }
+        if trackId >= 0 {
+            selectSubtitle(trackId)
+        } else {
+            checkError(mpv_set_option_string(mpv, "sid", "no"))
+        }
+    }
+
+    func destroyPlayer() {
+        NotificationCenter.default.removeObserver(self)
+        if let mpv = mpv {
+            mpv_terminate_destroy(mpv)
+        }
+        mpv = nil
+    }
+
+    // MARK: - State Update
+
+    /// Lightweight state refresh — called by Kotlin polling (every 250ms).
+    /// Only reads cheap scalar properties; does NOT re-enumerate tracks.
+    func refreshPlaybackState() {
+        guard mpv != nil else { return }
+        let duration = getDouble("duration")
+        let position = getDouble("time-pos")
+        let cached = getDouble("demuxer-cache-time")
+        let speed = getDouble("speed")
+        let paused = getFlag("pause")
+        let eofReached = getFlag("eof-reached")
+        let idle = getFlag("core-idle")
+        let seeking = getFlag("seeking")
+        let bufferingCache = getFlag("paused-for-cache")
+
+        isPlayerLoading = (idle && !paused && !eofReached) || seeking || bufferingCache
+        isPlayerPlaying = !paused && !idle && !eofReached
+        isPlayerEnded = eofReached
+        durationMs = Int64(duration * 1000)
+        positionMs = Int64(max(position, 0) * 1000)
+        bufferedMs = Int64(max(position + cached, 0) * 1000)
+        currentSpeed = Float(speed > 0 ? speed : 1.0)
+    }
+
+    /// Full state + track refresh — called from MPV event loop on property changes.
+    func updateState() {
+        refreshPlaybackState()
+        refreshTracks()
+    }
+
+    private func refreshTracks() {
+        guard mpv != nil else { return }
+        var audio = [TrackInfo]()
+        var subs = [TrackInfo]()
+        let count = getInt("track-list/count")
+        var audioIdx = 0
+        var subIdx = 0
+
+        for i in 0..<count {
+            let type = getString("track-list/\(i)/type") ?? ""
+            let id = getInt("track-list/\(i)/id")
+            let title = getString("track-list/\(i)/title") ?? ""
+            let lang = getString("track-list/\(i)/lang") ?? ""
+            let selected = getFlag("track-list/\(i)/selected")
+
+            if type == "audio" {
+                audio.append(TrackInfo(index: audioIdx, id: id, type: type, title: title, lang: lang, selected: selected))
+                audioIdx += 1
+            } else if type == "sub" {
+                subs.append(TrackInfo(index: subIdx, id: id, type: type, title: title, lang: lang, selected: selected))
+                subIdx += 1
+            }
+        }
+        audioTracks = audio
+        subtitleTracks = subs
+    }
+
+    // MARK: - Event Loop
+
+    private func readEvents() {
+        eventQueue.async { [weak self] in
+            guard let self, let mpv = self.mpv else { return }
+
+            while true {
+                let event = mpv_wait_event(mpv, 0)
+                guard let eventPtr = event else { break }
+                if eventPtr.pointee.event_id == MPV_EVENT_NONE { break }
+
+                switch eventPtr.pointee.event_id {
+                case MPV_EVENT_PROPERTY_CHANGE:
+                    DispatchQueue.main.async { self.updateState() }
+                case MPV_EVENT_FILE_LOADED:
+                    DispatchQueue.main.async {
+                        self.isPlayerLoading = false
+                        self.updateState()
+                    }
+                case MPV_EVENT_END_FILE:
+                    if let data = eventPtr.pointee.data {
+                        let endFile = UnsafePointer<mpv_event_end_file>(OpaquePointer(data)).pointee
+                        if endFile.reason == MPV_END_FILE_REASON_ERROR {
+                            print("[MPV] End file error: \(String(cString: mpv_error_string(endFile.error)))")
+                        }
+                    }
+                case MPV_EVENT_SHUTDOWN:
+                    mpv_terminate_destroy(mpv)
+                    self.mpv = nil
+                    return
+                case MPV_EVENT_LOG_MESSAGE:
+                    if let msg = UnsafeMutablePointer<mpv_event_log_message>(OpaquePointer(eventPtr.pointee.data)) {
+                        let prefix = String(cString: msg.pointee.prefix!)
+                        let level = String(cString: msg.pointee.level!)
+                        let text = String(cString: msg.pointee.text!)
+                        print("[MPV][\(prefix)] \(level): \(text)", terminator: "")
+                    }
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    // MARK: - MPV Helpers
+
+    private func command(_ command: String, args: [String?] = [], checkForErrors: Bool = true) {
+        guard mpv != nil else { return }
+        var cargs = makeCArgs(command, args).map { $0.flatMap { UnsafePointer<CChar>(strdup($0)) } }
+        defer { for ptr in cargs where ptr != nil { free(UnsafeMutablePointer(mutating: ptr!)) } }
+        let ret = mpv_command(mpv, &cargs)
+        if checkForErrors { checkError(ret) }
+    }
+
+    private func makeCArgs(_ command: String, _ args: [String?]) -> [String?] {
+        var strArgs = args
+        strArgs.insert(command, at: 0)
+        strArgs.append(nil)
+        return strArgs
+    }
+
+    private func getDouble(_ name: String) -> Double {
+        guard mpv != nil else { return 0.0 }
+        var data = Double()
+        mpv_get_property(mpv, name, MPV_FORMAT_DOUBLE, &data)
+        return data
+    }
+
+    private func getString(_ name: String) -> String? {
+        guard mpv != nil else { return nil }
+        let cstr = mpv_get_property_string(mpv, name)
+        let str: String? = cstr == nil ? nil : String(cString: cstr!)
+        mpv_free(cstr)
+        return str
+    }
+
+    private func getFlag(_ name: String) -> Bool {
+        guard mpv != nil else { return false }
+        var data = Int64()
+        mpv_get_property(mpv, name, MPV_FORMAT_FLAG, &data)
+        return data > 0
+    }
+
+    private func setFlag(_ name: String, _ flag: Bool) {
+        guard mpv != nil else { return }
+        var data: Int = flag ? 1 : 0
+        mpv_set_property(mpv, name, MPV_FORMAT_FLAG, &data)
+    }
+
+    private func getInt(_ name: String) -> Int {
+        guard mpv != nil else { return 0 }
+        var data = Int64()
+        mpv_get_property(mpv, name, MPV_FORMAT_INT64, &data)
+        return Int(data)
+    }
+
+    private func checkError(_ status: CInt) {
+        if status < 0 {
+            print("[MPV] API error: \(String(cString: mpv_error_string(status)))")
+        }
+    }
+}
+
+// MARK: - Bridge Creator (implements Kotlin protocol)
+
+final class MPVPlayerBridgeCreator: NSObject, NuvioPlayerBridgeCreator {
+    func createBridge() -> any NuvioPlayerBridge {
+        return MPVPlayerBridgeImpl()
+    }
+}
+
+// MARK: - Registration (called from Swift app startup)
+
+enum NuvioPlayerRegistration {
+    static func register() {
+        NuvioPlayerBridgeFactory.shared.registerFactory(creator: MPVPlayerBridgeCreator())
+    }
+}

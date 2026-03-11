@@ -85,6 +85,7 @@
 			);
 			name = iosApp;
 			packageProductDependencies = (
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* MPVKit */,
 			);
 			productName = iosApp;
 			productReference = 07921B4E8F8546BEE682C2FE /* Nuvio.app */;
@@ -116,6 +117,9 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AD93033A33973C81BB77B73A /* Products */;
+			packageReferences = (
+				F1E2D3C4B5A6F7E8D9C0B1A2 /* XCLocalSwiftPackageReference "../MPVKit" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -368,6 +372,21 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F1E2D3C4B5A6F7E8D9C0B1A2 /* XCLocalSwiftPackageReference "../MPVKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../MPVKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* MPVKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F1E2D3C4B5A6F7E8D9C0B1A2 /* XCLocalSwiftPackageReference "../MPVKit" */;
+			productName = MPVKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E819B502921EC7C68AC4965A /* Project object */;
 }
