@@ -37,6 +37,11 @@ enum class NuvioPosterShape {
     Landscape,
 }
 
+enum class NuvioViewAllPillSize {
+    Default,
+    Compact,
+}
+
 @Composable
 fun <T> NuvioShelfSection(
     title: String,
@@ -45,6 +50,7 @@ fun <T> NuvioShelfSection(
     headerHorizontalPadding: Dp = 0.dp,
     rowContentPadding: PaddingValues = PaddingValues(0.dp),
     onViewAllClick: (() -> Unit)? = null,
+    viewAllPillSize: NuvioViewAllPillSize = NuvioViewAllPillSize.Default,
     key: ((T) -> Any)? = null,
     itemContent: @Composable (T) -> Unit,
 ) {
@@ -56,6 +62,7 @@ fun <T> NuvioShelfSection(
             title = title,
             modifier = Modifier.padding(horizontal = headerHorizontalPadding),
             onViewAllClick = onViewAllClick,
+            viewAllPillSize = viewAllPillSize,
         )
         LazyRow(
             contentPadding = rowContentPadding,
@@ -145,6 +152,7 @@ private fun NuvioShelfSectionHeader(
     title: String,
     modifier: Modifier = Modifier,
     onViewAllClick: (() -> Unit)? = null,
+    viewAllPillSize: NuvioViewAllPillSize = NuvioViewAllPillSize.Default,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -174,6 +182,7 @@ private fun NuvioShelfSectionHeader(
         }
         NuvioViewAllPill(
             onClick = onViewAllClick,
+            size = viewAllPillSize,
         )
     }
 }
@@ -181,7 +190,17 @@ private fun NuvioShelfSectionHeader(
 @Composable
 private fun NuvioViewAllPill(
     onClick: (() -> Unit)?,
+    size: NuvioViewAllPillSize,
 ) {
+    val horizontalPadding = if (size == NuvioViewAllPillSize.Compact) 12.dp else 18.dp
+    val verticalPadding = if (size == NuvioViewAllPillSize.Compact) 9.dp else 14.dp
+    val textStyle = if (size == NuvioViewAllPillSize.Compact) {
+        MaterialTheme.typography.labelLarge
+    } else {
+        MaterialTheme.typography.titleMedium
+    }
+    val iconSpacing = if (size == NuvioViewAllPillSize.Compact) 2.dp else 4.dp
+
     Row(
         modifier = Modifier
             .background(
@@ -189,19 +208,20 @@ private fun NuvioViewAllPill(
                 shape = RoundedCornerShape(20.dp),
             )
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+        horizontalArrangement = Arrangement.spacedBy(iconSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "View All",
-            style = MaterialTheme.typography.titleMedium,
+            style = textStyle,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Icon(
             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.height(if (size == NuvioViewAllPillSize.Compact) 16.dp else 20.dp),
         )
     }
 }
