@@ -41,6 +41,7 @@ fun HomeScreen(
     }
 
     LaunchedEffect(catalogRefreshKey) {
+        HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons)
         HomeRepository.refresh(addonsUiState.addons)
     }
 

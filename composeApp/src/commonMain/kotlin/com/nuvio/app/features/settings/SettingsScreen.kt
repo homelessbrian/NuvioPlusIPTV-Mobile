@@ -21,18 +21,27 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,11 +53,17 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.NuvioSectionLabel
+import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.home.HomeCatalogSettingsItem
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.home.components.HomeEmptyStateCard
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private enum class SettingsCategory(
     val label: String,
@@ -62,6 +77,7 @@ private enum class SettingsPage(
 ) {
     Root("Settings"),
     ContentDiscovery("Content & Discovery"),
+    Homescreen("Homescreen"),
 }
 
 @Composable
@@ -74,6 +90,17 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
+        LaunchedEffect(Unit) {
+            AddonRepository.initialize()
+        }
+
+        val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
+        val homescreenSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+
+        LaunchedEffect(addonsUiState.addons) {
+            HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons)
+        }
+
         var currentPage by rememberSaveable { mutableStateOf(SettingsPage.Root.name) }
         val page = remember(currentPage) { SettingsPage.valueOf(currentPage) }
 
@@ -82,12 +109,14 @@ fun SettingsScreen(
                 page = page,
                 onPageChange = { currentPage = it.name },
                 onAddonsClick = onAddonsClick,
+                homescreenSettings = homescreenSettingsUiState.items,
             )
         } else {
             MobileSettingsScreen(
                 page = page,
                 onPageChange = { currentPage = it.name },
                 onAddonsClick = onAddonsClick,
+                homescreenSettings = homescreenSettingsUiState.items,
             )
         }
     }
@@ -98,6 +127,7 @@ private fun MobileSettingsScreen(
     page: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
     onAddonsClick: () -> Unit,
+    homescreenSettings: List<HomeCatalogSettingsItem>,
 ) {
     NuvioScreen {
         stickyHeader {
@@ -119,6 +149,11 @@ private fun MobileSettingsScreen(
             SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                 isTablet = false,
                 onAddonsClick = onAddonsClick,
+                onHomescreenClick = { onPageChange(SettingsPage.Homescreen) },
+            )
+            SettingsPage.Homescreen -> homescreenSettingsContent(
+                isTablet = false,
+                items = homescreenSettings,
             )
         }
     }
@@ -129,6 +164,7 @@ private fun TabletSettingsScreen(
     page: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
     onAddonsClick: () -> Unit,
+    homescreenSettings: List<HomeCatalogSettingsItem>,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
     val activeCategory = SettingsCategory.valueOf(selectedCategory)
@@ -195,13 +231,18 @@ private fun TabletSettingsScreen(
                 SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                     isTablet = true,
                     onAddonsClick = onAddonsClick,
+                    onHomescreenClick = { onPageChange(SettingsPage.Homescreen) },
+                )
+                SettingsPage.Homescreen -> homescreenSettingsContent(
+                    isTablet = true,
+                    items = homescreenSettings,
                 )
             }
         }
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.settingsRootContent(
+private fun LazyListScope.settingsRootContent(
     isTablet: Boolean,
     onContentDiscoveryClick: () -> Unit,
 ) {
@@ -221,13 +262,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsRootContent(
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.contentDiscoveryContent(
+private fun LazyListScope.contentDiscoveryContent(
     isTablet: Boolean,
     onAddonsClick: () -> Unit,
+    onHomescreenClick: () -> Unit,
 ) {
     item {
         SettingsSection(
-            title = "GENERAL",
+            title = "SOURCES",
             isTablet = isTablet,
         ) {
             SettingsNavigationRow(
@@ -237,6 +279,56 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentDiscoveryConte
                 isTablet = isTablet,
                 onClick = onAddonsClick,
             )
+        }
+    }
+    item {
+        SettingsSection(
+            title = "HOME",
+            isTablet = isTablet,
+        ) {
+            SettingsNavigationRow(
+                title = "Homescreen",
+                description = "Control which catalogs appear on Home and in what order.",
+                icon = Icons.Rounded.Tune,
+                isTablet = isTablet,
+                onClick = onHomescreenClick,
+            )
+        }
+    }
+}
+
+private fun LazyListScope.homescreenSettingsContent(
+    isTablet: Boolean,
+    items: List<HomeCatalogSettingsItem>,
+) {
+    item {
+        if (items.isEmpty()) {
+            HomeEmptyStateCard(
+                modifier = Modifier.fillMaxWidth(),
+                title = "No home catalogs",
+                message = "Install an addon with board-compatible catalogs to configure Homescreen rows.",
+            )
+        } else {
+            SettingsSection(
+                title = "CATALOGS",
+                isTablet = isTablet,
+            ) {
+                items.forEachIndexed { index, item ->
+                    HomescreenCatalogRow(
+                        item = item,
+                        isTablet = isTablet,
+                        canMoveUp = index > 0,
+                        canMoveDown = index < items.lastIndex,
+                        onTitleChange = { HomeCatalogSettingsRepository.setCustomTitle(item.key, it) },
+                        onEnabledChange = { HomeCatalogSettingsRepository.setEnabled(item.key, it) },
+                        onMoveUp = { HomeCatalogSettingsRepository.moveUp(item.key) },
+                        onMoveDown = { HomeCatalogSettingsRepository.moveDown(item.key) },
+                    )
+                    if (index < items.lastIndex) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+            }
         }
     }
 }
@@ -416,5 +508,134 @@ private fun SettingsNavigationRow(
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun HomescreenCatalogRow(
+    item: HomeCatalogSettingsItem,
+    isTablet: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onTitleChange: (String) -> Unit,
+    onEnabledChange: (Boolean) -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+) {
+    val horizontalPadding = if (isTablet) 20.dp else 16.dp
+    val verticalPadding = if (isTablet) 18.dp else 16.dp
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(end = 12.dp)
+                    .widthIn(max = if (isTablet) 560.dp else 260.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = item.displayTitle,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = item.addonName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = item.enabled,
+                onCheckedChange = onEnabledChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+                ),
+            )
+        }
+
+        OutlinedTextField(
+            value = item.customTitle,
+            onValueChange = onTitleChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = {
+                Text("Display Name")
+            },
+            placeholder = {
+                Text(item.defaultTitle)
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                disabledContainerColor = MaterialTheme.colorScheme.surface,
+            ),
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MoveActionChip(
+                label = "Move Up",
+                icon = Icons.Rounded.KeyboardArrowUp,
+                enabled = canMoveUp,
+                onClick = onMoveUp,
+            )
+            MoveActionChip(
+                label = "Move Down",
+                icon = Icons.Rounded.KeyboardArrowDown,
+                enabled = canMoveDown,
+                onClick = onMoveDown,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoveActionChip(
+    label: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.45f),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+        shape = RoundedCornerShape(999.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium,
+            )
+        }
     }
 }

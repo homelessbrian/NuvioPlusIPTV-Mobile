@@ -2,7 +2,6 @@ package com.nuvio.app.features.home
 
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.catalog.fetchCatalogPage
-import com.nuvio.app.features.catalog.supportsPagination
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,17 +19,26 @@ object HomeRepository {
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var lastRequestKey: String? = null
+    private var currentDefinitions: List<HomeCatalogDefinition> = emptyList()
+    private var cachedSections: Map<String, HomeCatalogSection> = emptyMap()
+    private var lastErrorMessage: String? = null
 
     fun refresh(addons: List<ManagedAddon>, force: Boolean = false) {
-        val requests = buildCatalogRequests(addons)
+        val requests = buildHomeCatalogDefinitions(addons)
+        currentDefinitions = requests
         val requestKey = requests.joinToString(separator = "|") { request ->
-            "${request.addon.manifestUrl}:${request.type}:${request.catalogId}"
+            "${request.manifestUrl}:${request.type}:${request.catalogId}"
         }
 
-        if (!force && requestKey == lastRequestKey) return
+        if (!force && requestKey == lastRequestKey && cachedSections.isNotEmpty()) {
+            applyCurrentSettings()
+            return
+        }
         lastRequestKey = requestKey
 
         if (requests.isEmpty()) {
+            cachedSections = emptyMap()
+            lastErrorMessage = null
             _uiState.value = HomeUiState(
                 isLoading = false,
                 sections = emptyList(),
@@ -47,60 +55,55 @@ object HomeRepository {
                 }
             }.awaitAll()
 
-            val sections = results.mapNotNull { it.getOrNull() }
-            val firstFailure = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
-
-            _uiState.value = HomeUiState(
-                isLoading = false,
-                sections = sections,
-                errorMessage = if (sections.isEmpty()) firstFailure else null,
-            )
+            cachedSections = results
+                .mapNotNull { it.getOrNull() }
+                .associateBy { it.key }
+            lastErrorMessage = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
+            applyCurrentSettings()
         }
     }
 
-    private fun buildCatalogRequests(addons: List<ManagedAddon>): List<CatalogRequest> =
-        addons.mapNotNull { addon ->
-            val manifest = addon.manifest ?: return@mapNotNull null
-            addon to manifest
-        }.flatMap { (addon, manifest) ->
-            manifest.catalogs
-                .filter { catalog -> catalog.extra.none { it.isRequired } }
-                .map { catalog ->
-                    CatalogRequest(
-                        addon = addon,
-                        catalogId = catalog.id,
-                        catalogName = catalog.name,
-                        type = catalog.type,
-                        supportsPagination = catalog.supportsPagination(),
-                    )
-                }
-        }
+    fun applyCurrentSettings() {
+        val preferences = HomeCatalogSettingsRepository.snapshot()
+        val sections = currentDefinitions
+            .sortedBy { definition -> preferences[definition.key]?.order ?: Int.MAX_VALUE }
+            .mapNotNull { definition ->
+                val preference = preferences[definition.key]
+                if (preference?.enabled == false) return@mapNotNull null
 
-    private suspend fun CatalogRequest.toSection(): HomeCatalogSection {
-        val manifest = requireNotNull(addon.manifest)
+                val section = cachedSections[definition.key] ?: return@mapNotNull null
+                val customTitle = preference?.customTitle.orEmpty()
+                section.copy(
+                    title = customTitle.ifBlank { section.title },
+                )
+            }
+
+        _uiState.value = HomeUiState(
+            isLoading = false,
+            sections = sections,
+            errorMessage = if (sections.isEmpty()) lastErrorMessage else null,
+        )
+    }
+
+    private suspend fun HomeCatalogDefinition.toSection(): HomeCatalogSection {
         val page = fetchCatalogPage(
-            manifestUrl = manifest.transportUrl,
+            manifestUrl = manifestUrl,
             type = type,
             catalogId = catalogId,
         )
         val items = page.items
-        require(items.isNotEmpty()) { "No feed items returned for $catalogName." }
+        require(items.isNotEmpty()) { "No feed items returned for $defaultTitle." }
 
         return HomeCatalogSection(
-            key = "${manifest.id}:$type:$catalogId",
-            title = "$catalogName - ${type.displayLabel()}",
-            subtitle = manifest.name,
-            addonName = manifest.name,
+            key = key,
+            title = defaultTitle,
+            subtitle = addonName,
+            addonName = addonName,
             type = type,
-            manifestUrl = manifest.transportUrl,
+            manifestUrl = manifestUrl,
             catalogId = catalogId,
             items = items,
             supportsPagination = supportsPagination,
         )
     }
 }
-
-private fun String.displayLabel(): String =
-    replaceFirstChar { char ->
-        if (char.isLowerCase()) char.titlecase() else char.toString()
-    }
