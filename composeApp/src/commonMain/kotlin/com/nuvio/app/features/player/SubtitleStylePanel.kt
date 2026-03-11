@@ -49,7 +49,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 @Composable
 fun SubtitleStylePanel(
@@ -104,6 +106,13 @@ fun SubtitleStylePanel(
             onStyleChanged = onStyleChanged,
         )
     }
+}
+
+private fun formatOneDecimal(value: Float, suffix: String = ""): String {
+    val roundedTenths = (value * 10f).roundToInt()
+    val sign = if (roundedTenths < 0) "-" else ""
+    val absoluteTenths = abs(roundedTenths)
+    return "$sign${absoluteTenths / 10}.${absoluteTenths % 10}$suffix"
 }
 
 @Composable
@@ -401,7 +410,7 @@ private fun AdvancedControlsCard(
                     fontWeight = FontWeight.Medium,
                 )
                 StepperControl(
-                    value = String.format("%.1f", style.backgroundOpacity),
+                    value = formatOneDecimal(style.backgroundOpacity),
                     onMinus = { onStyleChanged(style.copy(backgroundOpacity = (style.backgroundOpacity - 0.1f).coerceAtLeast(0f))) },
                     onPlus = { onStyleChanged(style.copy(backgroundOpacity = (style.backgroundOpacity + 0.1f).coerceAtMost(1f))) },
                     buttonSize = btnSize,
@@ -506,7 +515,7 @@ private fun AdvancedControlsCard(
                         fontWeight = FontWeight.Medium,
                     )
                     StepperControl(
-                        value = String.format("%.1f", style.outlineWidth),
+                        value = formatOneDecimal(style.outlineWidth),
                         onMinus = { onStyleChanged(style.copy(outlineWidth = (style.outlineWidth - 0.5f).coerceAtLeast(0.5f))) },
                         onPlus = { onStyleChanged(style.copy(outlineWidth = (style.outlineWidth + 0.5f).coerceAtMost(5f))) },
                         buttonSize = btnSize,
@@ -527,7 +536,7 @@ private fun AdvancedControlsCard(
                     fontWeight = FontWeight.Medium,
                 )
                 StepperControl(
-                    value = String.format("%.1f", style.letterSpacing),
+                    value = formatOneDecimal(style.letterSpacing),
                     onMinus = { onStyleChanged(style.copy(letterSpacing = (style.letterSpacing - 0.5f).coerceAtLeast(-2f))) },
                     onPlus = { onStyleChanged(style.copy(letterSpacing = (style.letterSpacing + 0.5f).coerceAtMost(5f))) },
                     buttonSize = btnSize,
@@ -547,7 +556,7 @@ private fun AdvancedControlsCard(
                     fontWeight = FontWeight.Medium,
                 )
                 StepperControl(
-                    value = String.format("%.1f", style.lineHeightMultiplier),
+                    value = formatOneDecimal(style.lineHeightMultiplier),
                     onMinus = { onStyleChanged(style.copy(lineHeightMultiplier = (style.lineHeightMultiplier - 0.1f).coerceAtLeast(1f))) },
                     onPlus = { onStyleChanged(style.copy(lineHeightMultiplier = (style.lineHeightMultiplier + 0.1f).coerceAtMost(2.5f))) },
                     buttonSize = btnSize,
@@ -643,7 +652,7 @@ private fun TimingOffsetSection(
                 fontWeight = FontWeight.Medium,
             )
             StepperControl(
-                value = String.format("%.1fs", style.timingOffsetMs / 1000f),
+                value = formatOneDecimal(style.timingOffsetMs / 1000f, suffix = "s"),
                 onMinus = { onStyleChanged(style.copy(timingOffsetMs = style.timingOffsetMs - 250L)) },
                 onPlus = { onStyleChanged(style.copy(timingOffsetMs = style.timingOffsetMs + 250L)) },
                 buttonSize = btnSize,
