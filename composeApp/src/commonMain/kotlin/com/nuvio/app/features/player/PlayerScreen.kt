@@ -103,7 +103,10 @@ fun PlayerScreen(
             val selectedAudio = audioTracks.firstOrNull { it.isSelected }
             if (selectedAudio != null) selectedAudioIndex = selectedAudio.index
             val selectedSub = subtitleTracks.firstOrNull { it.isSelected }
+            println("NuvioPlayer refreshTracks: useCustom=$useCustomSubtitles selectedAddonId=$selectedAddonSubtitleId selectedSubIdx=$selectedSubtitleIndex")
+            println("NuvioPlayer refreshTracks: found ${subtitleTracks.size} subtitle tracks, selectedTrack=${selectedSub?.index}")
             if (selectedSub != null && !useCustomSubtitles) selectedSubtitleIndex = selectedSub.index
+            println("NuvioPlayer refreshTracks: final selectedSubtitleIndex=$selectedSubtitleIndex")
         }
 
         fun showGestureMessage(message: String) {
@@ -357,16 +360,23 @@ fun PlayerScreen(
                 subtitleStyle = subtitleStyle,
                 onTabSelected = { activeSubtitleTab = it },
                 onBuiltInTrackSelected = { index ->
+                    println("NuvioPlayer onBuiltInTrackSelected: index=$index wasCustom=$useCustomSubtitles")
+                    val wasCustom = useCustomSubtitles
                     selectedSubtitleIndex = index
                     selectedAddonSubtitleId = null
                     useCustomSubtitles = false
-                    playerController?.clearExternalSubtitle()
-                    playerController?.selectSubtitleTrack(index)
+                    if (wasCustom) {
+                        playerController?.clearExternalSubtitleAndSelect(index)
+                    } else {
+                        playerController?.selectSubtitleTrack(index)
+                    }
                 },
                 onAddonSubtitleSelected = { addon ->
+                    println("NuvioPlayer onAddonSubtitleSelected: id=${addon.id} url=${addon.url} lang=${addon.language}")
                     selectedAddonSubtitleId = addon.id
                     selectedSubtitleIndex = -1
                     useCustomSubtitles = true
+                    println("NuvioPlayer onAddonSubtitleSelected: set useCustomSubtitles=true, calling setSubtitleUri")
                     playerController?.setSubtitleUri(addon.url)
                 },
                 onFetchAddonSubtitles = {

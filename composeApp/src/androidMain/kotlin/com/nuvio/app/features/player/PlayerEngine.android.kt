@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player
 
 import android.net.Uri
+import android.util.Log
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -26,6 +27,8 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
+private const val TAG = "NuvioPlayer"
+
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 actual fun PlatformPlayerSurface(
@@ -49,6 +52,8 @@ actual fun PlatformPlayerSurface(
         }
     }
 
+    val pendingSubtitleTrackIndex = remember { mutableListOf<Int>() }
+
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -56,8 +61,17 @@ actual fun PlatformPlayerSurface(
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                val stateName = when (playbackState) {
+                    Player.STATE_IDLE -> "IDLE"
+                    Player.STATE_BUFFERING -> "BUFFERING"
+                    Player.STATE_READY -> "READY"
+                    Player.STATE_ENDED -> "ENDED"
+                    else -> "UNKNOWN($playbackState)"
+                }
+                Log.d(TAG, "onPlaybackStateChanged: $stateName")
                 if (playbackState == Player.STATE_READY) {
                     latestOnError.value(null)
+                    exoPlayer.logCurrentTracks("STATE_READY")
                 }
                 latestOnSnapshot.value(exoPlayer.snapshot())
             }
@@ -67,6 +81,23 @@ actual fun PlatformPlayerSurface(
             }
 
             override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) {
+                latestOnSnapshot.value(exoPlayer.snapshot())
+            }
+
+            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                Log.d(TAG, "onTracksChanged: ${tracks.groups.size} groups total")
+                exoPlayer.logCurrentTracks("onTracksChanged")
+                if (pendingSubtitleTrackIndex.isNotEmpty() && tracks.groups.isNotEmpty()) {
+                    val idx = pendingSubtitleTrackIndex.removeAt(0)
+                    Log.d(TAG, "onTracksChanged: applying pending subtitle selection index=$idx")
+                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, idx < 0)
+                        .build()
+                    if (idx >= 0) {
+                        exoPlayer.selectTrackByIndex(C.TRACK_TYPE_TEXT, idx)
+                    }
+                }
                 latestOnSnapshot.value(exoPlayer.snapshot())
             }
         }
@@ -128,15 +159,23 @@ actual fun PlatformPlayerSurface(
                 override fun getAudioTracks(): List<AudioTrack> =
                     exoPlayer.extractAudioTracks()
 
-                override fun getSubtitleTracks(): List<SubtitleTrack> =
-                    exoPlayer.extractSubtitleTracks()
+                override fun getSubtitleTracks(): List<SubtitleTrack> {
+                    val tracks = exoPlayer.extractSubtitleTracks()
+                    Log.d(TAG, "getSubtitleTracks: found ${tracks.size} tracks")
+                    tracks.forEach { t ->
+                        Log.d(TAG, "  track idx=${t.index} id=${t.id} label='${t.label}' lang=${t.language} selected=${t.isSelected}")
+                    }
+                    return tracks
+                }
 
                 override fun selectAudioTrack(index: Int) {
                     exoPlayer.selectTrackByIndex(C.TRACK_TYPE_AUDIO, index)
                 }
 
                 override fun selectSubtitleTrack(index: Int) {
+                    Log.d(TAG, "selectSubtitleTrack: index=$index")
                     if (index < 0) {
+                        Log.d(TAG, "selectSubtitleTrack: disabling text tracks")
                         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                             .buildUpon()
                             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -148,30 +187,45 @@ actual fun PlatformPlayerSurface(
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                         .build()
                     exoPlayer.selectTrackByIndex(C.TRACK_TYPE_TEXT, index)
+                    Log.d(TAG, "selectSubtitleTrack: after selection, textDisabled=${exoPlayer.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)}")
+                    exoPlayer.logCurrentTracks("after selectSubtitleTrack")
                 }
 
                 override fun setSubtitleUri(url: String) {
+                    Log.d(TAG, "setSubtitleUri: url=$url")
+                    Log.d(TAG, "setSubtitleUri: mime=${guessSubtitleMime(url)}")
                     val currentPosition = exoPlayer.currentPosition
                     val wasPlaying = exoPlayer.isPlaying
-                    val currentMediaItem = exoPlayer.currentMediaItem ?: return
+                    val currentMediaItem = exoPlayer.currentMediaItem ?: run {
+                        Log.e(TAG, "setSubtitleUri: currentMediaItem is null, aborting")
+                        return
+                    }
+                    Log.d(TAG, "setSubtitleUri: currentPosition=$currentPosition, wasPlaying=$wasPlaying")
                     val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.parse(url))
                         .setMimeType(guessSubtitleMime(url))
                         .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
                         .setRoleFlags(C.ROLE_FLAG_SUBTITLE)
                         .build()
+                    Log.d(TAG, "setSubtitleUri: subtitleConfig built, uri=${subtitleConfig.uri}, mime=${subtitleConfig.mimeType}, selectionFlags=${subtitleConfig.selectionFlags}")
                     val newMediaItem = currentMediaItem.buildUpon()
                         .setSubtitleConfigurations(listOf(subtitleConfig))
                         .build()
-                    exoPlayer.setMediaItem(newMediaItem, currentPosition)
-                    exoPlayer.prepare()
-                    exoPlayer.playWhenReady = wasPlaying
+                    Log.d(TAG, "setSubtitleUri: newMediaItem subtitleConfigs count=${newMediaItem.localConfiguration?.subtitleConfigurations?.size}")
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                         .buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                        .setPreferredTextRoleFlags(C.ROLE_FLAG_SUBTITLE)
                         .build()
+                    Log.d(TAG, "setSubtitleUri: track params set before prepare, textDisabled=${exoPlayer.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)}")
+                    exoPlayer.setMediaItem(newMediaItem, currentPosition)
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = wasPlaying
+                    Log.d(TAG, "setSubtitleUri: prepare() called, waiting for STATE_READY")
                 }
 
                 override fun clearExternalSubtitle() {
+                    Log.d(TAG, "clearExternalSubtitle called")
                     val currentPosition = exoPlayer.currentPosition
                     val wasPlaying = exoPlayer.isPlaying
                     val currentMediaItem = exoPlayer.currentMediaItem ?: return
@@ -181,6 +235,23 @@ actual fun PlatformPlayerSurface(
                     exoPlayer.setMediaItem(newMediaItem, currentPosition)
                     exoPlayer.prepare()
                     exoPlayer.playWhenReady = wasPlaying
+                    Log.d(TAG, "clearExternalSubtitle: done, position=$currentPosition")
+                }
+
+                override fun clearExternalSubtitleAndSelect(trackIndex: Int) {
+                    Log.d(TAG, "clearExternalSubtitleAndSelect: trackIndex=$trackIndex")
+                    pendingSubtitleTrackIndex.clear()
+                    pendingSubtitleTrackIndex.add(trackIndex)
+                    val currentPosition = exoPlayer.currentPosition
+                    val wasPlaying = exoPlayer.isPlaying
+                    val currentMediaItem = exoPlayer.currentMediaItem ?: return
+                    val newMediaItem = currentMediaItem.buildUpon()
+                        .setSubtitleConfigurations(emptyList())
+                        .build()
+                    exoPlayer.setMediaItem(newMediaItem, currentPosition)
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = wasPlaying
+                    Log.d(TAG, "clearExternalSubtitleAndSelect: done, pending=$trackIndex position=$currentPosition")
                 }
             }
         )
@@ -271,20 +342,43 @@ private fun ExoPlayer.extractSubtitleTracks(): List<SubtitleTrack> {
 }
 
 private fun ExoPlayer.selectTrackByIndex(trackType: Int, targetIndex: Int) {
+    val typeName = if (trackType == C.TRACK_TYPE_AUDIO) "AUDIO" else "TEXT"
+    Log.d(TAG, "selectTrackByIndex: type=$typeName targetIndex=$targetIndex")
     var idx = 0
     for (group in currentTracks.groups) {
         if (group.type != trackType) continue
         if (idx == targetIndex) {
+            val format = group.mediaTrackGroup.getFormat(0)
+            Log.d(TAG, "selectTrackByIndex: found group at idx=$idx, format.id=${format.id}, lang=${format.language}, label=${format.label}")
             trackSelectionParameters = trackSelectionParameters
                 .buildUpon()
                 .setOverrideForType(
                     TrackSelectionOverride(group.mediaTrackGroup, listOf(0))
                 )
                 .build()
+            Log.d(TAG, "selectTrackByIndex: override applied")
             return
         }
         idx++
     }
+    Log.w(TAG, "selectTrackByIndex: no group found for type=$typeName at index=$targetIndex (total groups scanned=$idx)")
+}
+
+private fun ExoPlayer.logCurrentTracks(context: String) {
+    Log.d(TAG, "--- logCurrentTracks ($context) ---")
+    Log.d(TAG, "  textDisabled=${trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)}")
+    for (group in currentTracks.groups) {
+        val typeName = when (group.type) {
+            C.TRACK_TYPE_AUDIO -> "AUDIO"
+            C.TRACK_TYPE_TEXT -> "TEXT"
+            C.TRACK_TYPE_VIDEO -> "VIDEO"
+            else -> "OTHER(${group.type})"
+        }
+        if (group.type != C.TRACK_TYPE_TEXT && group.type != C.TRACK_TYPE_AUDIO) continue
+        val format = group.mediaTrackGroup.getFormat(0)
+        Log.d(TAG, "  group type=$typeName id=${format.id} lang=${format.language} label=${format.label} selected=${group.isSelected} supported=${group.isSupported}")
+    }
+    Log.d(TAG, "--- end logCurrentTracks ---")
 }
 
 private fun guessSubtitleMime(url: String): String {

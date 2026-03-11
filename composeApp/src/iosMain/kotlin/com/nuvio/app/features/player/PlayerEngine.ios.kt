@@ -33,6 +33,7 @@ actual fun PlatformPlayerSurface(
             override fun selectSubtitleTrack(index: Int) = Unit
             override fun setSubtitleUri(url: String) = Unit
             override fun clearExternalSubtitle() = Unit
+            override fun clearExternalSubtitleAndSelect(trackIndex: Int) = Unit
         }
     }
 
