@@ -22,7 +22,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.zIndex
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -183,14 +185,25 @@ fun App() {
                     }
                 },
             ) { innerPadding ->
-                AppScreen(
-                    tab = selectedTab,
-                    modifier = Modifier.padding(innerPadding),
-                    onCatalogClick = onCatalogClick,
-                    onPosterClick = { meta ->
-                        navController.navigate(DetailRoute(type = meta.type, id = meta.id))
-                    },
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                ) {
+                    AppScreenTab.entries.forEach { tab ->
+                        AppScreen(
+                            tab = tab,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .alpha(if (selectedTab == tab) 1f else 0f)
+                                .zIndex(if (selectedTab == tab) 1f else 0f),
+                            onCatalogClick = onCatalogClick,
+                            onPosterClick = { meta ->
+                                navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                            },
+                        )
+                    }
+                }
             }
 
             NavHost(
