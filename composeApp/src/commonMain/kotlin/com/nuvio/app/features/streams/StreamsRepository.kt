@@ -83,7 +83,10 @@ object StreamsRepository {
             val jobs = streamAddons.map { manifest ->
                 async {
                     val encodedId = videoId.encodeForPath()
-                    val url = "${manifest.transportUrl}/stream/$type/$encodedId.json"
+                    val baseUrl = manifest.transportUrl
+                        .substringBefore("?")
+                        .removeSuffix("/manifest.json")
+                    val url = "$baseUrl/stream/$type/$encodedId.json"
                     log.d { "Fetching streams from: $url" }
 
                     runCatching {

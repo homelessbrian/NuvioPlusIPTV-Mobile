@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
@@ -24,9 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.zIndex
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -42,6 +38,8 @@ import com.nuvio.app.features.details.MetaDetailsScreen
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.player.PlayerRoute
+import com.nuvio.app.features.player.PlayerScreen
 import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.streams.StreamsRepository
@@ -187,30 +185,16 @@ fun App() {
                     }
                 },
             ) { innerPadding ->
-                Box(
+                AppScreen(
+                    tab = selectedTab,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding),
-                ) {
-                    AppScreenTab.entries.forEach { tab ->
-                        val tabAlpha by animateFloatAsState(
-                            targetValue = if (selectedTab == tab) 1f else 0f,
-                            animationSpec = tween(durationMillis = 220),
-                            label = "tab_alpha_${tab.name}",
-                        )
-                        AppScreen(
-                            tab = tab,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .alpha(tabAlpha)
-                                .zIndex(if (selectedTab == tab) 1f else 0f),
-                            onCatalogClick = onCatalogClick,
-                            onPosterClick = { meta ->
-                                navController.navigate(DetailRoute(type = meta.type, id = meta.id))
-                            },
-                        )
-                    }
-                }
+                    onCatalogClick = onCatalogClick,
+                    onPosterClick = { meta ->
+                        navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                    },
+                )
             }
 
             NavHost(
@@ -247,10 +231,48 @@ fun App() {
                         episodeNumber = route.episodeNumber,
                         episodeTitle = route.episodeTitle,
                         episodeThumbnail = route.episodeThumbnail,
+                        onStreamSelected = { stream ->
+                            val sourceUrl = stream.directPlaybackUrl
+                            if (sourceUrl != null) {
+                                navController.navigate(
+                                    PlayerRoute(
+                                        title = route.title,
+                                        sourceUrl = sourceUrl,
+                                        logo = route.logo,
+                                        poster = route.poster,
+                                        background = route.background,
+                                        seasonNumber = route.seasonNumber,
+                                        episodeNumber = route.episodeNumber,
+                                        episodeTitle = route.episodeTitle,
+                                        streamTitle = stream.streamLabel,
+                                        streamSubtitle = stream.streamSubtitle,
+                                        providerName = stream.addonName,
+                                    )
+                                )
+                            }
+                        },
                         onBack = {
                             StreamsRepository.clear()
                             navController.popBackStack()
                         },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                composable<PlayerRoute> { backStackEntry ->
+                    val route = backStackEntry.toRoute<PlayerRoute>()
+                    PlayerScreen(
+                        title = route.title,
+                        sourceUrl = route.sourceUrl,
+                        logo = route.logo,
+                        poster = route.poster,
+                        background = route.background,
+                        seasonNumber = route.seasonNumber,
+                        episodeNumber = route.episodeNumber,
+                        episodeTitle = route.episodeTitle,
+                        streamTitle = route.streamTitle,
+                        streamSubtitle = route.streamSubtitle,
+                        providerName = route.providerName,
+                        onBack = { navController.popBackStack() },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

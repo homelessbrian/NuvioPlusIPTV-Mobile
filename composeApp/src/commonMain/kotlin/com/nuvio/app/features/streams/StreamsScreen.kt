@@ -75,6 +75,7 @@ fun StreamsScreen(
     episodeNumber: Int? = null,
     episodeTitle: String? = null,
     episodeThumbnail: String? = null,
+    onStreamSelected: (StreamItem) -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -166,6 +167,7 @@ fun StreamsScreen(
 
                     StreamList(
                         uiState = uiState,
+                        onStreamSelected = onStreamSelected,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -414,6 +416,7 @@ private fun FilterChip(
 @Composable
 private fun StreamList(
     uiState: StreamsUiState,
+    onStreamSelected: (StreamItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val filteredGroups = uiState.filteredGroups
@@ -444,7 +447,11 @@ private fun StreamList(
 
             else -> {
                 filteredGroups.forEach { group ->
-                    streamSection(group = group, showHeader = uiState.selectedFilter == null)
+                    streamSection(
+                        group = group,
+                        showHeader = uiState.selectedFilter == null,
+                        onStreamSelected = onStreamSelected,
+                    )
                 }
                 if (anyLoading) {
                     item {
@@ -462,6 +469,7 @@ private fun StreamList(
 private fun LazyListScope.streamSection(
     group: AddonStreamGroup,
     showHeader: Boolean,
+    onStreamSelected: (StreamItem) -> Unit,
 ) {
     if (group.streams.isEmpty() && !group.isLoading) return
 
@@ -478,7 +486,14 @@ private fun LazyListScope.streamSection(
         items = group.streams,
         key = { stream -> "${group.addonId}_${stream.url ?: stream.infoHash ?: stream.streamLabel}" },
     ) { stream ->
-        StreamCard(stream = stream)
+        StreamCard(
+            stream = stream,
+            onClick = {
+                if (stream.directPlaybackUrl != null) {
+                    onStreamSelected(stream)
+                }
+            },
+        )
         Spacer(modifier = Modifier.height(10.dp))
     }
 }
@@ -533,14 +548,17 @@ private fun StreamSectionHeader(
 @Composable
 private fun StreamCard(
     stream: StreamItem,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isEnabled = stream.directPlaybackUrl != null
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 68.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .clickable(enabled = isEnabled, onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.Top,
     ) {

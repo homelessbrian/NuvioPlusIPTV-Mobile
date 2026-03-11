@@ -17,6 +17,9 @@ data class StreamItem(
     val streamSubtitle: String?
         get() = description
 
+    val directPlaybackUrl: String?
+        get() = url ?: externalUrl
+
     val hasPlayableSource: Boolean
         get() = url != null || infoHash != null || externalUrl != null
 }
