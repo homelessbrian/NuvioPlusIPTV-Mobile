@@ -17,6 +17,7 @@ import com.nuvio.app.features.home.components.HomeSkeletonRow
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
+    onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
 ) {
     LaunchedEffect(Unit) {
@@ -80,9 +81,16 @@ fun HomeScreen(
                     count = homeUiState.sections.size,
                     key = { index -> homeUiState.sections[index].key },
                 ) { index ->
+                    val section = homeUiState.sections[index]
                     HomeCatalogRowSection(
-                        section = homeUiState.sections[index],
+                        section = section,
+                        entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
                         modifier = Modifier.padding(bottom = 12.dp),
+                        onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
+                            onCatalogClick?.let { { it(section) } }
+                        } else {
+                            null
+                        },
                         onPosterClick = onPosterClick,
                     )
                 }
@@ -90,3 +98,5 @@ fun HomeScreen(
         }
     }
 }
+
+private const val HOME_CATALOG_PREVIEW_LIMIT = 18

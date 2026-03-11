@@ -1,0 +1,113 @@
+package com.nuvio.app.features.catalog
+
+import com.nuvio.app.features.addons.AddonCatalog
+import com.nuvio.app.features.addons.httpGetText
+import com.nuvio.app.features.home.HomeCatalogParser
+import com.nuvio.app.features.home.MetaPreview
+
+const val CATALOG_PAGE_SIZE = 100
+
+data class CatalogPage(
+    val items: List<MetaPreview>,
+    val nextSkip: Int?,
+)
+
+suspend fun fetchCatalogPage(
+    manifestUrl: String,
+    type: String,
+    catalogId: String,
+    genre: String? = null,
+    search: String? = null,
+    skip: Int? = null,
+): CatalogPage {
+    val payload = httpGetText(
+        buildCatalogUrl(
+            manifestUrl = manifestUrl,
+            type = type,
+            catalogId = catalogId,
+            genre = genre,
+            search = search,
+            skip = skip,
+        ),
+    )
+    val items = HomeCatalogParser.parseCatalog(payload)
+    val nextSkip = if (items.size >= CATALOG_PAGE_SIZE) {
+        (skip ?: 0) + CATALOG_PAGE_SIZE
+    } else {
+        null
+    }
+    return CatalogPage(
+        items = items,
+        nextSkip = nextSkip,
+    )
+}
+
+fun AddonCatalog.supportsPagination(): Boolean =
+    extra.any { property -> property.name == "skip" }
+
+fun mergeCatalogItems(
+    existing: List<MetaPreview>,
+    incoming: List<MetaPreview>,
+): List<MetaPreview> {
+    if (incoming.isEmpty()) return existing
+    val seen = existing.mapTo(mutableSetOf()) { item -> "${item.type}:${item.id}" }
+    return buildList(existing.size + incoming.size) {
+        addAll(existing)
+        incoming.forEach { item ->
+            val key = "${item.type}:${item.id}"
+            if (seen.add(key)) {
+                add(item)
+            }
+        }
+    }
+}
+
+private fun buildCatalogUrl(
+    manifestUrl: String,
+    type: String,
+    catalogId: String,
+    genre: String?,
+    search: String?,
+    skip: Int?,
+): String {
+    val baseUrl = manifestUrl
+        .substringBefore("?")
+        .removeSuffix("/manifest.json")
+
+    val extraParts = buildList {
+        if (!search.isNullOrBlank()) add("search=${search.encodeCatalogExtra()}")
+        if (!genre.isNullOrBlank()) add("genre=${genre.encodeCatalogExtra()}")
+        if (skip != null && skip > 0) add("skip=$skip")
+    }
+
+    return if (extraParts.isEmpty()) {
+        "$baseUrl/catalog/$type/$catalogId.json"
+    } else {
+        "$baseUrl/catalog/$type/$catalogId/${extraParts.joinToString(separator = "&")}.json"
+    }
+}
+
+private fun String.encodeCatalogExtra(): String =
+    buildString {
+        encodeToByteArray().forEach { byte ->
+            val value = byte.toInt() and 0xFF
+            val char = value.toChar()
+            if (
+                char in 'a'..'z' ||
+                char in 'A'..'Z' ||
+                char in '0'..'9' ||
+                char == '-' ||
+                char == '_' ||
+                char == '.' ||
+                char == '~'
+            ) {
+                append(char)
+            } else {
+                append('%')
+                append(HEX[value shr 4])
+                append(HEX[value and 0x0F])
+            }
+        }
+    }
+
+private val HEX = "0123456789ABCDEF"

@@ -1,9 +1,11 @@
 package com.nuvio.app.features.search
 
 import com.nuvio.app.features.addons.AddonCatalog
+import com.nuvio.app.features.addons.AddonExtraProperty
 import com.nuvio.app.features.addons.ManagedAddon
-import com.nuvio.app.features.addons.httpGetText
-import com.nuvio.app.features.home.HomeCatalogParser
+import com.nuvio.app.features.catalog.fetchCatalogPage
+import com.nuvio.app.features.catalog.mergeCatalogItems
+import com.nuvio.app.features.catalog.supportsPagination
 import com.nuvio.app.features.home.HomeCatalogSection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,9 +22,13 @@ object SearchRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+    private val _discoverUiState = MutableStateFlow(DiscoverUiState())
+    val discoverUiState: StateFlow<DiscoverUiState> = _discoverUiState.asStateFlow()
 
     private var activeJob: Job? = null
+    private var activeDiscoverJob: Job? = null
     private var lastRequestKey: String? = null
+    private var discoverSources: List<DiscoverCatalogOption> = emptyList()
 
     fun search(query: String, addons: List<ManagedAddon>) {
         val normalizedQuery = query.trim()
@@ -101,6 +107,126 @@ object SearchRepository {
         _uiState.value = SearchUiState()
     }
 
+    fun refreshDiscover(addons: List<ManagedAddon>) {
+        val activeAddons = addons.filter { it.manifest != null }
+        if (activeAddons.isEmpty()) {
+            activeDiscoverJob?.cancel()
+            discoverSources = emptyList()
+            _discoverUiState.value = DiscoverUiState(
+                emptyStateReason = DiscoverEmptyStateReason.NoActiveAddons,
+            )
+            return
+        }
+
+        val sources = buildDiscoverSources(activeAddons)
+        discoverSources = sources
+        if (sources.isEmpty()) {
+            activeDiscoverJob?.cancel()
+            _discoverUiState.value = DiscoverUiState(
+                emptyStateReason = DiscoverEmptyStateReason.NoDiscoverCatalogs,
+            )
+            return
+        }
+
+        val current = _discoverUiState.value
+        val typeOptions = sources.map { it.type }.distinct().sortedBy { it.typeSortKey() }
+        val selectedType = current.selectedType
+            ?.takeIf { type -> typeOptions.contains(type) }
+            ?: typeOptions.first()
+        val catalogOptions = sources.filter { it.type == selectedType }
+        val selectedCatalog = catalogOptions.firstOrNull { it.key == current.selectedCatalogKey } ?: catalogOptions.first()
+        val selectedGenre = selectedCatalog.resolveGenreSelection(current.selectedGenre)
+
+        _discoverUiState.value = DiscoverUiState(
+            typeOptions = typeOptions,
+            selectedType = selectedType,
+            catalogOptions = catalogOptions,
+            selectedCatalogKey = selectedCatalog.key,
+            selectedGenre = selectedGenre,
+            items = emptyList(),
+            isLoading = false,
+            nextSkip = null,
+            emptyStateReason = null,
+            errorMessage = null,
+        )
+
+        loadDiscoverFeed(reset = true)
+    }
+
+    fun selectDiscoverType(type: String) {
+        val current = _discoverUiState.value
+        if (current.selectedType == type) return
+
+        val catalogOptions = discoverSources.filter { it.type == type }
+        val selectedCatalog = catalogOptions.firstOrNull() ?: run {
+            _discoverUiState.value = current.copy(
+                selectedType = type,
+                catalogOptions = emptyList(),
+                selectedCatalogKey = null,
+                selectedGenre = null,
+                items = emptyList(),
+                isLoading = false,
+                nextSkip = null,
+                emptyStateReason = DiscoverEmptyStateReason.NoDiscoverCatalogs,
+                errorMessage = null,
+            )
+            return
+        }
+
+        _discoverUiState.value = current.copy(
+            selectedType = type,
+            catalogOptions = catalogOptions,
+            selectedCatalogKey = selectedCatalog.key,
+            selectedGenre = selectedCatalog.resolveGenreSelection(null),
+            items = emptyList(),
+            isLoading = false,
+            nextSkip = null,
+            emptyStateReason = null,
+            errorMessage = null,
+        )
+        loadDiscoverFeed(reset = true)
+    }
+
+    fun selectDiscoverCatalog(catalogKey: String) {
+        val current = _discoverUiState.value
+        if (current.selectedCatalogKey == catalogKey) return
+
+        val selectedCatalog = current.catalogOptions.firstOrNull { it.key == catalogKey } ?: return
+        _discoverUiState.value = current.copy(
+            selectedCatalogKey = selectedCatalog.key,
+            selectedGenre = selectedCatalog.resolveGenreSelection(null),
+            items = emptyList(),
+            isLoading = false,
+            nextSkip = null,
+            emptyStateReason = null,
+            errorMessage = null,
+        )
+        loadDiscoverFeed(reset = true)
+    }
+
+    fun selectDiscoverGenre(genre: String?) {
+        val current = _discoverUiState.value
+        val selectedCatalog = current.selectedCatalog ?: return
+        val normalizedGenre = selectedCatalog.resolveGenreSelection(genre)
+        if (current.selectedGenre == normalizedGenre) return
+
+        _discoverUiState.value = current.copy(
+            selectedGenre = normalizedGenre,
+            items = emptyList(),
+            isLoading = false,
+            nextSkip = null,
+            emptyStateReason = null,
+            errorMessage = null,
+        )
+        loadDiscoverFeed(reset = true)
+    }
+
+    fun loadMoreDiscover() {
+        val current = _discoverUiState.value
+        if (current.isLoading || current.nextSkip == null) return
+        loadDiscoverFeed(reset = false)
+    }
+
     private fun buildSearchRequests(
         addons: List<ManagedAddon>,
         query: String,
@@ -118,20 +244,45 @@ object SearchRepository {
                         catalogName = catalog.name,
                         type = catalog.type,
                         query = query,
+                        supportsPagination = catalog.supportsPagination(),
                     )
                 }
         }
 
+    private fun buildDiscoverSources(addons: List<ManagedAddon>): List<DiscoverCatalogOption> =
+        addons.mapNotNull { addon ->
+            val manifest = addon.manifest ?: return@mapNotNull null
+            addon to manifest
+        }.flatMap { (addon, manifest) ->
+            manifest.catalogs
+                .filter { catalog -> catalog.supportsDiscover() }
+                .map { catalog ->
+                    val genreExtra = catalog.genreExtra()
+                    DiscoverCatalogOption(
+                        key = "${manifest.id}:${catalog.type}:${catalog.id}",
+                        addonName = manifest.name,
+                        manifestUrl = addon.manifestUrl,
+                        type = catalog.type,
+                        catalogId = catalog.id,
+                        catalogName = catalog.name,
+                        genreOptions = genreExtra?.options.orEmpty(),
+                        genreRequired = genreExtra?.isRequired == true,
+                        supportsPagination = catalog.supportsPagination(),
+                    )
+                }
+        }.sortedWith(
+            compareBy<DiscoverCatalogOption>({ it.type.typeSortKey() }, { it.addonName.lowercase() }, { it.catalogName.lowercase() }),
+        )
+
     private suspend fun SearchCatalogRequest.toSection(): HomeCatalogSection {
         val manifest = requireNotNull(addon.manifest)
-        val catalogUrl = buildSearchCatalogUrl(
+        val page = fetchCatalogPage(
             manifestUrl = manifest.transportUrl,
             type = type,
             catalogId = catalogId,
-            query = query,
+            search = query,
         )
-        val payload = httpGetText(catalogUrl)
-        val items = HomeCatalogParser.parseCatalog(payload)
+        val items = page.items
         require(items.isNotEmpty()) { "No search results returned for $catalogName." }
 
         return HomeCatalogSection(
@@ -143,7 +294,67 @@ object SearchRepository {
             manifestUrl = manifest.transportUrl,
             catalogId = catalogId,
             items = items,
+            supportsPagination = supportsPagination,
         )
+    }
+
+    private fun loadDiscoverFeed(reset: Boolean) {
+        activeDiscoverJob?.cancel()
+        val current = _discoverUiState.value
+        val selectedCatalog = current.selectedCatalog ?: return
+        val requestedSkip = if (reset) 0 else current.nextSkip ?: return
+
+        _discoverUiState.value = current.copy(
+            isLoading = true,
+            items = if (reset) emptyList() else current.items,
+            nextSkip = if (reset) null else current.nextSkip,
+            emptyStateReason = null,
+            errorMessage = null,
+        )
+
+        activeDiscoverJob = scope.launch {
+            runCatching {
+                fetchCatalogPage(
+                    manifestUrl = selectedCatalog.manifestUrl,
+                    type = selectedCatalog.type,
+                    catalogId = selectedCatalog.catalogId,
+                    genre = current.selectedGenre,
+                    skip = requestedSkip.takeIf { it > 0 },
+                )
+            }.fold(
+                onSuccess = { page ->
+                    val latest = _discoverUiState.value
+                    if (latest.selectedCatalogKey != selectedCatalog.key || latest.selectedGenre != current.selectedGenre) {
+                        return@fold
+                    }
+                    val mergedItems = if (reset) {
+                        page.items
+                    } else {
+                        mergeCatalogItems(latest.items, page.items)
+                    }
+                    _discoverUiState.value = latest.copy(
+                        items = mergedItems,
+                        isLoading = false,
+                        nextSkip = if (selectedCatalog.supportsPagination) page.nextSkip else null,
+                        emptyStateReason = if (mergedItems.isEmpty()) DiscoverEmptyStateReason.NoResults else null,
+                        errorMessage = null,
+                    )
+                },
+                onFailure = { error ->
+                    val latest = _discoverUiState.value
+                    if (latest.selectedCatalogKey != selectedCatalog.key || latest.selectedGenre != current.selectedGenre) {
+                        return@fold
+                    }
+                    _discoverUiState.value = latest.copy(
+                        items = if (reset) emptyList() else latest.items,
+                        isLoading = false,
+                        nextSkip = null,
+                        emptyStateReason = DiscoverEmptyStateReason.RequestFailed,
+                        errorMessage = error.message ?: "Unable to load discover items.",
+                    )
+                },
+            )
+        }
     }
 }
 
@@ -153,50 +364,48 @@ private data class SearchCatalogRequest(
     val catalogName: String,
     val type: String,
     val query: String,
+    val supportsPagination: Boolean,
 )
 
 private fun AddonCatalog.supportsSearch(): Boolean =
     extra.any { property -> property.name == "search" } &&
         extra.none { property -> property.isRequired && property.name != "search" }
 
-private fun buildSearchCatalogUrl(
-    manifestUrl: String,
-    type: String,
-    catalogId: String,
-    query: String,
-): String {
-    val baseUrl = manifestUrl
-        .substringBefore("?")
-        .removeSuffix("/manifest.json")
-    return "$baseUrl/catalog/$type/$catalogId/search=${query.encodeForSearchExtra()}.json"
+private fun AddonCatalog.supportsDiscover(): Boolean {
+    if (extra.any { property -> property.name == "search" && property.isRequired }) {
+        return false
+    }
+
+    return extra.none { property ->
+        when (property.name) {
+            "genre" -> property.isRequired && property.options.isEmpty()
+            "skip" -> false
+            "search" -> false
+            else -> property.isRequired
+        }
+    }
 }
+
+private fun AddonCatalog.genreExtra(): AddonExtraProperty? =
+    extra.firstOrNull { property -> property.name == "genre" }
+
+private fun DiscoverCatalogOption.resolveGenreSelection(requestedGenre: String?): String? =
+    when {
+        genreOptions.isEmpty() -> null
+        requestedGenre != null && genreOptions.contains(requestedGenre) -> requestedGenre
+        genreRequired -> genreOptions.firstOrNull()
+        else -> null
+    }
 
 private fun String.displayLabel(): String =
     replaceFirstChar { char ->
         if (char.isLowerCase()) char.titlecase() else char.toString()
     }
 
-private fun String.encodeForSearchExtra(): String =
-    buildString {
-        encodeToByteArray().forEach { byte ->
-            val value = byte.toInt() and 0xFF
-            val char = value.toChar()
-            if (
-                char in 'a'..'z' ||
-                char in 'A'..'Z' ||
-                char in '0'..'9' ||
-                char == '-' ||
-                char == '_' ||
-                char == '.' ||
-                char == '~'
-            ) {
-                append(char)
-            } else {
-                append('%')
-                append(HEX[value shr 4])
-                append(HEX[value and 0x0F])
-            }
-        }
+private fun String.typeSortKey(): String =
+    when (lowercase()) {
+        "movie" -> "0_movie"
+        "series" -> "1_series"
+        "anime" -> "2_anime"
+        else -> "9_$this"
     }
-
-private val HEX = "0123456789ABCDEF"

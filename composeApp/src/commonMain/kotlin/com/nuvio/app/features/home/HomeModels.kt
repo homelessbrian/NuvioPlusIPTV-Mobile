@@ -1,6 +1,7 @@
 package com.nuvio.app.features.home
 
 import com.nuvio.app.features.addons.ManagedAddon
+import com.nuvio.app.features.catalog.CATALOG_PAGE_SIZE
 
 data class MetaPreview(
     val id: String,
@@ -29,7 +30,11 @@ data class HomeCatalogSection(
     val manifestUrl: String,
     val catalogId: String,
     val items: List<MetaPreview>,
+    val supportsPagination: Boolean = false,
 )
+
+fun HomeCatalogSection.canOpenCatalog(previewLimit: Int): Boolean =
+    items.size > previewLimit || (supportsPagination && items.size >= CATALOG_PAGE_SIZE)
 
 data class HomeUiState(
     val isLoading: Boolean = false,
@@ -42,4 +47,5 @@ internal data class CatalogRequest(
     val catalogId: String,
     val catalogName: String,
     val type: String,
+    val supportsPagination: Boolean,
 )

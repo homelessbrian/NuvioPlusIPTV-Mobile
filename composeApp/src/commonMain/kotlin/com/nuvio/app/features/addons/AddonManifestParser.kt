@@ -71,6 +71,8 @@ internal object AddonManifestParser {
                         AddonExtraProperty(
                             name = name,
                             isRequired = extraElement.jsonObject.boolean("isRequired"),
+                            options = extraElement.jsonObject.stringList("options"),
+                            optionsLimit = extraElement.jsonObject.int("optionsLimit"),
                         )
                     }
                 },
@@ -104,4 +106,7 @@ internal object AddonManifestParser {
 
     private fun JsonObject.boolean(name: String): Boolean =
         this[name]?.jsonPrimitive?.booleanOrNull == true
+
+    private fun JsonObject.int(name: String): Int? =
+        this[name]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
 }

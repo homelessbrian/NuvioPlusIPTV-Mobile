@@ -32,8 +32,11 @@ import coil3.compose.setSingletonImageLoaderFactory
 import coil3.request.crossfade
 import com.nuvio.app.core.ui.NuvioTheme
 import com.nuvio.app.features.addons.AddonsScreen
+import com.nuvio.app.features.catalog.CatalogRepository
+import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaDetailsScreen
+import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.search.SearchScreen
@@ -61,6 +64,17 @@ data class StreamRoute(
     val episodeThumbnail: String? = null,
 )
 
+@Serializable
+data class CatalogRoute(
+    val title: String,
+    val subtitle: String,
+    val manifestUrl: String,
+    val type: String,
+    val catalogId: String,
+    val supportsPagination: Boolean = false,
+    val genre: String? = null,
+)
+
 enum class AppScreenTab {
     Home,
     Search,
@@ -71,11 +85,13 @@ enum class AppScreenTab {
 fun AppScreen(
     tab: AppScreenTab,
     modifier: Modifier = Modifier,
+    onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
 ) {
     when (tab) {
         AppScreenTab.Home -> HomeScreen(
             modifier = modifier,
+            onCatalogClick = onCatalogClick,
             onPosterClick = onPosterClick,
         )
         AppScreenTab.Search -> SearchScreen(
@@ -117,6 +133,19 @@ fun App() {
                 )
             }
 
+        val onCatalogClick: (HomeCatalogSection) -> Unit = { section ->
+            navController.navigate(
+                CatalogRoute(
+                    title = section.title,
+                    subtitle = section.subtitle,
+                    manifestUrl = section.manifestUrl,
+                    type = section.type,
+                    catalogId = section.catalogId,
+                    supportsPagination = section.supportsPagination,
+                ),
+            )
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -155,6 +184,7 @@ fun App() {
                 AppScreen(
                     tab = selectedTab,
                     modifier = Modifier.padding(innerPadding),
+                    onCatalogClick = onCatalogClick,
                     onPosterClick = { meta ->
                         navController.navigate(DetailRoute(type = meta.type, id = meta.id))
                     },
@@ -198,6 +228,26 @@ fun App() {
                         onBack = {
                             StreamsRepository.clear()
                             navController.popBackStack()
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                composable<CatalogRoute> { backStackEntry ->
+                    val route = backStackEntry.toRoute<CatalogRoute>()
+                    CatalogScreen(
+                        title = route.title,
+                        subtitle = route.subtitle,
+                        manifestUrl = route.manifestUrl,
+                        type = route.type,
+                        catalogId = route.catalogId,
+                        supportsPagination = route.supportsPagination,
+                        genre = route.genre,
+                        onBack = {
+                            CatalogRepository.clear()
+                            navController.popBackStack()
+                        },
+                        onPosterClick = { meta ->
+                            navController.navigate(DetailRoute(type = meta.type, id = meta.id))
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

@@ -12,12 +12,13 @@ import com.nuvio.app.features.home.MetaPreview
 fun HomeCatalogRowSection(
     section: HomeCatalogSection,
     modifier: Modifier = Modifier,
+    entries: List<MetaPreview> = section.items,
     onViewAllClick: (() -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
 ) {
     NuvioShelfSection(
         title = section.title,
-        entries = section.items,
+        entries = entries,
         modifier = modifier,
         headerHorizontalPadding = 16.dp,
         rowContentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),

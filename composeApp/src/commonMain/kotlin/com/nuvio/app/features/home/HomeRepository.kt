@@ -1,7 +1,8 @@
 package com.nuvio.app.features.home
 
 import com.nuvio.app.features.addons.ManagedAddon
-import com.nuvio.app.features.addons.httpGetText
+import com.nuvio.app.features.catalog.fetchCatalogPage
+import com.nuvio.app.features.catalog.supportsPagination
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -70,19 +71,19 @@ object HomeRepository {
                         catalogId = catalog.id,
                         catalogName = catalog.name,
                         type = catalog.type,
+                        supportsPagination = catalog.supportsPagination(),
                     )
                 }
         }
 
     private suspend fun CatalogRequest.toSection(): HomeCatalogSection {
         val manifest = requireNotNull(addon.manifest)
-        val catalogUrl = buildCatalogUrl(
+        val page = fetchCatalogPage(
             manifestUrl = manifest.transportUrl,
             type = type,
             catalogId = catalogId,
         )
-        val payload = httpGetText(catalogUrl)
-        val items = HomeCatalogParser.parseCatalog(payload)
+        val items = page.items
         require(items.isNotEmpty()) { "No feed items returned for $catalogName." }
 
         return HomeCatalogSection(
@@ -94,19 +95,9 @@ object HomeRepository {
             manifestUrl = manifest.transportUrl,
             catalogId = catalogId,
             items = items,
+            supportsPagination = supportsPagination,
         )
     }
-}
-
-private fun buildCatalogUrl(
-    manifestUrl: String,
-    type: String,
-    catalogId: String,
-): String {
-    val baseUrl = manifestUrl
-        .substringBefore("?")
-        .removeSuffix("/manifest.json")
-    return "$baseUrl/catalog/$type/$catalogId.json"
 }
 
 private fun String.displayLabel(): String =

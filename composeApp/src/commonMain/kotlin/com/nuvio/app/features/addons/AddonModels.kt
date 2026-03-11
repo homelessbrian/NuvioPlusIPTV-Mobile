@@ -29,6 +29,8 @@ data class AddonCatalog(
 data class AddonExtraProperty(
     val name: String,
     val isRequired: Boolean = false,
+    val options: List<String> = emptyList(),
+    val optionsLimit: Int? = null,
 )
 
 data class AddonBehaviorHints(
