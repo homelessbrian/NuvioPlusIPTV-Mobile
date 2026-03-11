@@ -31,7 +31,6 @@ import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.request.crossfade
 import com.nuvio.app.core.ui.NuvioTheme
-import com.nuvio.app.features.addons.AddonsScreen
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -76,9 +75,6 @@ data class CatalogRoute(
     val genre: String? = null,
 )
 
-@Serializable
-object AddonsRoute
-
 enum class AppScreenTab {
     Home,
     Search,
@@ -91,7 +87,6 @@ fun AppScreen(
     modifier: Modifier = Modifier,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
-    onAddonsClick: (() -> Unit)? = null,
 ) {
     when (tab) {
         AppScreenTab.Home -> HomeScreen(
@@ -105,7 +100,6 @@ fun AppScreen(
         )
         AppScreenTab.Settings -> SettingsScreen(
             modifier = modifier,
-            onAddonsClick = { onAddonsClick?.invoke() },
         )
     }
 }
@@ -196,9 +190,6 @@ fun App() {
                     onPosterClick = { meta ->
                         navController.navigate(DetailRoute(type = meta.type, id = meta.id))
                     },
-                    onAddonsClick = {
-                        navController.navigate(AddonsRoute)
-                    },
                 )
             }
 
@@ -260,13 +251,6 @@ fun App() {
                         onPosterClick = { meta ->
                             navController.navigate(DetailRoute(type = meta.type, id = meta.id))
                         },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                composable<AddonsRoute> {
-                    AddonsScreen(
-                        title = "Addons",
-                        onBack = { navController.popBackStack() },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

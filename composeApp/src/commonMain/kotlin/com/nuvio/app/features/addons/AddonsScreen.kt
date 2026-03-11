@@ -52,8 +52,26 @@ import kotlinx.coroutines.launch
 @Composable
 fun AddonsScreen(
     modifier: Modifier = Modifier,
-    title: String = "Content & Discovery",
+    title: String = "Addons",
     onBack: (() -> Unit)? = null,
+) {
+    NuvioScreen(modifier = modifier) {
+        stickyHeader {
+            NuvioScreenHeader(
+                title = title,
+                onBack = onBack,
+            ) {
+            }
+        }
+        item {
+            AddonsSettingsPageContent()
+        }
+    }
+}
+
+@Composable
+internal fun AddonsSettingsPageContent(
+    modifier: Modifier = Modifier,
 ) {
     LaunchedEffect(Unit) {
         AddonRepository.initialize()
@@ -75,74 +93,67 @@ fun AddonsScreen(
     }
     val overview = remember(sortedAddons) { sortedAddons.toOverview() }
 
-    NuvioScreen(modifier = modifier) {
-        stickyHeader {
-            NuvioScreenHeader(
-                title = title,
-                onBack = onBack,
-            ) {
-                NuvioIconActionButton(
-                    icon = Icons.Rounded.SwapVert,
-                    contentDescription = if (sortAscending) "Sort descending" else "Sort ascending",
-                    onClick = { sortAscending = !sortAscending },
-                )
-                NuvioIconActionButton(
-                    icon = Icons.Rounded.Refresh,
-                    contentDescription = "Refresh all addons",
-                    onClick = { AddonRepository.refreshAll() },
-                )
-            }
-        }
-
-        item { SectionHeader("OVERVIEW") }
-        item { OverviewCard(overview = overview) }
-
-        item { SectionHeader("ADD ADDON") }
-        item {
-            AddAddonCard(
-                addonUrl = addonUrl,
-                formMessage = formMessage,
-                onAddonUrlChange = {
-                    addonUrl = it
-                    formMessage = null
-                },
-                onAddClick = {
-                    val requestedUrl = addonUrl.trim()
-                    if (requestedUrl.isBlank()) {
-                        formMessage = "Enter an addon URL."
-                        return@AddAddonCard
-                    }
-
-                    formMessage = null
-                    installModalState = AddonInstallModalState.Checking
-                    coroutineScope.launch {
-                        val result = AddonRepository.addAddon(requestedUrl)
-                        installModalState = when (result) {
-                            is AddAddonResult.Success -> {
-                                addonUrl = ""
-                                AddonInstallModalState.Success(result.manifest.name)
-                            }
-
-                            is AddAddonResult.Error -> {
-                                AddonInstallModalState.Error(result.message)
-                            }
-                        }
-                    }
-                },
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SectionHeader("OVERVIEW")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            NuvioIconActionButton(
+                icon = Icons.Rounded.SwapVert,
+                contentDescription = if (sortAscending) "Sort descending" else "Sort ascending",
+                onClick = { sortAscending = !sortAscending },
+            )
+            NuvioIconActionButton(
+                icon = Icons.Rounded.Refresh,
+                contentDescription = "Refresh all addons",
+                onClick = { AddonRepository.refreshAll() },
             )
         }
 
-        item { SectionHeader("INSTALLED ADDONS") }
+        OverviewCard(overview = overview)
 
+        SectionHeader("ADD ADDON")
+        AddAddonCard(
+            addonUrl = addonUrl,
+            formMessage = formMessage,
+            onAddonUrlChange = {
+                addonUrl = it
+                formMessage = null
+            },
+            onAddClick = {
+                val requestedUrl = addonUrl.trim()
+                if (requestedUrl.isBlank()) {
+                    formMessage = "Enter an addon URL."
+                    return@AddAddonCard
+                }
+
+                formMessage = null
+                installModalState = AddonInstallModalState.Checking
+                coroutineScope.launch {
+                    val result = AddonRepository.addAddon(requestedUrl)
+                    installModalState = when (result) {
+                        is AddAddonResult.Success -> {
+                            addonUrl = ""
+                            AddonInstallModalState.Success(result.manifest.name)
+                        }
+
+                        is AddAddonResult.Error -> {
+                            AddonInstallModalState.Error(result.message)
+                        }
+                    }
+                }
+            },
+        )
+
+        SectionHeader("INSTALLED ADDONS")
         if (sortedAddons.isEmpty()) {
-            item {
-                EmptyStateCard()
-            }
+            EmptyStateCard()
         } else {
-            items(
-                items = sortedAddons,
-                key = { it.manifestUrl },
-            ) { addon ->
+            sortedAddons.forEach { addon ->
                 InstalledAddonCard(
                     addon = addon,
                     onRefreshClick = { AddonRepository.refreshAddon(addon.manifestUrl) },

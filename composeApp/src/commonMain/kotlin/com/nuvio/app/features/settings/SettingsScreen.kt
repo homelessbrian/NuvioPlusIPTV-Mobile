@@ -42,7 +42,6 @@ import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
-    onAddonsClick: () -> Unit = {},
 ) {
     BoxWithConstraints(
         modifier = modifier
@@ -67,14 +66,12 @@ fun SettingsScreen(
             TabletSettingsScreen(
                 page = page,
                 onPageChange = { currentPage = it.name },
-                onAddonsClick = onAddonsClick,
                 homescreenSettings = homescreenSettingsUiState.items,
             )
         } else {
             MobileSettingsScreen(
                 page = page,
                 onPageChange = { currentPage = it.name },
-                onAddonsClick = onAddonsClick,
                 homescreenSettings = homescreenSettingsUiState.items,
             )
         }
@@ -85,18 +82,14 @@ fun SettingsScreen(
 private fun MobileSettingsScreen(
     page: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
-    onAddonsClick: () -> Unit,
     homescreenSettings: List<HomeCatalogSettingsItem>,
 ) {
     NuvioScreen {
         stickyHeader {
+            val previousPage = page.previousPage()
             NuvioScreenHeader(
                 title = page.title,
-                onBack = if (page != SettingsPage.Root) {
-                    { onPageChange(SettingsPage.Root) }
-                } else {
-                    null
-                },
+                onBack = previousPage?.let { { onPageChange(it) } },
             )
         }
 
@@ -107,9 +100,10 @@ private fun MobileSettingsScreen(
             )
             SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                 isTablet = false,
-                onAddonsClick = onAddonsClick,
+                onAddonsClick = { onPageChange(SettingsPage.Addons) },
                 onHomescreenClick = { onPageChange(SettingsPage.Homescreen) },
             )
+            SettingsPage.Addons -> addonsSettingsContent()
             SettingsPage.Homescreen -> homescreenSettingsContent(
                 isTablet = false,
                 items = homescreenSettings,
@@ -122,7 +116,6 @@ private fun MobileSettingsScreen(
 private fun TabletSettingsScreen(
     page: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
-    onAddonsClick: () -> Unit,
     homescreenSettings: List<HomeCatalogSettingsItem>,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
@@ -176,10 +169,11 @@ private fun TabletSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             item {
+                val previousPage = page.previousPage()
                 TabletPageHeader(
                     title = if (page == SettingsPage.Root) activeCategory.label else page.title,
-                    showBack = page != SettingsPage.Root,
-                    onBack = { onPageChange(SettingsPage.Root) },
+                    showBack = previousPage != null,
+                    onBack = { previousPage?.let(onPageChange) },
                 )
             }
             when (page) {
@@ -189,9 +183,10 @@ private fun TabletSettingsScreen(
                 )
                 SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                     isTablet = true,
-                    onAddonsClick = onAddonsClick,
+                    onAddonsClick = { onPageChange(SettingsPage.Addons) },
                     onHomescreenClick = { onPageChange(SettingsPage.Homescreen) },
                 )
+                SettingsPage.Addons -> addonsSettingsContent()
                 SettingsPage.Homescreen -> homescreenSettingsContent(
                     isTablet = true,
                     items = homescreenSettings,
