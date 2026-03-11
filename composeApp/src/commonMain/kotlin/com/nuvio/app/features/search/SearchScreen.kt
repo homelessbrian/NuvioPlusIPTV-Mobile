@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +56,20 @@ fun SearchScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var headerHeightPx by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
+    val headerTitle by remember(query, listState, headerHeightPx) {
+        derivedStateOf {
+            if (query.isNotBlank()) {
+                "Search"
+            } else {
+                val discoverInFocus = when {
+                    listState.firstVisibleItemIndex > 0 -> true
+                    headerHeightPx > 0 -> listState.firstVisibleItemScrollOffset >= (headerHeightPx * 0.65f).toInt()
+                    else -> false
+                }
+                if (discoverInFocus) "Discover" else "Search"
+            }
+        }
+    }
 
     val addonRefreshKey = remember(addonsUiState.addons) {
         addonsUiState.addons.mapNotNull { addon ->
@@ -175,7 +190,7 @@ fun SearchScreen(
                 .padding(bottom = 12.dp)
                 .onSizeChanged { headerHeightPx = it.height },
         ) {
-            NuvioScreenHeader(title = "Search")
+            NuvioScreenHeader(title = headerTitle)
             Spacer(modifier = Modifier.height(12.dp))
             NuvioInputField(
                 value = query,
