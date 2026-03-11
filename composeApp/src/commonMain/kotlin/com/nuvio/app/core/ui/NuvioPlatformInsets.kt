@@ -1,6 +1,10 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.Dp
 
 internal expect val nuvioPlatformExtraTopPadding: Dp
 internal expect val nuvioPlatformExtraBottomPadding: Dp
+@Composable
+internal expect fun nuvioBottomNavigationBarInsets(): WindowInsets

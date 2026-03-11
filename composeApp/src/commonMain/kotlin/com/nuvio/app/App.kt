@@ -30,6 +30,7 @@ import androidx.navigation.toRoute
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.request.crossfade
+import com.nuvio.app.core.ui.nuvioBottomNavigationBarInsets
 import com.nuvio.app.core.ui.NuvioTheme
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
@@ -162,7 +163,7 @@ fun App() {
                 bottomBar = {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface,
-                        windowInsets = WindowInsets(0),
+                        windowInsets = nuvioBottomNavigationBarInsets(),
                     ) {
                         NavigationBarItem(
                             selected = selectedTab == AppScreenTab.Home,
