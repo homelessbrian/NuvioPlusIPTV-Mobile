@@ -6,9 +6,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +40,7 @@ import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.search.SearchScreen
+import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
 import kotlinx.serialization.Serializable
@@ -75,10 +76,13 @@ data class CatalogRoute(
     val genre: String? = null,
 )
 
+@Serializable
+object AddonsRoute
+
 enum class AppScreenTab {
     Home,
     Search,
-    Addons,
+    Settings,
 }
 
 @Composable
@@ -87,6 +91,7 @@ fun AppScreen(
     modifier: Modifier = Modifier,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onAddonsClick: (() -> Unit)? = null,
 ) {
     when (tab) {
         AppScreenTab.Home -> HomeScreen(
@@ -98,7 +103,10 @@ fun AppScreen(
             modifier = modifier,
             onPosterClick = onPosterClick,
         )
-        AppScreenTab.Addons -> AddonsScreen(modifier = modifier)
+        AppScreenTab.Settings -> SettingsScreen(
+            modifier = modifier,
+            onAddonsClick = { onAddonsClick?.invoke() },
+        )
     }
 }
 
@@ -173,10 +181,10 @@ fun App() {
                             label = { Text("Search") },
                         )
                         NavigationBarItem(
-                            selected = selectedTab == AppScreenTab.Addons,
-                            onClick = { selectedTab = AppScreenTab.Addons },
-                            icon = { Icon(Icons.Rounded.Extension, contentDescription = null) },
-                            label = { Text("Addons") },
+                            selected = selectedTab == AppScreenTab.Settings,
+                            onClick = { selectedTab = AppScreenTab.Settings },
+                            icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                            label = { Text("Settings") },
                         )
                     }
                 },
@@ -187,6 +195,9 @@ fun App() {
                     onCatalogClick = onCatalogClick,
                     onPosterClick = { meta ->
                         navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                    },
+                    onAddonsClick = {
+                        navController.navigate(AddonsRoute)
                     },
                 )
             }
@@ -249,6 +260,13 @@ fun App() {
                         onPosterClick = { meta ->
                             navController.navigate(DetailRoute(type = meta.type, id = meta.id))
                         },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                composable<AddonsRoute> {
+                    AddonsScreen(
+                        title = "Addons",
+                        onBack = { navController.popBackStack() },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

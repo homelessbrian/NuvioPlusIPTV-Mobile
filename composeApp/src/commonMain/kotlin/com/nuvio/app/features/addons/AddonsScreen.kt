@@ -52,6 +52,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun AddonsScreen(
     modifier: Modifier = Modifier,
+    title: String = "Content & Discovery",
+    onBack: (() -> Unit)? = null,
 ) {
     LaunchedEffect(Unit) {
         AddonRepository.initialize()
@@ -76,7 +78,8 @@ fun AddonsScreen(
     NuvioScreen(modifier = modifier) {
         stickyHeader {
             NuvioScreenHeader(
-                title = "Addons",
+                title = title,
+                onBack = onBack,
             ) {
                 NuvioIconActionButton(
                     icon = Icons.Rounded.SwapVert,
