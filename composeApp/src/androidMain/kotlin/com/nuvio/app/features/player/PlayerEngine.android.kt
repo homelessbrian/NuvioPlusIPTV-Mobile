@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import android.net.Uri
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -12,9 +13,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -120,6 +124,64 @@ actual fun PlatformPlayerSurface(
                 override fun setPlaybackSpeed(speed: Float) {
                     exoPlayer.setPlaybackSpeed(speed)
                 }
+
+                override fun getAudioTracks(): List<AudioTrack> =
+                    exoPlayer.extractAudioTracks()
+
+                override fun getSubtitleTracks(): List<SubtitleTrack> =
+                    exoPlayer.extractSubtitleTracks()
+
+                override fun selectAudioTrack(index: Int) {
+                    exoPlayer.selectTrackByIndex(C.TRACK_TYPE_AUDIO, index)
+                }
+
+                override fun selectSubtitleTrack(index: Int) {
+                    if (index < 0) {
+                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                            .build()
+                        return
+                    }
+                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .build()
+                    exoPlayer.selectTrackByIndex(C.TRACK_TYPE_TEXT, index)
+                }
+
+                override fun setSubtitleUri(url: String) {
+                    val currentPosition = exoPlayer.currentPosition
+                    val wasPlaying = exoPlayer.isPlaying
+                    val currentMediaItem = exoPlayer.currentMediaItem ?: return
+                    val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.parse(url))
+                        .setMimeType(guessSubtitleMime(url))
+                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                        .setRoleFlags(C.ROLE_FLAG_SUBTITLE)
+                        .build()
+                    val newMediaItem = currentMediaItem.buildUpon()
+                        .setSubtitleConfigurations(listOf(subtitleConfig))
+                        .build()
+                    exoPlayer.setMediaItem(newMediaItem, currentPosition)
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = wasPlaying
+                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .build()
+                }
+
+                override fun clearExternalSubtitle() {
+                    val currentPosition = exoPlayer.currentPosition
+                    val wasPlaying = exoPlayer.isPlaying
+                    val currentMediaItem = exoPlayer.currentMediaItem ?: return
+                    val newMediaItem = currentMediaItem.buildUpon()
+                        .setSubtitleConfigurations(emptyList())
+                        .build()
+                    exoPlayer.setMediaItem(newMediaItem, currentPosition)
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = wasPlaying
+                }
             }
         )
     }
@@ -167,3 +229,71 @@ private fun PlayerResizeMode.toExoResizeMode(): Int =
         PlayerResizeMode.Fill -> AspectRatioFrameLayout.RESIZE_MODE_FILL
         PlayerResizeMode.Zoom -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     }
+
+private fun ExoPlayer.extractAudioTracks(): List<AudioTrack> {
+    val tracks = mutableListOf<AudioTrack>()
+    var idx = 0
+    for (group in currentTracks.groups) {
+        if (group.type != C.TRACK_TYPE_AUDIO) continue
+        val format = group.mediaTrackGroup.getFormat(0)
+        tracks.add(
+            AudioTrack(
+                index = idx,
+                id = format.id ?: idx.toString(),
+                label = format.label ?: "",
+                language = format.language,
+                isSelected = group.isSelected,
+            )
+        )
+        idx++
+    }
+    return tracks
+}
+
+private fun ExoPlayer.extractSubtitleTracks(): List<SubtitleTrack> {
+    val tracks = mutableListOf<SubtitleTrack>()
+    var idx = 0
+    for (group in currentTracks.groups) {
+        if (group.type != C.TRACK_TYPE_TEXT) continue
+        val format = group.mediaTrackGroup.getFormat(0)
+        tracks.add(
+            SubtitleTrack(
+                index = idx,
+                id = format.id ?: idx.toString(),
+                label = format.label ?: "",
+                language = format.language,
+                isSelected = group.isSelected,
+            )
+        )
+        idx++
+    }
+    return tracks
+}
+
+private fun ExoPlayer.selectTrackByIndex(trackType: Int, targetIndex: Int) {
+    var idx = 0
+    for (group in currentTracks.groups) {
+        if (group.type != trackType) continue
+        if (idx == targetIndex) {
+            trackSelectionParameters = trackSelectionParameters
+                .buildUpon()
+                .setOverrideForType(
+                    TrackSelectionOverride(group.mediaTrackGroup, listOf(0))
+                )
+                .build()
+            return
+        }
+        idx++
+    }
+}
+
+private fun guessSubtitleMime(url: String): String {
+    val lower = url.lowercase()
+    return when {
+        lower.contains(".srt") -> MimeTypes.APPLICATION_SUBRIP
+        lower.contains(".vtt") || lower.contains(".webvtt") -> MimeTypes.TEXT_VTT
+        lower.contains(".ass") || lower.contains(".ssa") -> MimeTypes.TEXT_SSA
+        lower.contains(".ttml") || lower.contains(".dfxp") || lower.contains(".xml") -> MimeTypes.APPLICATION_TTML
+        else -> MimeTypes.TEXT_VTT
+    }
+}

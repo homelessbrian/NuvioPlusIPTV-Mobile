@@ -15,6 +15,8 @@ data class PlayerRoute(
     val streamTitle: String,
     val streamSubtitle: String? = null,
     val providerName: String,
+    val contentType: String? = null,
+    val videoId: String? = null,
 )
 
 enum class PlayerResizeMode {

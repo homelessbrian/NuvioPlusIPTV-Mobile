@@ -27,6 +27,8 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Subtitles
+import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +66,8 @@ internal fun PlayerControlsShell(
     onSeekForward: () -> Unit,
     onResizeModeClick: () -> Unit,
     onSpeedClick: () -> Unit,
+    onSubtitleClick: () -> Unit,
+    onAudioClick: () -> Unit,
     onScrubChange: (Long) -> Unit,
     onScrubFinished: (Long) -> Unit,
     horizontalSafePadding: androidx.compose.ui.unit.Dp,
@@ -142,6 +146,8 @@ internal fun PlayerControlsShell(
                 onScrubFinished = onScrubFinished,
                 onResizeModeClick = onResizeModeClick,
                 onSpeedClick = onSpeedClick,
+                onSubtitleClick = onSubtitleClick,
+                onAudioClick = onAudioClick,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -354,6 +360,8 @@ private fun ProgressControls(
     onScrubFinished: (Long) -> Unit,
     onResizeModeClick: () -> Unit,
     onSpeedClick: () -> Unit,
+    onSubtitleClick: () -> Unit,
+    onAudioClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val durationMs = playbackSnapshot.durationMs.coerceAtLeast(1L)
@@ -406,6 +414,16 @@ private fun ProgressControls(
                         icon = Icons.Rounded.Speed,
                         label = "${playbackSnapshot.playbackSpeed}x",
                         onClick = onSpeedClick,
+                    )
+                    PlayerActionPillButton(
+                        icon = Icons.Rounded.Subtitles,
+                        label = "Subs",
+                        onClick = onSubtitleClick,
+                    )
+                    PlayerActionPillButton(
+                        icon = Icons.Rounded.Audiotrack,
+                        label = "Audio",
+                        onClick = onAudioClick,
                     )
                 }
             }

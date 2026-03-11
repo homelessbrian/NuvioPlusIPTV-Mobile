@@ -259,6 +259,8 @@ fun App() {
                                         streamTitle = stream.streamLabel,
                                         streamSubtitle = stream.streamSubtitle,
                                         providerName = stream.addonName,
+                                        contentType = route.type,
+                                        videoId = route.videoId,
                                     )
                                 )
                             }
@@ -284,6 +286,8 @@ fun App() {
                         streamTitle = route.streamTitle,
                         streamSubtitle = route.streamSubtitle,
                         providerName = route.providerName,
+                        contentType = route.contentType,
+                        videoId = route.videoId,
                         onBack = { navController.popBackStack() },
                         modifier = Modifier.fillMaxSize(),
                     )

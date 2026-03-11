@@ -27,6 +27,12 @@ actual fun PlatformPlayerSurface(
             override fun seekBy(offsetMs: Long) = Unit
             override fun retry() = Unit
             override fun setPlaybackSpeed(speed: Float) = Unit
+            override fun getAudioTracks(): List<AudioTrack> = emptyList()
+            override fun getSubtitleTracks(): List<SubtitleTrack> = emptyList()
+            override fun selectAudioTrack(index: Int) = Unit
+            override fun selectSubtitleTrack(index: Int) = Unit
+            override fun setSubtitleUri(url: String) = Unit
+            override fun clearExternalSubtitle() = Unit
         }
     }
 

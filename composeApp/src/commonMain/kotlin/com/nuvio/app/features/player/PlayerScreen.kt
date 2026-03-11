@@ -49,6 +49,8 @@ fun PlayerScreen(
     seasonNumber: Int? = null,
     episodeNumber: Int? = null,
     episodeTitle: String? = null,
+    contentType: String? = null,
+    videoId: String? = null,
 ) {
     LockPlayerToLandscape()
     EnterImmersivePlayerMode()
@@ -80,6 +82,29 @@ fun PlayerScreen(
         val backdropArtwork = background ?: poster
         val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
         val isEpisode = seasonNumber != null && episodeNumber != null
+
+        var showAudioModal by remember { mutableStateOf(false) }
+        var showSubtitleModal by remember { mutableStateOf(false) }
+        var audioTracks by remember { mutableStateOf<List<AudioTrack>>(emptyList()) }
+        var subtitleTracks by remember { mutableStateOf<List<SubtitleTrack>>(emptyList()) }
+        var selectedAudioIndex by remember { mutableStateOf(-1) }
+        var selectedSubtitleIndex by remember { mutableStateOf(-1) }
+        var selectedAddonSubtitleId by remember { mutableStateOf<String?>(null) }
+        var useCustomSubtitles by remember { mutableStateOf(false) }
+        var subtitleStyle by remember { mutableStateOf(SubtitleStyleState.DEFAULT) }
+        var activeSubtitleTab by remember { mutableStateOf(SubtitleTab.BuiltIn) }
+        val addonSubtitles by SubtitleRepository.addonSubtitles.collectAsStateWithLifecycle()
+        val isLoadingAddonSubtitles by SubtitleRepository.isLoading.collectAsStateWithLifecycle()
+
+        fun refreshTracks() {
+            val ctrl = playerController ?: return
+            audioTracks = ctrl.getAudioTracks()
+            subtitleTracks = ctrl.getSubtitleTracks()
+            val selectedAudio = audioTracks.firstOrNull { it.isSelected }
+            if (selectedAudio != null) selectedAudioIndex = selectedAudio.index
+            val selectedSub = subtitleTracks.firstOrNull { it.isSelected }
+            if (selectedSub != null && !useCustomSubtitles) selectedSubtitleIndex = selectedSub.index
+        }
 
         fun showGestureMessage(message: String) {
             gestureMessageJob?.cancel()
@@ -132,6 +157,13 @@ fun PlayerScreen(
             errorMessage = null
             scrubbingPositionMs = null
             initialLoadCompleted = false
+            SubtitleRepository.clear()
+        }
+
+        LaunchedEffect(playbackSnapshot.isLoading, playerController) {
+            if (!playbackSnapshot.isLoading && playerController != null) {
+                refreshTracks()
+            }
         }
 
         LaunchedEffect(controlsVisible, playbackSnapshot.isPlaying, playbackSnapshot.isLoading, errorMessage) {
@@ -239,6 +271,14 @@ fun PlayerScreen(
                     onSeekForward = { seekBy(10_000L) },
                     onResizeModeClick = ::cycleResizeMode,
                     onSpeedClick = ::cyclePlaybackSpeed,
+                    onSubtitleClick = {
+                        refreshTracks()
+                        showSubtitleModal = true
+                    },
+                    onAudioClick = {
+                        refreshTracks()
+                        showAudioModal = true
+                    },
                     onScrubChange = { positionMs -> scrubbingPositionMs = positionMs },
                     onScrubFinished = { positionMs ->
                         scrubbingPositionMs = null
@@ -289,6 +329,54 @@ fun PlayerScreen(
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
+
+            AudioTrackModal(
+                visible = showAudioModal,
+                audioTracks = audioTracks,
+                selectedIndex = selectedAudioIndex,
+                onTrackSelected = { index ->
+                    selectedAudioIndex = index
+                    playerController?.selectAudioTrack(index)
+                    scope.launch {
+                        delay(200)
+                        showAudioModal = false
+                    }
+                },
+                onDismiss = { showAudioModal = false },
+            )
+
+            SubtitleModal(
+                visible = showSubtitleModal,
+                activeTab = activeSubtitleTab,
+                subtitleTracks = subtitleTracks,
+                selectedSubtitleIndex = selectedSubtitleIndex,
+                addonSubtitles = addonSubtitles,
+                selectedAddonSubtitleId = selectedAddonSubtitleId,
+                isLoadingAddonSubtitles = isLoadingAddonSubtitles,
+                useCustomSubtitles = useCustomSubtitles,
+                subtitleStyle = subtitleStyle,
+                onTabSelected = { activeSubtitleTab = it },
+                onBuiltInTrackSelected = { index ->
+                    selectedSubtitleIndex = index
+                    selectedAddonSubtitleId = null
+                    useCustomSubtitles = false
+                    playerController?.clearExternalSubtitle()
+                    playerController?.selectSubtitleTrack(index)
+                },
+                onAddonSubtitleSelected = { addon ->
+                    selectedAddonSubtitleId = addon.id
+                    selectedSubtitleIndex = -1
+                    useCustomSubtitles = true
+                    playerController?.setSubtitleUri(addon.url)
+                },
+                onFetchAddonSubtitles = {
+                    if (contentType != null && videoId != null) {
+                        SubtitleRepository.fetchAddonSubtitles(contentType, videoId)
+                    }
+                },
+                onStyleChanged = { subtitleStyle = it },
+                onDismiss = { showSubtitleModal = false },
+            )
         }
     }
 }

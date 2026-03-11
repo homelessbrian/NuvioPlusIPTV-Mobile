@@ -10,6 +10,12 @@ interface PlayerEngineController {
     fun seekBy(offsetMs: Long)
     fun retry()
     fun setPlaybackSpeed(speed: Float)
+    fun getAudioTracks(): List<AudioTrack>
+    fun getSubtitleTracks(): List<SubtitleTrack>
+    fun selectAudioTrack(index: Int)
+    fun selectSubtitleTrack(index: Int)
+    fun setSubtitleUri(url: String)
+    fun clearExternalSubtitle()
 }
 
 @Composable
