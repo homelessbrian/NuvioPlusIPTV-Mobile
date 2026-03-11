@@ -85,16 +85,21 @@ fun StreamsScreen(
         StreamsRepository.load(type, videoId)
     }
 
+    val heroArtwork = if (isEpisode) {
+        episodeThumbnail ?: background ?: poster
+    } else {
+        background ?: poster
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
         // Background artwork
-        val backdropUrl = background ?: poster
-        if (backdropUrl != null) {
+        if (heroArtwork != null) {
             AsyncImage(
-                model = backdropUrl,
+                model = heroArtwork,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -105,9 +110,11 @@ fun StreamsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.82f)),
+                    .background(Color.Black.copy(alpha = if (isEpisode) 0.9f else 0.82f)),
             )
         }
+
+        val streamBlendColor = MaterialTheme.colorScheme.background
 
         // Main content column
         Column(modifier = Modifier.fillMaxSize()) {
@@ -117,7 +124,7 @@ fun StreamsScreen(
                     seasonNumber = seasonNumber,
                     episodeNumber = episodeNumber,
                     episodeTitle = episodeTitle ?: title,
-                    thumbnail = episodeThumbnail ?: background ?: poster,
+                    thumbnail = heroArtwork,
                     showTitle = title,
                 )
             } else {
@@ -127,18 +134,42 @@ fun StreamsScreen(
                 )
             }
 
-            // Provider filter chips
-            ProviderFilterRow(
-                groups = uiState.groups,
-                selectedFilter = uiState.selectedFilter,
-                onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                if (isEpisode) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(132.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        streamBlendColor.copy(alpha = 0.98f),
+                                        streamBlendColor.copy(alpha = 0.84f),
+                                        streamBlendColor.copy(alpha = 0.52f),
+                                        Color.Transparent,
+                                    ),
+                                ),
+                            ),
+                    )
+                }
 
-            // Stream list
-            StreamList(
-                uiState = uiState,
-                modifier = Modifier.weight(1f),
-            )
+                Column(modifier = Modifier.fillMaxSize()) {
+                    ProviderFilterRow(
+                        groups = uiState.groups,
+                        selectedFilter = uiState.selectedFilter,
+                        onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
+                    )
+
+                    StreamList(
+                        uiState = uiState,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
 
         // Back button overlay (top-left)
@@ -221,6 +252,8 @@ private fun EpisodeHeroBlock(
     showTitle: String,
     modifier: Modifier = Modifier,
 ) {
+    val heroBlendColor = MaterialTheme.colorScheme.background
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -242,16 +275,23 @@ private fun EpisodeHeroBlock(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.5f),
-                            Color.Black.copy(alpha = 0.9f),
-                            Color.Black.copy(alpha = 0.98f),
+                        colorStops = arrayOf(
+                            0.0f to Color.Transparent,
+                            0.58f to Color.Transparent,
+                            0.8f to Color.Black.copy(alpha = 0.42f),
+                            0.93f to heroBlendColor.copy(alpha = 0.84f),
+                            1.0f to heroBlendColor.copy(alpha = 0.97f),
                         ),
                         startY = 0f,
                         endY = Float.POSITIVE_INFINITY,
                     ),
                 ),
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.1f)),
         )
 
         // Safe-area push-down for status bar, then content pinned to bottom

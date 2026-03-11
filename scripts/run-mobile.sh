@@ -18,10 +18,12 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/run-mobile.sh android
-  ./scripts/run-mobile.sh ios
+  ./scripts/run-mobile.sh ios s
+  ./scripts/run-mobile.sh ios p
 
 Builds the debug app for the selected platform, installs it on the first running
-Android emulator or the configured iOS device target, and launches the app.
+Android emulator, a booted iOS simulator, or the configured iOS physical device,
+and launches the app.
 EOF
 }
 
@@ -94,7 +96,44 @@ run_android() {
   adb -s "$serial" shell am start -n "$ANDROID_APP_ID/$ANDROID_ACTIVITY"
 }
 
-run_ios() {
+run_ios_simulator() {
+  require_command xcodebuild
+  require_command xcrun
+
+  local simulator_id
+  simulator_id="$(first_booted_ios_simulator)"
+
+  if [[ -z "$simulator_id" ]]; then
+    echo "No booted iOS simulator found." >&2
+    echo "Boot a simulator first, then rerun: ./scripts/run-mobile.sh ios s" >&2
+    exit 1
+  fi
+
+  local simulator_app_path
+  simulator_app_path="$IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/$IOS_APP_NAME"
+
+  echo "Building iOS debug app for simulator $simulator_id..."
+  xcodebuild \
+    -project "$IOS_PROJECT" \
+    -scheme "$IOS_SCHEME" \
+    -configuration Debug \
+    -destination "id=$simulator_id" \
+    -derivedDataPath "$IOS_DERIVED_DATA" \
+    build
+
+  if [[ ! -d "$simulator_app_path" ]]; then
+    echo "Expected iOS simulator app not found at: $simulator_app_path" >&2
+    exit 1
+  fi
+
+  echo "Installing on simulator $simulator_id..."
+  xcrun simctl install "$simulator_id" "$simulator_app_path"
+
+  echo "Launching app..."
+  xcrun simctl launch "$simulator_id" "$IOS_BUNDLE_ID"
+}
+
+run_ios_physical() {
   require_command xcodebuild
   require_command xcrun
 
@@ -128,22 +167,43 @@ run_ios() {
   fi
 
   echo "Preferred iOS device not available: $IOS_PREFERRED_DEVICE_MODEL" >&2
-  echo "Connect and unlock that device, then rerun: ./scripts/run-mobile.sh ios" >&2
+  echo "Connect and unlock that device, then rerun: ./scripts/run-mobile.sh ios p" >&2
   exit 1
 }
 
 main() {
-  if [[ $# -ne 1 ]]; then
+  if [[ $# -lt 1 ]]; then
     usage
     exit 1
   fi
 
   case "$1" in
     android)
+      if [[ $# -ne 1 ]]; then
+        usage
+        exit 1
+      fi
       run_android
       ;;
     ios)
-      run_ios
+      if [[ $# -ne 2 ]]; then
+        usage
+        exit 1
+      fi
+
+      case "$2" in
+        s)
+          run_ios_simulator
+          ;;
+        p)
+          run_ios_physical
+          ;;
+        *)
+          echo "Unknown iOS target: $2" >&2
+          usage
+          exit 1
+          ;;
+      esac
       ;;
     -h|--help|help)
       usage
