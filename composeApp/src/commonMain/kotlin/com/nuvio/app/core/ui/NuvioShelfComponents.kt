@@ -177,13 +177,15 @@ private fun NuvioShelfSectionHeader(
                     .background(
                         color = MaterialTheme.colorScheme.primary,
                         shape = RoundedCornerShape(999.dp),
-                    ),
+                ),
             )
         }
-        NuvioViewAllPill(
-            onClick = onViewAllClick,
-            size = viewAllPillSize,
-        )
+        if (onViewAllClick != null) {
+            NuvioViewAllPill(
+                onClick = onViewAllClick,
+                size = viewAllPillSize,
+            )
+        }
     }
 }
 

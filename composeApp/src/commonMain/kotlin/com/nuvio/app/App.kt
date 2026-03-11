@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +36,7 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaDetailsScreen
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
 import kotlinx.serialization.Serializable
@@ -61,6 +63,7 @@ data class StreamRoute(
 
 enum class AppScreenTab {
     Home,
+    Search,
     Addons,
 }
 
@@ -72,6 +75,10 @@ fun AppScreen(
 ) {
     when (tab) {
         AppScreenTab.Home -> HomeScreen(
+            modifier = modifier,
+            onPosterClick = onPosterClick,
+        )
+        AppScreenTab.Search -> SearchScreen(
             modifier = modifier,
             onPosterClick = onPosterClick,
         )
@@ -129,6 +136,12 @@ fun App() {
                             onClick = { selectedTab = AppScreenTab.Home },
                             icon = { Icon(Icons.Rounded.Home, contentDescription = null) },
                             label = { Text("Home") },
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == AppScreenTab.Search,
+                            onClick = { selectedTab = AppScreenTab.Search },
+                            icon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                            label = { Text("Search") },
                         )
                         NavigationBarItem(
                             selected = selectedTab == AppScreenTab.Addons,
