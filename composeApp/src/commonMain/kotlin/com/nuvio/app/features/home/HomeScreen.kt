@@ -17,6 +17,7 @@ import com.nuvio.app.features.details.nextReleasedEpisodeAfter
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
+import com.nuvio.app.features.home.components.HomeHeroReservedSpace
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeSkeletonHero
 import com.nuvio.app.features.home.components.HomeSkeletonRow
@@ -128,9 +129,10 @@ fun HomeScreen(
     }
 
     val hasActiveAddons = addonsUiState.addons.any { it.manifest != null }
+    val showHeroSlot = homeSettingsUiState.heroEnabled
     val homeDataResolved = !homeUiState.isLoading &&
         (homeUiState.sections.isNotEmpty() || homeUiState.errorMessage != null)
-    val showHeroSkeleton = homeSettingsUiState.heroEnabled &&
+    val showHeroSkeleton = showHeroSlot &&
         hasActiveAddons &&
         homeUiState.heroItems.isEmpty() &&
         !homeDataResolved
@@ -138,21 +140,23 @@ fun HomeScreen(
     NuvioScreen(
         modifier = modifier,
         horizontalPadding = 0.dp,
-        topPadding = if (homeUiState.heroItems.isNotEmpty() || showHeroSkeleton) 0.dp else null,
+        topPadding = if (showHeroSlot) 0.dp else null,
     ) {
-        if (showHeroSkeleton) {
+        if (showHeroSlot) {
             item {
-                HomeSkeletonHero(
-                    modifier = Modifier.padding(bottom = 12.dp),
-                )
-            }
-        } else if (homeUiState.heroItems.isNotEmpty()) {
-            item {
-                HomeHeroSection(
-                    items = homeUiState.heroItems,
-                    modifier = Modifier.padding(bottom = 0.dp),
-                    onItemClick = onPosterClick,
-                )
+                when {
+                    showHeroSkeleton -> HomeSkeletonHero(
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+
+                    homeUiState.heroItems.isNotEmpty() -> HomeHeroSection(
+                        items = homeUiState.heroItems,
+                        modifier = Modifier.padding(bottom = 0.dp),
+                        onItemClick = onPosterClick,
+                    )
+
+                    else -> HomeHeroReservedSpace()
+                }
             }
         }
 

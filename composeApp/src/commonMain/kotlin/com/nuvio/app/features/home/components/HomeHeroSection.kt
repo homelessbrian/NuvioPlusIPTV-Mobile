@@ -191,6 +191,23 @@ fun HomeHeroSection(
 }
 
 @Composable
+fun HomeHeroReservedSpace(modifier: Modifier = Modifier) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
+    ) {
+        val heroHeight = (maxWidth.value * 1.22f).dp.coerceIn(440.dp, 800.dp)
+
+        Spacer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(heroHeight),
+        )
+    }
+}
+
+@Composable
 private fun HeroContentBlock(
     item: MetaPreview,
     onItemClick: ((MetaPreview) -> Unit)?,
