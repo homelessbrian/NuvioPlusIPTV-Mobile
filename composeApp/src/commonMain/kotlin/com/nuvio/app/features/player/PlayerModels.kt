@@ -12,11 +12,16 @@ data class PlayerRoute(
     val seasonNumber: Int? = null,
     val episodeNumber: Int? = null,
     val episodeTitle: String? = null,
+    val episodeThumbnail: String? = null,
     val streamTitle: String,
     val streamSubtitle: String? = null,
     val providerName: String,
+    val providerAddonId: String? = null,
     val contentType: String? = null,
     val videoId: String? = null,
+    val parentMetaId: String,
+    val parentMetaType: String,
+    val initialPositionMs: Long = 0L,
 )
 
 enum class PlayerResizeMode {

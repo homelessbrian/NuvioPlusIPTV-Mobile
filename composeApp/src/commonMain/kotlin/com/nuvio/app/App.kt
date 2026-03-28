@@ -46,6 +46,7 @@ import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
+import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -58,6 +59,8 @@ data class DetailRoute(val type: String, val id: String)
 data class StreamRoute(
     val type: String,
     val videoId: String,
+    val parentMetaId: String? = null,
+    val parentMetaType: String? = null,
     val title: String,
     val logo: String? = null,
     val poster: String? = null,
@@ -66,6 +69,7 @@ data class StreamRoute(
     val episodeNumber: Int? = null,
     val episodeTitle: String? = null,
     val episodeThumbnail: String? = null,
+    val resumePositionMs: Long? = null,
 )
 
 @Serializable
@@ -91,12 +95,16 @@ fun AppScreen(
     modifier: Modifier = Modifier,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
+    onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
 ) {
     when (tab) {
         AppScreenTab.Home -> HomeScreen(
             modifier = modifier,
             onCatalogClick = onCatalogClick,
             onPosterClick = onPosterClick,
+            onContinueWatchingClick = onContinueWatchingClick,
+            onContinueWatchingLongPress = onContinueWatchingLongPress,
         )
         AppScreenTab.Search -> SearchScreen(
             modifier = modifier,
@@ -121,12 +129,14 @@ fun App() {
         val navController = rememberNavController()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
 
-        val onPlay: (String, String, String, String?, String?, String?, Int?, Int?, String?, String?) -> Unit =
-            { type, videoId, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail ->
+        val onPlay: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, Long?) -> Unit =
+            { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, resumePositionMs ->
                 navController.navigate(
                     StreamRoute(
                         type = type,
                         videoId = videoId,
+                        parentMetaId = parentMetaId,
+                        parentMetaType = parentMetaType,
                         title = title,
                         logo = logo,
                         poster = poster,
@@ -135,6 +145,7 @@ fun App() {
                         episodeNumber = episodeNumber,
                         episodeTitle = episodeTitle,
                         episodeThumbnail = episodeThumbnail,
+                        resumePositionMs = resumePositionMs,
                     )
                 )
             }
@@ -148,6 +159,35 @@ fun App() {
                     type = section.type,
                     catalogId = section.catalogId,
                     supportsPagination = section.supportsPagination,
+                ),
+            )
+        }
+
+        val onContinueWatchingClick: (ContinueWatchingItem) -> Unit = { item ->
+            navController.navigate(
+                StreamRoute(
+                    type = item.parentMetaType,
+                    videoId = item.videoId,
+                    parentMetaId = item.parentMetaId,
+                    parentMetaType = item.parentMetaType,
+                    title = item.title,
+                    logo = item.logo,
+                    poster = item.poster,
+                    background = item.background,
+                    seasonNumber = item.seasonNumber,
+                    episodeNumber = item.episodeNumber,
+                    episodeTitle = item.episodeTitle,
+                    episodeThumbnail = item.episodeThumbnail,
+                    resumePositionMs = item.resumePositionMs,
+                ),
+            )
+        }
+
+        val onContinueWatchingLongPress: (ContinueWatchingItem) -> Unit = { item ->
+            navController.navigate(
+                DetailRoute(
+                    type = item.parentMetaType,
+                    id = item.parentMetaId,
                 ),
             )
         }
@@ -206,6 +246,8 @@ fun App() {
                     onPosterClick = { meta ->
                         navController.navigate(DetailRoute(type = meta.type, id = meta.id))
                     },
+                    onContinueWatchingClick = onContinueWatchingClick,
+                    onContinueWatchingLongPress = onContinueWatchingLongPress,
                 )
             }
 
@@ -235,6 +277,8 @@ fun App() {
                     StreamsScreen(
                         type = route.type,
                         videoId = route.videoId,
+                        parentMetaId = route.parentMetaId ?: route.videoId,
+                        parentMetaType = route.parentMetaType ?: route.type,
                         title = route.title,
                         logo = route.logo,
                         poster = route.poster,
@@ -243,6 +287,7 @@ fun App() {
                         episodeNumber = route.episodeNumber,
                         episodeTitle = route.episodeTitle,
                         episodeThumbnail = route.episodeThumbnail,
+                        resumePositionMs = route.resumePositionMs,
                         onStreamSelected = { stream ->
                             val sourceUrl = stream.directPlaybackUrl
                             if (sourceUrl != null) {
@@ -256,11 +301,16 @@ fun App() {
                                         seasonNumber = route.seasonNumber,
                                         episodeNumber = route.episodeNumber,
                                         episodeTitle = route.episodeTitle,
+                                        episodeThumbnail = route.episodeThumbnail,
                                         streamTitle = stream.streamLabel,
                                         streamSubtitle = stream.streamSubtitle,
                                         providerName = stream.addonName,
+                                        providerAddonId = stream.addonId,
                                         contentType = route.type,
                                         videoId = route.videoId,
+                                        parentMetaId = route.parentMetaId ?: route.videoId,
+                                        parentMetaType = route.parentMetaType ?: route.type,
+                                        initialPositionMs = route.resumePositionMs ?: 0L,
                                     )
                                 )
                             }
@@ -283,11 +333,16 @@ fun App() {
                         seasonNumber = route.seasonNumber,
                         episodeNumber = route.episodeNumber,
                         episodeTitle = route.episodeTitle,
+                        episodeThumbnail = route.episodeThumbnail,
                         streamTitle = route.streamTitle,
                         streamSubtitle = route.streamSubtitle,
                         providerName = route.providerName,
+                        providerAddonId = route.providerAddonId,
                         contentType = route.contentType,
                         videoId = route.videoId,
+                        parentMetaId = route.parentMetaId,
+                        parentMetaType = route.parentMetaType,
+                        initialPositionMs = route.initialPositionMs,
                         onBack = { navController.popBackStack() },
                         modifier = Modifier.fillMaxSize(),
                     )

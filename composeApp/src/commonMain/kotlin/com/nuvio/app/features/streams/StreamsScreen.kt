@@ -43,6 +43,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -58,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
+import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import kotlin.math.round
 
 // ---------------------------------------------------------------------------
@@ -68,6 +72,8 @@ import kotlin.math.round
 fun StreamsScreen(
     type: String,
     videoId: String,
+    parentMetaId: String,
+    parentMetaType: String,
     title: String,
     logo: String? = null,
     poster: String? = null,
@@ -76,15 +82,32 @@ fun StreamsScreen(
     episodeNumber: Int? = null,
     episodeTitle: String? = null,
     episodeThumbnail: String? = null,
+    resumePositionMs: Long? = null,
     onStreamSelected: (StreamItem) -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by StreamsRepository.uiState.collectAsStateWithLifecycle()
+    val watchProgressUiState by remember {
+        WatchProgressRepository.ensureLoaded()
+        WatchProgressRepository.uiState
+    }.collectAsStateWithLifecycle()
     val isEpisode = seasonNumber != null && episodeNumber != null
+    var preferredFilterApplied by remember(videoId) { mutableStateOf(false) }
+    val storedProgress = watchProgressUiState.byVideoId[videoId]
+    val effectiveResumePositionMs = resumePositionMs ?: storedProgress?.lastPositionMs
 
     LaunchedEffect(type, videoId) {
         StreamsRepository.load(type, videoId)
+    }
+
+    LaunchedEffect(uiState.groups, storedProgress?.providerAddonId, preferredFilterApplied) {
+        if (preferredFilterApplied) return@LaunchedEffect
+        val preferredAddonId = storedProgress?.providerAddonId ?: return@LaunchedEffect
+        if (uiState.groups.any { it.addonId == preferredAddonId }) {
+            StreamsRepository.selectFilter(preferredAddonId)
+            preferredFilterApplied = true
+        }
     }
 
     val heroArtwork = if (isEpisode) {
@@ -121,7 +144,7 @@ fun StreamsScreen(
         // Main content column
         Column(modifier = Modifier.fillMaxSize()) {
             // Hero block
-            if (isEpisode && seasonNumber != null && episodeNumber != null) {
+            if (isEpisode) {
                 EpisodeHeroBlock(
                     seasonNumber = seasonNumber,
                     episodeNumber = episodeNumber,
@@ -160,6 +183,12 @@ fun StreamsScreen(
                 }
 
                 Column(modifier = Modifier.fillMaxSize()) {
+                    if (effectiveResumePositionMs != null && effectiveResumePositionMs > 0L) {
+                        ResumeBanner(
+                            positionMs = effectiveResumePositionMs,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        )
+                    }
                     ProviderFilterRow(
                         groups = uiState.groups,
                         selectedFilter = uiState.selectedFilter,
@@ -217,6 +246,26 @@ fun StreamsScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ResumeBanner(
+    positionMs: Long,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text = "Resume from ${positionMs.toPlaybackClock()}",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -681,6 +730,28 @@ private fun StreamFileSizeBadge(stream: StreamItem) {
             ),
             color = MaterialTheme.colorScheme.onBackground,
         )
+    }
+}
+
+private fun Long.toPlaybackClock(): String {
+    val totalSeconds = (this / 1000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        buildString {
+            append(hours)
+            append(':')
+            append(minutes.toString().padStart(2, '0'))
+            append(':')
+            append(seconds.toString().padStart(2, '0'))
+        }
+    } else {
+        buildString {
+            append(minutes)
+            append(':')
+            append(seconds.toString().padStart(2, '0'))
+        }
     }
 }
 

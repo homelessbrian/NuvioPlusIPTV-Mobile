@@ -38,8 +38,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.watchprogress.WatchProgressEntry
+import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 
 private val log = Logger.withTag("SeriesContent")
 
@@ -47,6 +50,7 @@ private val log = Logger.withTag("SeriesContent")
 fun DetailSeriesContent(
     meta: MetaDetails,
     modifier: Modifier = Modifier,
+    progressByVideoId: Map<String, WatchProgressEntry> = emptyMap(),
     onEpisodeClick: ((MetaVideo) -> Unit)? = null,
 ) {
     val groupedEpisodes = remember(meta.videos) {
@@ -146,9 +150,16 @@ fun DetailSeriesContent(
                 verticalArrangement = Arrangement.spacedBy(sizing.cardGap),
             ) {
                 episodes.forEach { episode ->
+                    val episodeVideoId = buildPlaybackVideoId(
+                        parentMetaId = meta.id,
+                        seasonNumber = episode.season,
+                        episodeNumber = episode.episode,
+                        fallbackVideoId = episode.id,
+                    )
                     EpisodeCard(
                         video = episode,
                         fallbackImage = meta.background ?: meta.poster,
+                        progressEntry = progressByVideoId[episodeVideoId],
                         sizing = sizing,
                         onClick = { onEpisodeClick?.invoke(episode) },
                     )
@@ -162,12 +173,13 @@ fun DetailSeriesContent(
 private fun EpisodeCard(
     video: MetaVideo,
     fallbackImage: String?,
+    progressEntry: WatchProgressEntry?,
     sizing: SeriesContentSizing,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
 ) {
     val cardShape = RoundedCornerShape(sizing.cardRadius)
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .height(sizing.cardHeight)
@@ -180,111 +192,126 @@ private fun EpisodeCard(
             )
             .clickable(enabled = onClick != null) { onClick?.invoke() },
     ) {
-        // Image area - fixed width matching card height per spec
-        Box(
-            modifier = Modifier
-                .width(sizing.imageWidth)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(topStart = sizing.cardRadius, bottomStart = sizing.cardRadius)),
+        Row(
+            modifier = Modifier.fillMaxSize(),
         ) {
-            val imageUrl = video.thumbnail ?: fallbackImage
-            if (imageUrl != null) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = video.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface),
-                )
-            }
-
-            // Episode number badge — bottom-right of image per spec
+            // Image area - fixed width matching card height per spec
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(bottom = 8.dp, end = 4.dp)
-                    .clip(RoundedCornerShape(sizing.badgeRadius))
-                    .background(Color.Black.copy(alpha = 0.85f))
-                    .border(
-                        width = 1.dp,
-                        color = Color.White.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(sizing.badgeRadius),
+                    .width(sizing.imageWidth)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = sizing.cardRadius, bottomStart = sizing.cardRadius)),
+            ) {
+                val imageUrl = video.thumbnail ?: fallbackImage
+                if (imageUrl != null) {
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = video.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surface),
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 8.dp, end = 4.dp)
+                        .clip(RoundedCornerShape(sizing.badgeRadius))
+                        .background(Color.Black.copy(alpha = 0.85f))
+                        .border(
+                            width = 1.dp,
+                            color = Color.White.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(sizing.badgeRadius),
+                        )
+                        .padding(
+                            horizontal = sizing.badgeHorizontalPadding,
+                            vertical = sizing.badgeVerticalPadding,
+                        ),
+                ) {
+                    Text(
+                        text = video.episodeBadge(),
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontSize = sizing.badgeTextSize,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.3.sp,
+                        ),
+                        color = Color.White,
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .weight(1f)
                     .padding(
-                        horizontal = sizing.badgeHorizontalPadding,
-                        vertical = sizing.badgeVerticalPadding,
+                        start = sizing.contentHorizontalPadding,
+                        end = sizing.contentHorizontalPadding,
+                        top = sizing.contentVerticalPadding,
+                        bottom = sizing.contentVerticalPadding,
                     ),
+                verticalArrangement = Arrangement.spacedBy(sizing.contentSpacing),
             ) {
                 Text(
-                    text = video.episodeBadge(),
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontSize = sizing.badgeTextSize,
-                        fontWeight = FontWeight.SemiBold,
+                    text = video.title,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = sizing.titleTextSize,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = sizing.titleLineHeight,
                         letterSpacing = 0.3.sp,
                     ),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = sizing.titleMaxLines,
+                    overflow = TextOverflow.Ellipsis,
                 )
+
+                video.released?.formattedDate()?.let { formattedDate ->
+                    Text(
+                        text = formattedDate,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontSize = sizing.metaTextSize,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                if (!video.overview.isNullOrBlank()) {
+                    Text(
+                        text = video.overview,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = sizing.bodyTextSize,
+                            lineHeight = sizing.bodyLineHeight,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = sizing.overviewMaxLines,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
 
-        // Info block
-        Column(
-            modifier = Modifier
-                .fillMaxHeight()
-                .weight(1f)
-                .padding(
-                    start = sizing.contentHorizontalPadding,
-                    end = sizing.contentHorizontalPadding,
-                    top = sizing.contentVerticalPadding,
-                    bottom = sizing.contentVerticalPadding,
-                ),
-            verticalArrangement = Arrangement.spacedBy(sizing.contentSpacing),
-        ) {
-            Text(
-                text = video.title,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = sizing.titleTextSize,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = sizing.titleLineHeight,
-                    letterSpacing = 0.3.sp,
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = sizing.titleMaxLines,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            // Metadata row: air date
-            video.released?.formattedDate()?.let { formattedDate ->
-                Text(
-                    text = formattedDate,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontSize = sizing.metaTextSize,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+        progressEntry
+            ?.takeIf { it.durationMs > 0L }
+            ?.let { entry ->
+                NuvioProgressBar(
+                    progress = entry.progressFraction,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    height = 5.dp,
+                    trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.14f),
+                    fillColor = MaterialTheme.colorScheme.primary,
                 )
             }
-
-            if (!video.overview.isNullOrBlank()) {
-                Text(
-                    text = video.overview,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = sizing.bodyTextSize,
-                        lineHeight = sizing.bodyLineHeight,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = sizing.overviewMaxLines,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
     }
 }
 

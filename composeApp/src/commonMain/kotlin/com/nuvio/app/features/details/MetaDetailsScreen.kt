@@ -43,16 +43,23 @@ import com.nuvio.app.features.details.components.DetailCastSection
 import com.nuvio.app.features.details.components.DetailHero
 import com.nuvio.app.features.details.components.DetailMetaInfo
 import com.nuvio.app.features.details.components.DetailSeriesContent
+import com.nuvio.app.features.watchprogress.WatchProgressEntry
+import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 
 @Composable
 fun MetaDetailsScreen(
     type: String,
     id: String,
     onBack: () -> Unit,
-    onPlay: ((type: String, videoId: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?) -> Unit)? = null,
+    onPlay: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, resumePositionMs: Long?) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val uiState by MetaDetailsRepository.uiState.collectAsStateWithLifecycle()
+    val watchProgressUiState by remember {
+        WatchProgressRepository.ensureLoaded()
+        WatchProgressRepository.uiState
+    }.collectAsStateWithLifecycle()
     val screenAlpha = remember(type, id) { Animatable(0f) }
     val requestedMeta = uiState.meta?.takeIf { it.type == type && it.id == id }
     val needsFreshLoad = requestedMeta == null && !uiState.isLoading
@@ -107,6 +114,22 @@ fun MetaDetailsScreen(
 
             requestedMeta != null -> {
                 val meta = requestedMeta
+                val movieProgress = watchProgressUiState.byVideoId[meta.id]
+                val seriesResumeEntry = watchProgressUiState.entries
+                    .filter { it.parentMetaId == meta.id }
+                    .maxByOrNull { it.lastUpdatedEpochMs }
+                val firstEpisode = remember(meta.videos) { meta.firstPlayableEpisode() }
+                val playButtonLabel = remember(movieProgress, seriesResumeEntry, firstEpisode, meta.type) {
+                    when {
+                        meta.type == "series" && seriesResumeEntry != null ->
+                            seriesResumeEntry.resumeLabel()
+                        meta.type == "series" && firstEpisode != null ->
+                            firstEpisode.playLabel()
+                        meta.type != "series" && movieProgress != null ->
+                            "Resume"
+                        else -> "Play"
+                    }
+                }
                 val scrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
@@ -122,19 +145,68 @@ fun MetaDetailsScreen(
                         verticalArrangement = Arrangement.spacedBy(20.dp),
                     ) {
                         DetailActionButtons(
+                            playLabel = playButtonLabel,
                             onPlayClick = {
-                                onPlay?.invoke(
-                                    meta.type,
-                                    meta.id,
-                                    meta.name,
-                                    meta.logo,
-                                    meta.poster,
-                                    meta.background,
-                                    null,
-                                    null,
-                                    null,
-                                    null,
-                                )
+                                when {
+                                    meta.type == "series" && seriesResumeEntry != null -> {
+                                        onPlay?.invoke(
+                                            meta.type,
+                                            seriesResumeEntry.videoId,
+                                            meta.id,
+                                            meta.type,
+                                            meta.name,
+                                            meta.logo,
+                                            meta.poster,
+                                            meta.background,
+                                            seriesResumeEntry.seasonNumber,
+                                            seriesResumeEntry.episodeNumber,
+                                            seriesResumeEntry.episodeTitle,
+                                            seriesResumeEntry.episodeThumbnail,
+                                            seriesResumeEntry.lastPositionMs,
+                                        )
+                                    }
+
+                                    meta.type == "series" && firstEpisode != null -> {
+                                        onPlay?.invoke(
+                                            meta.type,
+                                            buildPlaybackVideoId(
+                                                parentMetaId = meta.id,
+                                                seasonNumber = firstEpisode.season,
+                                                episodeNumber = firstEpisode.episode,
+                                                fallbackVideoId = firstEpisode.id,
+                                            ),
+                                            meta.id,
+                                            meta.type,
+                                            meta.name,
+                                            meta.logo,
+                                            meta.poster,
+                                            meta.background,
+                                            firstEpisode.season,
+                                            firstEpisode.episode,
+                                            firstEpisode.title,
+                                            firstEpisode.thumbnail,
+                                            null,
+                                        )
+                                    }
+
+                                    else -> {
+                                        onPlay?.invoke(
+                                            meta.type,
+                                            meta.id,
+                                            meta.id,
+                                            meta.type,
+                                            meta.name,
+                                            meta.logo,
+                                            meta.poster,
+                                            meta.background,
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            movieProgress?.lastPositionMs,
+                                        )
+                                    }
+                                }
                             },
                         )
 
@@ -144,17 +216,22 @@ fun MetaDetailsScreen(
 
                         DetailSeriesContent(
                             meta = meta,
+                            progressByVideoId = watchProgressUiState.byVideoId,
                             onEpisodeClick = { video ->
                                 val season = video.season
                                 val episode = video.episode
-                                val videoId = if (season != null && episode != null) {
-                                    "${meta.id}:${season}:${episode}"
-                                } else {
-                                    video.id
-                                }
+                                val playbackVideoId = buildPlaybackVideoId(
+                                    parentMetaId = meta.id,
+                                    seasonNumber = season,
+                                    episodeNumber = episode,
+                                    fallbackVideoId = video.id,
+                                )
+                                val savedProgress = watchProgressUiState.byVideoId[playbackVideoId]
                                 onPlay?.invoke(
                                     meta.type,
-                                    videoId,
+                                    playbackVideoId,
+                                    meta.id,
+                                    meta.type,
                                     meta.name,
                                     meta.logo,
                                     meta.poster,
@@ -163,6 +240,7 @@ fun MetaDetailsScreen(
                                     episode,
                                     video.title,
                                     video.thumbnail,
+                                    savedProgress?.lastPositionMs,
                                 )
                             },
                         )
@@ -195,3 +273,30 @@ fun MetaDetailsScreen(
         }
     }
 }
+
+private fun MetaDetails.firstPlayableEpisode(): MetaVideo? =
+    videos
+        .filter { it.season != null || it.episode != null }
+        .sortedWith(
+            compareBy<MetaVideo>(
+                { it.season ?: Int.MAX_VALUE },
+                { it.episode ?: Int.MAX_VALUE },
+                { it.released ?: "" },
+                { it.title },
+            ),
+        )
+        .firstOrNull()
+
+private fun MetaVideo.playLabel(): String =
+    if (season != null && episode != null) {
+        "Play S${season}E${episode}"
+    } else {
+        "Play"
+    }
+
+private fun WatchProgressEntry.resumeLabel(): String =
+    if (seasonNumber != null && episodeNumber != null) {
+        "Resume S${seasonNumber}E${episodeNumber}"
+    } else {
+        "Resume"
+    }

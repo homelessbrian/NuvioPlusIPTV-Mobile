@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import com.nuvio.app.features.addons.AddonStorage
 import com.nuvio.app.features.home.HomeCatalogSettingsStorage
 import com.nuvio.app.features.player.PlayerSettingsStorage
+import com.nuvio.app.features.watchprogress.WatchProgressStorage
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -15,6 +16,7 @@ class MainActivity : ComponentActivity() {
         AddonStorage.initialize(applicationContext)
         HomeCatalogSettingsStorage.initialize(applicationContext)
         PlayerSettingsStorage.initialize(applicationContext)
+        WatchProgressStorage.initialize(applicationContext)
 
         setContent {
             App()

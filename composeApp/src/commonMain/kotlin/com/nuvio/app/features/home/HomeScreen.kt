@@ -11,22 +11,33 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
+import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeSkeletonRow
+import com.nuvio.app.features.watchprogress.ContinueWatchingItem
+import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
+    onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
 ) {
     LaunchedEffect(Unit) {
         AddonRepository.initialize()
+        WatchProgressRepository.ensureLoaded()
     }
 
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
+    val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
+    val continueWatchingItems = remember(watchProgressUiState.entries) {
+        watchProgressUiState.entries.take(20).map { it.toContinueWatchingItem() }
+    }
 
     val catalogRefreshKey = remember(addonsUiState.addons) {
         addonsUiState.addons.mapNotNull { addon ->
@@ -53,6 +64,16 @@ fun HomeScreen(
     ) {
         when {
             addonsUiState.addons.none { it.manifest != null } -> {
+                if (continueWatchingItems.isNotEmpty()) {
+                    item {
+                        HomeContinueWatchingSection(
+                            items = continueWatchingItems,
+                            modifier = Modifier.padding(bottom = 12.dp),
+                            onItemClick = onContinueWatchingClick,
+                            onItemLongPress = onContinueWatchingLongPress,
+                        )
+                    }
+                }
                 item {
                     HomeEmptyStateCard(
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -63,12 +84,22 @@ fun HomeScreen(
             }
 
             homeUiState.isLoading && homeUiState.sections.isEmpty() -> {
+                if (continueWatchingItems.isNotEmpty()) {
+                    item {
+                        HomeContinueWatchingSection(
+                            items = continueWatchingItems,
+                            modifier = Modifier.padding(bottom = 12.dp),
+                            onItemClick = onContinueWatchingClick,
+                            onItemLongPress = onContinueWatchingLongPress,
+                        )
+                    }
+                }
                 items(3) {
                     HomeSkeletonRow(modifier = Modifier.padding(horizontal = 16.dp))
                 }
             }
 
-            homeUiState.sections.isEmpty() && homeUiState.heroItems.isEmpty() -> {
+            homeUiState.sections.isEmpty() && homeUiState.heroItems.isEmpty() && continueWatchingItems.isEmpty() -> {
                 item {
                     HomeEmptyStateCard(
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -86,6 +117,16 @@ fun HomeScreen(
                             items = homeUiState.heroItems,
                             modifier = Modifier.padding(bottom = 0.dp),
                             onItemClick = onPosterClick,
+                        )
+                    }
+                }
+                if (continueWatchingItems.isNotEmpty()) {
+                    item {
+                        HomeContinueWatchingSection(
+                            items = continueWatchingItems,
+                            modifier = Modifier.padding(bottom = 12.dp),
+                            onItemClick = onContinueWatchingClick,
+                            onItemLongPress = onContinueWatchingLongPress,
                         )
                     }
                 }

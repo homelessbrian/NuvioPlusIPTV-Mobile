@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +31,10 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.watchprogress.WatchProgressClock
+import com.nuvio.app.features.watchprogress.WatchProgressPlaybackSession
+import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -49,8 +54,13 @@ fun PlayerScreen(
     seasonNumber: Int? = null,
     episodeNumber: Int? = null,
     episodeTitle: String? = null,
+    episodeThumbnail: String? = null,
     contentType: String? = null,
     videoId: String? = null,
+    parentMetaId: String,
+    parentMetaType: String,
+    providerAddonId: String? = null,
+    initialPositionMs: Long = 0L,
 ) {
     LockPlayerToLandscape()
     EnterImmersivePlayerMode()
@@ -79,9 +89,72 @@ fun PlayerScreen(
         var gestureMessage by remember { mutableStateOf<String?>(null) }
         var gestureMessageJob by remember { mutableStateOf<Job?>(null) }
         var initialLoadCompleted by remember(sourceUrl) { mutableStateOf(false) }
+        var initialSeekApplied by remember(sourceUrl, initialPositionMs) {
+            mutableStateOf(initialPositionMs <= 0L)
+        }
+        var lastProgressPersistEpochMs by remember(sourceUrl) { mutableStateOf(0L) }
+        var previousIsPlaying by remember(sourceUrl) { mutableStateOf(false) }
         val backdropArtwork = background ?: poster
         val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
         val isEpisode = seasonNumber != null && episodeNumber != null
+        val playbackSession = remember(
+            contentType,
+            parentMetaId,
+            parentMetaType,
+            videoId,
+            title,
+            logo,
+            poster,
+            background,
+            seasonNumber,
+            episodeNumber,
+            episodeTitle,
+            episodeThumbnail,
+            providerName,
+            providerAddonId,
+            streamTitle,
+            streamSubtitle,
+            sourceUrl,
+        ) {
+            WatchProgressPlaybackSession(
+                contentType = contentType ?: parentMetaType,
+                parentMetaId = parentMetaId,
+                parentMetaType = parentMetaType,
+                videoId = buildPlaybackVideoId(
+                    parentMetaId = parentMetaId,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    fallbackVideoId = videoId,
+                ),
+                title = title,
+                logo = logo,
+                poster = poster,
+                background = background,
+                seasonNumber = seasonNumber,
+                episodeNumber = episodeNumber,
+                episodeTitle = episodeTitle,
+                episodeThumbnail = episodeThumbnail,
+                providerName = providerName,
+                providerAddonId = providerAddonId,
+                lastStreamTitle = streamTitle,
+                lastStreamSubtitle = streamSubtitle,
+                lastSourceUrl = sourceUrl,
+            )
+        }
+
+        fun flushWatchProgress() {
+            WatchProgressRepository.flushPlaybackProgress(
+                session = playbackSession,
+                snapshot = playbackSnapshot,
+            )
+        }
+
+        val onBackWithProgress = remember(onBack, playbackSession, playbackSnapshot) {
+            {
+                flushWatchProgress()
+                onBack()
+            }
+        }
 
         var showAudioModal by remember { mutableStateOf(false) }
         var showSubtitleModal by remember { mutableStateOf(false) }
@@ -160,13 +233,25 @@ fun PlayerScreen(
             errorMessage = null
             scrubbingPositionMs = null
             initialLoadCompleted = false
+            lastProgressPersistEpochMs = 0L
+            previousIsPlaying = false
             SubtitleRepository.clear()
+            WatchProgressRepository.ensureLoaded()
         }
 
         LaunchedEffect(playbackSnapshot.isLoading, playerController) {
             if (!playbackSnapshot.isLoading && playerController != null) {
                 refreshTracks()
             }
+        }
+
+        LaunchedEffect(playerController, playbackSnapshot.isLoading, initialPositionMs, initialSeekApplied) {
+            val controller = playerController ?: return@LaunchedEffect
+            if (initialSeekApplied || playbackSnapshot.isLoading || initialPositionMs <= 0L) {
+                return@LaunchedEffect
+            }
+            controller.seekTo(initialPositionMs)
+            initialSeekApplied = true
         }
 
         LaunchedEffect(controlsVisible, playbackSnapshot.isPlaying, playbackSnapshot.isLoading, errorMessage) {
@@ -184,6 +269,40 @@ fun PlayerScreen(
             }
             delay(5000)
             pausedOverlayVisible = true
+        }
+
+        LaunchedEffect(playbackSnapshot.positionMs, playbackSnapshot.isPlaying, playbackSnapshot.isEnded, playbackSnapshot.durationMs) {
+            if (playbackSnapshot.isEnded) {
+                flushWatchProgress()
+                previousIsPlaying = false
+                return@LaunchedEffect
+            }
+
+            if (previousIsPlaying && !playbackSnapshot.isPlaying) {
+                flushWatchProgress()
+            }
+
+            previousIsPlaying = playbackSnapshot.isPlaying
+
+            if (!playbackSnapshot.isPlaying) {
+                return@LaunchedEffect
+            }
+
+            val now = WatchProgressClock.nowEpochMs()
+            if (now - lastProgressPersistEpochMs < 5_000L) {
+                return@LaunchedEffect
+            }
+            lastProgressPersistEpochMs = now
+            WatchProgressRepository.upsertPlaybackProgress(
+                session = playbackSession,
+                snapshot = playbackSnapshot,
+            )
+        }
+
+        DisposableEffect(playbackSession.videoId, sourceUrl) {
+            onDispose {
+                flushWatchProgress()
+            }
         }
 
         Box(
@@ -268,7 +387,7 @@ fun PlayerScreen(
                     displayedPositionMs = displayedPositionMs,
                     metrics = metrics,
                     resizeMode = resizeMode,
-                    onBack = onBack,
+                    onBack = onBackWithProgress,
                     onTogglePlayback = ::togglePlayback,
                     onSeekBack = { seekBy(-10_000L) },
                     onSeekForward = { seekBy(10_000L) },
@@ -300,7 +419,7 @@ fun PlayerScreen(
                 OpeningOverlay(
                     artwork = backdropArtwork,
                     logo = logo,
-                    onBack = onBack,
+                    onBack = onBackWithProgress,
                     horizontalSafePadding = horizontalSafePadding,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -328,7 +447,7 @@ fun PlayerScreen(
             if (errorMessage != null) {
                 ErrorModal(
                     message = errorMessage.orEmpty(),
-                    onDismiss = onBack,
+                    onDismiss = onBackWithProgress,
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
