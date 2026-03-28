@@ -1,6 +1,9 @@
 package com.nuvio.app.features.streams
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -49,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -57,6 +61,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import com.nuvio.app.core.ui.NuvioBackButton
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -369,7 +375,7 @@ private fun EpisodeHeroBlock(
         ) {
             // Episode label
             Text(
-                text = "S${seasonNumber} · E${episodeNumber}",
+                text = "S${seasonNumber} E${episodeNumber}",
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
@@ -447,14 +453,44 @@ private fun FilterChip(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = tween(durationMillis = 140),
+        label = "filter_chip_scale",
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        },
+        animationSpec = tween(durationMillis = 180),
+        label = "filter_chip_container",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        animationSpec = tween(durationMillis = 180),
+        label = "filter_chip_content",
+    )
     Box(
         modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(16.dp))
-            .background(
-                if (isSelected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            .background(containerColor)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
             )
-            .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
         Text(
@@ -464,8 +500,7 @@ private fun FilterChip(
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                 letterSpacing = 0.1.sp,
             ),
-            color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurface,
+            color = contentColor,
             maxLines = 1,
         )
     }
@@ -619,10 +654,10 @@ private fun StreamCard(
             .fillMaxWidth()
             .heightIn(min = 68.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.58f))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
             .border(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(12.dp),
             )
             .clickable(enabled = isEnabled, onClick = onClick)
@@ -660,36 +695,9 @@ private fun StreamCard(
 
             Spacer(modifier = Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                StreamSourceBadge(stream = stream)
                 StreamFileSizeBadge(stream = stream)
             }
         }
-    }
-}
-
-@Composable
-private fun StreamSourceBadge(stream: StreamItem) {
-    val (label, color) = when {
-        stream.url != null -> "HTTP" to MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-        stream.infoHash != null -> "TORRENT" to Color(0xFF4CAF50).copy(alpha = 0.9f)
-        stream.externalUrl != null -> "EXTERNAL" to MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f)
-        else -> return
-    }
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(color.copy(alpha = 0.15f))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.2.sp,
-            ),
-            color = color,
-        )
     }
 }
 

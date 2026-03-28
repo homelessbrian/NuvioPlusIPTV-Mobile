@@ -250,8 +250,8 @@ private fun EpisodeCard(
 
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 8.dp, end = 4.dp)
+                        .align(Alignment.TopStart)
+                        .padding(start = 8.dp, top = 8.dp)
                         .clip(RoundedCornerShape(sizing.badgeRadius))
                         .background(Color.Black.copy(alpha = 0.85f))
                         .border(

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -64,7 +65,7 @@ private fun CastItem(
     sizing: CastSectionSizing,
 ) {
     Column(
-        modifier = modifier,
+        modifier = modifier.width(sizing.itemWidth),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -96,6 +97,7 @@ private fun CastItem(
         }
         Text(
             text = person.name,
+            modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.bodyMedium.copy(
                 fontSize = sizing.nameLabelSize,
             ),
@@ -107,6 +109,7 @@ private fun CastItem(
         if (!person.role.isNullOrBlank()) {
             Text(
                 text = person.role,
+                modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontSize = sizing.subLabelSize,
                 ),
@@ -121,6 +124,7 @@ private fun CastItem(
 
 private data class CastSectionSizing(
     val avatarSize: androidx.compose.ui.unit.Dp,
+    val itemWidth: androidx.compose.ui.unit.Dp,
     val avatarGap: androidx.compose.ui.unit.Dp,
     val nameLabelSize: TextUnit,
     val subLabelSize: TextUnit,
@@ -130,24 +134,28 @@ private fun castSectionSizing(maxWidthDp: Float): CastSectionSizing =
     when {
         maxWidthDp >= 1200f -> CastSectionSizing(
             avatarSize = 100.dp,
+            itemWidth = 112.dp,
             avatarGap = 20.dp,
             nameLabelSize = 16.sp,
             subLabelSize = 14.sp,
         )
         maxWidthDp >= 840f -> CastSectionSizing(
             avatarSize = 90.dp,
+            itemWidth = 102.dp,
             avatarGap = 18.dp,
             nameLabelSize = 15.sp,
             subLabelSize = 13.sp,
         )
         maxWidthDp >= 600f -> CastSectionSizing(
             avatarSize = 85.dp,
+            itemWidth = 98.dp,
             avatarGap = 16.dp,
             nameLabelSize = 14.sp,
             subLabelSize = 12.sp,
         )
         else -> CastSectionSizing(
             avatarSize = 80.dp,
+            itemWidth = 92.dp,
             avatarGap = 16.dp,
             nameLabelSize = 14.sp,
             subLabelSize = 12.sp,
