@@ -1,7 +1,9 @@
 package com.nuvio.app.core.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.darkColorScheme
@@ -130,6 +132,10 @@ private val NuvioTypeTokens = NuvioTypeScale(
     ),
 )
 
+private val NuvioRippleConfiguration = RippleConfiguration(
+    color = Color.Black,
+)
+
 @Composable
 fun NuvioTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -142,6 +148,7 @@ fun NuvioTheme(
             fontScale = 1f,
         ),
         LocalNuvioTypeScale provides NuvioTypeTokens,
+        LocalRippleConfiguration provides NuvioRippleConfiguration,
     ) {
         MaterialTheme(
             colorScheme = if (darkTheme) NuvioDarkColors else NuvioDarkColors,

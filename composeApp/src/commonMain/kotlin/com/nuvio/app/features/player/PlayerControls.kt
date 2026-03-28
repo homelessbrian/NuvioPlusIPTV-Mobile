@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Pause
@@ -46,6 +45,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.nuvioTypeScale
 
 @Composable
@@ -240,21 +240,14 @@ private fun PlayerHeader(
                 )
             }
 
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.35f))
-                    .clickable(onClick = onBack)
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Close player",
-                    tint = Color.White,
-                    modifier = Modifier.size(metrics.headerIconSize),
-                )
-            }
+            NuvioBackButton(
+                onClick = onBack,
+                containerColor = Color.Black.copy(alpha = 0.35f),
+                contentColor = Color.White,
+                buttonSize = metrics.headerIconSize + 16.dp,
+                iconSize = metrics.headerIconSize,
+                contentDescription = "Close player",
+            )
         }
     }
 }

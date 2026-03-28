@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,6 +42,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.nuvioTypeScale
 import kotlin.math.max
 
@@ -81,24 +81,19 @@ internal fun OpeningOverlay(
             )
         }
 
-        Box(
+        NuvioBackButton(
+            onClick = onBack,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Top))
                 .padding(top = 20.dp, start = horizontalSafePadding, end = horizontalSafePadding + 20.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.3f))
-                .clickable(onClick = onBack)
-                .padding(10.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Close player",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp),
-            )
-        }
+                ,
+            containerColor = Color.Black.copy(alpha = 0.3f),
+            contentColor = Color.White,
+            buttonSize = 44.dp,
+            iconSize = 24.dp,
+            contentDescription = "Close player",
+        )
 
         Column(
             modifier = Modifier
