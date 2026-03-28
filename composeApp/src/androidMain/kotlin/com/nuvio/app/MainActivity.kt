@@ -17,9 +17,6 @@ import com.nuvio.app.features.watchprogress.WatchProgressStorage
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(
-                scrim = 0xFF020404.toInt(),
-            ),
             navigationBarStyle = SystemBarStyle.dark(
                 scrim = 0xFF020404.toInt(),
             ),
@@ -27,7 +24,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.setBackgroundDrawableResource(R.color.nuvio_background)
         window.navigationBarColor = getColor(R.color.nuvio_background)
-        window.statusBarColor = getColor(R.color.nuvio_background)
         window.isNavigationBarContrastEnforced = false
         AddonStorage.initialize(applicationContext)
         LibraryStorage.initialize(applicationContext)
