@@ -7,7 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -649,17 +649,19 @@ private fun StreamCard(
     modifier: Modifier = Modifier,
 ) {
     val isEnabled = stream.directPlaybackUrl != null
+    val cardShape = RoundedCornerShape(12.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 68.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(12.dp),
+            .shadow(
+                elevation = 2.dp,
+                shape = cardShape,
+                ambientColor = Color.Black.copy(alpha = 0.04f),
+                spotColor = Color.Black.copy(alpha = 0.04f),
             )
+            .clip(cardShape)
+            .background(Color.White.copy(alpha = 0.05f))
             .clickable(enabled = isEnabled, onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.Top,
@@ -716,7 +718,7 @@ private fun StreamFileSizeBadge(stream: StreamItem) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
+            .background(Color(0xFF0A0C0C))
             .padding(horizontal = 8.dp, vertical = 3.dp),
     ) {
         Text(
@@ -726,7 +728,7 @@ private fun StreamFileSizeBadge(stream: StreamItem) {
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 0.2.sp,
             ),
-            color = MaterialTheme.colorScheme.onBackground,
+            color = Color.White,
         )
     }
 }
