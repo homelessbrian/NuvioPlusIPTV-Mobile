@@ -18,6 +18,7 @@ import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroSection
+import com.nuvio.app.features.home.components.HomeSkeletonHero
 import com.nuvio.app.features.home.components.HomeSkeletonRow
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
@@ -45,6 +46,7 @@ fun HomeScreen(
 
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
+    val homeSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
@@ -125,11 +127,35 @@ fun HomeScreen(
         nextUpItemsBySeries = resolvedItems
     }
 
+    val hasActiveAddons = addonsUiState.addons.any { it.manifest != null }
+    val homeDataResolved = !homeUiState.isLoading &&
+        (homeUiState.sections.isNotEmpty() || homeUiState.errorMessage != null)
+    val showHeroSkeleton = homeSettingsUiState.heroEnabled &&
+        hasActiveAddons &&
+        homeUiState.heroItems.isEmpty() &&
+        !homeDataResolved
+
     NuvioScreen(
         modifier = modifier,
         horizontalPadding = 0.dp,
-        topPadding = if (homeUiState.heroItems.isNotEmpty()) 0.dp else null,
+        topPadding = if (homeUiState.heroItems.isNotEmpty() || showHeroSkeleton) 0.dp else null,
     ) {
+        if (showHeroSkeleton) {
+            item {
+                HomeSkeletonHero(
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            }
+        } else if (homeUiState.heroItems.isNotEmpty()) {
+            item {
+                HomeHeroSection(
+                    items = homeUiState.heroItems,
+                    modifier = Modifier.padding(bottom = 0.dp),
+                    onItemClick = onPosterClick,
+                )
+            }
+        }
+
         when {
             addonsUiState.addons.none { it.manifest != null } -> {
                 if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
@@ -182,15 +208,6 @@ fun HomeScreen(
             }
 
             else -> {
-                if (homeUiState.heroItems.isNotEmpty()) {
-                    item {
-                        HomeHeroSection(
-                            items = homeUiState.heroItems,
-                            modifier = Modifier.padding(bottom = 0.dp),
-                            onItemClick = onPosterClick,
-                        )
-                    }
-                }
                 if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
                     item {
                         HomeContinueWatchingSection(
