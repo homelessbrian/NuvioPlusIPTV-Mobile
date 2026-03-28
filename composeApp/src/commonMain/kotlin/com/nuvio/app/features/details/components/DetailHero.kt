@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.graphicsLayer
@@ -27,12 +28,14 @@ import com.nuvio.app.features.details.MetaDetails
 fun DetailHero(
     meta: MetaDetails,
     scrollOffset: Int = 0,
+    onHeightChanged: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(0.75f)
+            .onSizeChanged { onHeightChanged(it.height) }
             .graphicsLayer {
                 clip = true
             },
