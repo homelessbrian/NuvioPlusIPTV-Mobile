@@ -7,7 +7,6 @@ import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Sync
 
 internal fun LazyListScope.settingsRootContent(
     isTablet: Boolean,
@@ -15,9 +14,34 @@ internal fun LazyListScope.settingsRootContent(
     onAppearanceClick: () -> Unit,
     onContentDiscoveryClick: () -> Unit,
     onAccountClick: () -> Unit,
-    onSyncOverviewClick: () -> Unit,
     onSwitchProfileClick: (() -> Unit)? = null,
 ) {
+    item {
+        SettingsSection(
+            title = "ACCOUNT",
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                if (onSwitchProfileClick != null) {
+                    SettingsNavigationRow(
+                        title = "Switch Profile",
+                        description = "Change to a different profile.",
+                        icon = Icons.Rounded.People,
+                        isTablet = isTablet,
+                        onClick = onSwitchProfileClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                }
+                SettingsNavigationRow(
+                    title = "Account",
+                    description = "Manage your account, sign out, or delete.",
+                    icon = Icons.Rounded.AccountCircle,
+                    isTablet = isTablet,
+                    onClick = onAccountClick,
+                )
+            }
+        }
+    }
     item {
         SettingsSection(
             title = "GENERAL",
@@ -46,40 +70,6 @@ internal fun LazyListScope.settingsRootContent(
                     icon = Icons.Rounded.Extension,
                     isTablet = isTablet,
                     onClick = onContentDiscoveryClick,
-                )
-            }
-        }
-    }
-    item {
-        SettingsSection(
-            title = "ACCOUNT & SYNC",
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                if (onSwitchProfileClick != null) {
-                    SettingsNavigationRow(
-                        title = "Switch Profile",
-                        description = "Change to a different profile.",
-                        icon = Icons.Rounded.People,
-                        isTablet = isTablet,
-                        onClick = onSwitchProfileClick,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                }
-                SettingsNavigationRow(
-                    title = "Account",
-                    description = "Manage your account, sign out, or delete.",
-                    icon = Icons.Rounded.AccountCircle,
-                    isTablet = isTablet,
-                    onClick = onAccountClick,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = "Sync Overview",
-                    description = "View synced data counts per profile.",
-                    icon = Icons.Rounded.Sync,
-                    isTablet = isTablet,
-                    onClick = onSyncOverviewClick,
                 )
             }
         }

@@ -134,7 +134,6 @@ private fun MobileSettingsScreen(
                 onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                 onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
                 onAccountClick = { onPageChange(SettingsPage.Account) },
-                onSyncOverviewClick = { onPageChange(SettingsPage.SyncOverview) },
                 onSwitchProfileClick = onSwitchProfile,
             )
             SettingsPage.Playback -> playbackSettingsContent(
@@ -162,9 +161,6 @@ private fun MobileSettingsScreen(
                 items = homescreenSettings,
             )
             SettingsPage.Account -> accountSettingsContent(
-                isTablet = false,
-            )
-            SettingsPage.SyncOverview -> syncOverviewContent(
                 isTablet = false,
             )
         }
@@ -247,7 +243,6 @@ private fun TabletSettingsScreen(
                     onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                     onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
                     onAccountClick = { onPageChange(SettingsPage.Account) },
-                    onSyncOverviewClick = { onPageChange(SettingsPage.SyncOverview) },
                     onSwitchProfileClick = onSwitchProfile,
                 )
                 SettingsPage.Playback -> playbackSettingsContent(
@@ -275,9 +270,6 @@ private fun TabletSettingsScreen(
                     items = homescreenSettings,
                 )
                 SettingsPage.Account -> accountSettingsContent(
-                    isTablet = true,
-                )
-                SettingsPage.SyncOverview -> syncOverviewContent(
                     isTablet = true,
                 )
             }

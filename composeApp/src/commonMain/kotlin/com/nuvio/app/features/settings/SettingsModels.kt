@@ -24,7 +24,6 @@ internal enum class SettingsPage(
     Addons("Addons"),
     Homescreen("Homescreen"),
     Account("Account"),
-    SyncOverview("Sync Overview"),
 }
 
 internal fun SettingsPage.previousPage(): SettingsPage? =
@@ -37,5 +36,4 @@ internal fun SettingsPage.previousPage(): SettingsPage? =
         SettingsPage.Addons -> SettingsPage.ContentDiscovery
         SettingsPage.Homescreen -> SettingsPage.ContentDiscovery
         SettingsPage.Account -> SettingsPage.Root
-        SettingsPage.SyncOverview -> SettingsPage.Root
     }
