@@ -18,11 +18,18 @@ object MetaDetailsRepository {
     private val _uiState = MutableStateFlow(MetaDetailsUiState())
     val uiState: StateFlow<MetaDetailsUiState> = _uiState.asStateFlow()
     private var activeRequestKey: String? = null
+    private val cachedMetaByRequestKey = mutableMapOf<String, MetaDetails>()
 
     fun load(type: String, id: String) {
         log.d { "load() called — type=$type id=$id" }
         val requestKey = "$type:$id"
         val currentState = _uiState.value
+
+        cachedMetaByRequestKey[requestKey]?.let { cachedMeta ->
+            _uiState.value = MetaDetailsUiState(meta = cachedMeta)
+            activeRequestKey = requestKey
+            return
+        }
 
         if (currentState.meta?.type == type && currentState.meta.id == id && !currentState.isLoading) {
             log.d { "Skipping reload for cached meta — type=$type id=$id" }
@@ -61,6 +68,7 @@ object MetaDetailsRepository {
             for (manifest in manifests) {
                 val result = tryFetchMeta(manifest, type, id)
                 if (result != null) {
+                    cachedMetaByRequestKey[requestKey] = result
                     _uiState.value = MetaDetailsUiState(meta = result)
                     activeRequestKey = requestKey
                     return@launch
@@ -77,6 +85,31 @@ object MetaDetailsRepository {
     fun clear() {
         activeRequestKey = null
         _uiState.value = MetaDetailsUiState()
+    }
+
+    suspend fun fetch(type: String, id: String): MetaDetails? {
+        val requestKey = "$type:$id"
+        cachedMetaByRequestKey[requestKey]?.let { return it }
+
+        val manifests = AddonRepository.uiState.value.addons
+            .mapNotNull { it.manifest }
+            .filter { manifest ->
+                manifest.resources.any { resource ->
+                    resource.name == "meta" &&
+                        resource.types.contains(type) &&
+                        (resource.idPrefixes.isEmpty() || resource.idPrefixes.any { id.startsWith(it) })
+                }
+            }
+
+        for (manifest in manifests) {
+            val result = tryFetchMeta(manifest, type, id)
+            if (result != null) {
+                cachedMetaByRequestKey[requestKey] = result
+                return result
+            }
+        }
+
+        return null
     }
 
     private suspend fun tryFetchMeta(

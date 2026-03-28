@@ -71,14 +71,12 @@ object WatchProgressRepository {
     ) {
         val positionMs = snapshot.positionMs.coerceAtLeast(0L)
         val durationMs = snapshot.durationMs.coerceAtLeast(0L)
-        if (isWatchProgressComplete(positionMs = positionMs, durationMs = durationMs, isEnded = snapshot.isEnded)) {
-            if (entriesByVideoId.remove(session.videoId) != null) {
-                publish()
-                if (persist) persist()
-            }
-            return
-        }
-        if (!shouldStoreWatchProgress(positionMs = positionMs, durationMs = durationMs)) {
+        val isCompleted = isWatchProgressComplete(
+            positionMs = positionMs,
+            durationMs = durationMs,
+            isEnded = snapshot.isEnded,
+        )
+        if (!isCompleted && !shouldStoreWatchProgress(positionMs = positionMs, durationMs = durationMs)) {
             return
         }
 
@@ -95,7 +93,7 @@ object WatchProgressRepository {
             episodeNumber = session.episodeNumber,
             episodeTitle = session.episodeTitle,
             episodeThumbnail = session.episodeThumbnail,
-            lastPositionMs = positionMs,
+            lastPositionMs = if (isCompleted && durationMs > 0L) durationMs else positionMs,
             durationMs = durationMs,
             lastUpdatedEpochMs = WatchProgressClock.nowEpochMs(),
             providerName = session.providerName,
@@ -103,6 +101,7 @@ object WatchProgressRepository {
             lastStreamTitle = session.lastStreamTitle,
             lastStreamSubtitle = session.lastStreamSubtitle,
             lastSourceUrl = session.lastSourceUrl,
+            isCompleted = isCompleted,
         )
         publish()
         if (persist) persist()
@@ -110,7 +109,7 @@ object WatchProgressRepository {
 
     private fun publish() {
         _uiState.value = WatchProgressUiState(
-            entries = entriesByVideoId.values.toList().continueWatchingEntries(limit = Int.MAX_VALUE),
+            entries = entriesByVideoId.values.toList().sortedByDescending { it.lastUpdatedEpochMs },
         )
     }
 

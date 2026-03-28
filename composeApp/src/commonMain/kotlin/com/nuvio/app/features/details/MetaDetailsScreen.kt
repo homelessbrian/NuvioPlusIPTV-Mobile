@@ -45,7 +45,7 @@ import com.nuvio.app.features.details.components.DetailMetaInfo
 import com.nuvio.app.features.details.components.DetailSeriesContent
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.toLibraryItem
-import com.nuvio.app.features.watchprogress.WatchProgressEntry
+import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 
@@ -124,16 +124,17 @@ fun MetaDetailsScreen(
                     libraryUiState.items.any { it.id == meta.id }
                 }
                 val movieProgress = watchProgressUiState.byVideoId[meta.id]
-                val seriesResumeEntry = watchProgressUiState.entries
-                    .filter { it.parentMetaId == meta.id }
-                    .maxByOrNull { it.lastUpdatedEpochMs }
-                val firstEpisode = remember(meta.videos) { meta.firstPlayableEpisode() }
-                val playButtonLabel = remember(movieProgress, seriesResumeEntry, firstEpisode, meta.type) {
+                    ?.takeUnless { it.isCompleted }
+                val seriesAction = remember(watchProgressUiState.entries, meta) {
+                    meta.seriesPrimaryAction(
+                        entries = watchProgressUiState.entries,
+                        todayIsoDate = CurrentDateProvider.todayIsoDate(),
+                    )
+                }
+                val playButtonLabel = remember(movieProgress, seriesAction, meta.type) {
                     when {
-                        meta.type == "series" && seriesResumeEntry != null ->
-                            seriesResumeEntry.resumeLabel()
-                        meta.type == "series" && firstEpisode != null ->
-                            firstEpisode.playLabel()
+                        meta.type == "series" && seriesAction != null ->
+                            seriesAction.label
                         meta.type != "series" && movieProgress != null ->
                             "Resume"
                         else -> "Play"
@@ -158,44 +159,21 @@ fun MetaDetailsScreen(
                             saveLabel = if (isSaved) "Saved" else "Save",
                             onPlayClick = {
                                 when {
-                                    meta.type == "series" && seriesResumeEntry != null -> {
+                                    meta.type == "series" && seriesAction != null -> {
                                         onPlay?.invoke(
                                             meta.type,
-                                            seriesResumeEntry.videoId,
+                                            seriesAction.videoId,
                                             meta.id,
                                             meta.type,
                                             meta.name,
                                             meta.logo,
                                             meta.poster,
                                             meta.background,
-                                            seriesResumeEntry.seasonNumber,
-                                            seriesResumeEntry.episodeNumber,
-                                            seriesResumeEntry.episodeTitle,
-                                            seriesResumeEntry.episodeThumbnail,
-                                            seriesResumeEntry.lastPositionMs,
-                                        )
-                                    }
-
-                                    meta.type == "series" && firstEpisode != null -> {
-                                        onPlay?.invoke(
-                                            meta.type,
-                                            buildPlaybackVideoId(
-                                                parentMetaId = meta.id,
-                                                seasonNumber = firstEpisode.season,
-                                                episodeNumber = firstEpisode.episode,
-                                                fallbackVideoId = firstEpisode.id,
-                                            ),
-                                            meta.id,
-                                            meta.type,
-                                            meta.name,
-                                            meta.logo,
-                                            meta.poster,
-                                            meta.background,
-                                            firstEpisode.season,
-                                            firstEpisode.episode,
-                                            firstEpisode.title,
-                                            firstEpisode.thumbnail,
-                                            null,
+                                            seriesAction.seasonNumber,
+                                            seriesAction.episodeNumber,
+                                            seriesAction.episodeTitle,
+                                            seriesAction.episodeThumbnail,
+                                            seriesAction.resumePositionMs,
                                         )
                                     }
 
@@ -242,6 +220,7 @@ fun MetaDetailsScreen(
                                     fallbackVideoId = video.id,
                                 )
                                 val savedProgress = watchProgressUiState.byVideoId[playbackVideoId]
+                                    ?.takeUnless { it.isCompleted }
                                 onPlay?.invoke(
                                     meta.type,
                                     playbackVideoId,
@@ -288,30 +267,3 @@ fun MetaDetailsScreen(
         }
     }
 }
-
-private fun MetaDetails.firstPlayableEpisode(): MetaVideo? =
-    videos
-        .filter { it.season != null || it.episode != null }
-        .sortedWith(
-            compareBy<MetaVideo>(
-                { it.season ?: Int.MAX_VALUE },
-                { it.episode ?: Int.MAX_VALUE },
-                { it.released ?: "" },
-                { it.title },
-            ),
-        )
-        .firstOrNull()
-
-private fun MetaVideo.playLabel(): String =
-    if (season != null && episode != null) {
-        "Play S${season}E${episode}"
-    } else {
-        "Play"
-    }
-
-private fun WatchProgressEntry.resumeLabel(): String =
-    if (seasonNumber != null && episodeNumber != null) {
-        "Resume S${seasonNumber}E${episodeNumber}"
-    } else {
-        "Resume"
-    }

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.watchprogress
 
+import com.nuvio.app.features.details.MetaVideo
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -30,6 +31,7 @@ data class WatchProgressEntry(
     val lastStreamTitle: String? = null,
     val lastStreamSubtitle: String? = null,
     val lastSourceUrl: String? = null,
+    val isCompleted: Boolean = false,
 ) {
     val progressFraction: Float
         get() = if (durationMs > 0L) {
@@ -40,6 +42,9 @@ data class WatchProgressEntry(
 
     val isEpisode: Boolean
         get() = seasonNumber != null && episodeNumber != null
+
+    val isResumable: Boolean
+        get() = !isCompleted
 }
 
 data class WatchProgressUiState(
@@ -47,6 +52,9 @@ data class WatchProgressUiState(
 ) {
     val byVideoId: Map<String, WatchProgressEntry>
         get() = entries.associateBy { it.videoId }
+
+    val continueWatchingEntries: List<WatchProgressEntry>
+        get() = entries.continueWatchingEntries(limit = ContinueWatchingLimit)
 }
 
 data class WatchProgressPlaybackSession(
@@ -126,6 +134,48 @@ internal fun WatchProgressEntry.toContinueWatchingItem(): ContinueWatchingItem {
         resumePositionMs = lastPositionMs,
         durationMs = durationMs,
         progressFraction = progressFraction,
+    )
+}
+
+internal fun WatchProgressEntry.toUpNextContinueWatchingItem(
+    nextEpisode: MetaVideo,
+): ContinueWatchingItem {
+    val subtitle = buildString {
+        append("Up Next")
+        if (nextEpisode.season != null && nextEpisode.episode != null) {
+            append(" • S")
+            append(nextEpisode.season)
+            append("E")
+            append(nextEpisode.episode)
+        }
+        nextEpisode.title.takeIf { it.isNotBlank() }?.let {
+            append(" • ")
+            append(it)
+        }
+    }
+
+    return ContinueWatchingItem(
+        parentMetaId = parentMetaId,
+        parentMetaType = parentMetaType,
+        videoId = buildPlaybackVideoId(
+            parentMetaId = parentMetaId,
+            seasonNumber = nextEpisode.season,
+            episodeNumber = nextEpisode.episode,
+            fallbackVideoId = nextEpisode.id,
+        ),
+        title = title,
+        subtitle = subtitle,
+        imageUrl = nextEpisode.thumbnail ?: episodeThumbnail ?: background ?: poster,
+        logo = logo,
+        poster = poster,
+        background = background,
+        seasonNumber = nextEpisode.season,
+        episodeNumber = nextEpisode.episode,
+        episodeTitle = nextEpisode.title,
+        episodeThumbnail = nextEpisode.thumbnail,
+        resumePositionMs = 0L,
+        durationMs = 0L,
+        progressFraction = 0f,
     )
 }
 

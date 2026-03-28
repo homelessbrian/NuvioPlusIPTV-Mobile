@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaVideo
@@ -244,6 +245,13 @@ private fun EpisodeCard(
                         color = Color.White,
                     )
                 }
+
+                NuvioAnimatedWatchedBadge(
+                    isVisible = progressEntry?.isCompleted == true,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                )
             }
 
             Column(
@@ -300,7 +308,7 @@ private fun EpisodeCard(
         }
 
         progressEntry
-            ?.takeIf { it.durationMs > 0L }
+            ?.takeIf { it.durationMs > 0L && !it.isCompleted }
             ?.let { entry ->
                 NuvioProgressBar(
                     progress = entry.progressFraction,

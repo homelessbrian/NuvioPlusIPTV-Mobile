@@ -5,21 +5,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.nextReleasedEpisodeAfter
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeSkeletonRow
 import com.nuvio.app.features.watched.WatchedRepository
+import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.toContinueWatchingItem
+import com.nuvio.app.features.watchprogress.toUpNextContinueWatchingItem
 
 @Composable
 fun HomeScreen(
@@ -42,8 +48,36 @@ fun HomeScreen(
     val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
-    val continueWatchingItems = remember(watchProgressUiState.entries) {
-        watchProgressUiState.entries.take(20).map { it.toContinueWatchingItem() }
+    val completedSeriesCandidates = remember(watchProgressUiState.entries) {
+        watchProgressUiState.entries
+            .filter { it.isCompleted && it.isEpisode }
+            .groupBy { it.parentMetaId }
+            .mapNotNull { (parentMetaId, entries) ->
+                val hasResumableEntry = watchProgressUiState.entries.any {
+                    it.parentMetaId == parentMetaId && !it.isCompleted
+                }
+                if (hasResumableEntry) {
+                    null
+                } else {
+                    entries.maxByOrNull { it.lastUpdatedEpochMs }
+                }
+            }
+    }
+    var nextUpItemsBySeries by remember { mutableStateOf<Map<String, Pair<Long, ContinueWatchingItem>>>(emptyMap()) }
+    val continueWatchingItems = remember(
+        watchProgressUiState.continueWatchingEntries,
+        nextUpItemsBySeries,
+    ) {
+        buildList {
+            addAll(
+                watchProgressUiState.continueWatchingEntries.map { entry ->
+                    entry.lastUpdatedEpochMs to entry.toContinueWatchingItem()
+                },
+            )
+            addAll(nextUpItemsBySeries.values)
+        }
+            .sortedByDescending { it.first }
+            .map { it.second }
     }
 
     val catalogRefreshKey = remember(addonsUiState.addons) {
@@ -62,6 +96,33 @@ fun HomeScreen(
     LaunchedEffect(catalogRefreshKey) {
         HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons)
         HomeRepository.refresh(addonsUiState.addons)
+    }
+
+    LaunchedEffect(completedSeriesCandidates, catalogRefreshKey) {
+        if (completedSeriesCandidates.isEmpty()) {
+            nextUpItemsBySeries = emptyMap()
+            return@LaunchedEffect
+        }
+
+        if (addonsUiState.addons.none { it.manifest != null }) {
+            return@LaunchedEffect
+        }
+
+        val todayIsoDate = CurrentDateProvider.todayIsoDate()
+        val resolvedItems = mutableMapOf<String, Pair<Long, ContinueWatchingItem>>()
+        completedSeriesCandidates.forEach { completedEntry ->
+            val meta = MetaDetailsRepository.fetch(
+                type = completedEntry.parentMetaType,
+                id = completedEntry.parentMetaId,
+            ) ?: return@forEach
+            val nextEpisode = meta.nextReleasedEpisodeAfter(
+                completedEntry = completedEntry,
+                todayIsoDate = todayIsoDate,
+            ) ?: return@forEach
+            resolvedItems[completedEntry.parentMetaId] =
+                completedEntry.lastUpdatedEpochMs to completedEntry.toUpNextContinueWatchingItem(nextEpisode)
+        }
+        nextUpItemsBySeries = resolvedItems
     }
 
     NuvioScreen(

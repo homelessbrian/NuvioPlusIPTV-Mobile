@@ -60,11 +60,12 @@ internal fun isWatchProgressComplete(
 }
 
 internal fun List<WatchProgressEntry>.resumeEntryForSeries(metaId: String): WatchProgressEntry? =
-    filter { it.parentMetaId == metaId }
+    filter { it.parentMetaId == metaId && !it.isCompleted }
         .maxByOrNull { it.lastUpdatedEpochMs }
 
 internal fun List<WatchProgressEntry>.continueWatchingEntries(
     limit: Int = ContinueWatchingLimit,
 ): List<WatchProgressEntry> =
-    sortedByDescending { it.lastUpdatedEpochMs }
+    filterNot { it.isCompleted }
+        .sortedByDescending { it.lastUpdatedEpochMs }
         .take(limit)
