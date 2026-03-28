@@ -49,6 +49,22 @@ fun MetaDetails.toLibraryItem(savedAtEpochMs: Long): LibraryItem =
         savedAtEpochMs = savedAtEpochMs,
     )
 
+fun MetaPreview.toLibraryItem(savedAtEpochMs: Long): LibraryItem =
+    LibraryItem(
+        id = id,
+        type = type,
+        name = name,
+        poster = poster,
+        banner = banner,
+        logo = logo,
+        description = description,
+        releaseInfo = releaseInfo,
+        imdbRating = imdbRating,
+        genres = genres,
+        posterShape = posterShape,
+        savedAtEpochMs = savedAtEpochMs,
+    )
+
 fun LibraryItem.toMetaPreview(): MetaPreview =
     MetaPreview(
         id = id,

@@ -36,6 +36,7 @@ import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeSkeletonRow
+import com.nuvio.app.features.watched.WatchedRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -45,14 +46,17 @@ import kotlinx.coroutines.flow.map
 fun SearchScreen(
     modifier: Modifier = Modifier,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
     LaunchedEffect(Unit) {
         AddonRepository.initialize()
+        WatchedRepository.ensureLoaded()
     }
 
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val uiState by SearchRepository.uiState.collectAsStateWithLifecycle()
     val discoverUiState by SearchRepository.discoverUiState.collectAsStateWithLifecycle()
+    val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var headerHeightPx by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
@@ -146,7 +150,9 @@ fun SearchScreen(
                     onTypeSelected = SearchRepository::selectDiscoverType,
                     onCatalogSelected = SearchRepository::selectDiscoverCatalog,
                     onGenreSelected = SearchRepository::selectDiscoverGenre,
+                    watchedKeys = watchedUiState.watchedKeys,
                     onPosterClick = onPosterClick,
+                    onPosterLongClick = onPosterLongClick,
                 )
             } else {
                 when {
@@ -174,7 +180,9 @@ fun SearchScreen(
                             HomeCatalogRowSection(
                                 section = section,
                                 modifier = Modifier.padding(bottom = 12.dp),
+                                watchedKeys = watchedUiState.watchedKeys,
                                 onPosterClick = onPosterClick,
+                                onPosterLongClick = onPosterLongClick,
                             )
                         }
                     }

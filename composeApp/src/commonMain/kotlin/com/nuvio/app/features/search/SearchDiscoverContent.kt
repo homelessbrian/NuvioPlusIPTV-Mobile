@@ -1,7 +1,9 @@
 package com.nuvio.app.features.search
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,16 +42,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
+import com.nuvio.app.features.watched.watchedItemKey
 
 internal fun LazyListScope.discoverContent(
     state: DiscoverUiState,
     onTypeSelected: (String) -> Unit,
     onCatalogSelected: (String) -> Unit,
     onGenreSelected: (String?) -> Unit,
+    watchedKeys: Set<String> = emptySet(),
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
     item {
         DiscoverSectionHeader(modifier = Modifier.padding(horizontal = 16.dp))
@@ -99,7 +105,9 @@ internal fun LazyListScope.discoverContent(
                 DiscoverGridRow(
                     items = rowItems,
                     modifier = Modifier.padding(horizontal = 16.dp),
+                    watchedKeys = watchedKeys,
                     onPosterClick = onPosterClick,
+                    onPosterLongClick = onPosterLongClick,
                 )
             }
             if (state.isLoading) {
@@ -226,7 +234,9 @@ private fun DiscoverDropdownChip(
 private fun DiscoverGridRow(
     items: List<MetaPreview>,
     modifier: Modifier = Modifier,
+    watchedKeys: Set<String> = emptySet(),
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -237,7 +247,9 @@ private fun DiscoverGridRow(
             DiscoverPosterTile(
                 item = item,
                 modifier = Modifier.weight(1f),
+                isWatched = watchedKeys.contains(watchedItemKey(item.type, item.id)),
                 onClick = onPosterClick?.let { { it(item) } },
+                onLongClick = onPosterLongClick?.let { { it(item) } },
             )
         }
         repeat(3 - items.size) {
@@ -246,14 +258,26 @@ private fun DiscoverGridRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DiscoverPosterTile(
     item: MetaPreview,
     modifier: Modifier = Modifier,
+    isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     Column(
-        modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        modifier = modifier.then(
+            if (onClick != null || onLongClick != null) {
+                Modifier.combinedClickable(
+                    onClick = { onClick?.invoke() },
+                    onLongClick = onLongClick,
+                )
+            } else {
+                Modifier
+            },
+        ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
@@ -271,6 +295,12 @@ private fun DiscoverPosterTile(
                     contentScale = ContentScale.Crop,
                 )
             }
+            NuvioAnimatedWatchedBadge(
+                isVisible = isWatched,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp),
+            )
         }
         Text(
             text = item.name,

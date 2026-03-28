@@ -15,6 +15,7 @@ import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeSkeletonRow
+import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
@@ -25,18 +26,21 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
 ) {
     LaunchedEffect(Unit) {
         AddonRepository.initialize()
         ContinueWatchingPreferencesRepository.ensureLoaded()
+        WatchedRepository.ensureLoaded()
         WatchProgressRepository.ensureLoaded()
     }
 
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
     val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
+    val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
     val continueWatchingItems = remember(watchProgressUiState.entries) {
         watchProgressUiState.entries.take(20).map { it.toContinueWatchingItem() }
@@ -151,7 +155,9 @@ fun HomeScreen(
                         } else {
                             null
                         },
+                        watchedKeys = watchedUiState.watchedKeys,
                         onPosterClick = onPosterClick,
+                        onPosterLongClick = onPosterLongClick,
                     )
                 }
             }

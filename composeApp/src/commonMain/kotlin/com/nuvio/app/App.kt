@@ -10,6 +10,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.runtime.remember
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -23,8 +24,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -33,6 +37,7 @@ import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.request.crossfade
 import com.nuvio.app.core.ui.nuvioBottomNavigationBarInsets
+import com.nuvio.app.core.ui.NuvioPosterActionSheet
 import com.nuvio.app.core.ui.NuvioTheme
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
@@ -42,13 +47,18 @@ import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.library.LibraryItem
+import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.LibraryScreen
+import com.nuvio.app.features.library.toLibraryItem
 import com.nuvio.app.features.player.PlayerRoute
 import com.nuvio.app.features.player.PlayerScreen
 import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
+import com.nuvio.app.features.watched.WatchedRepository
+import com.nuvio.app.features.watched.toWatchedItem
+import com.nuvio.app.features.watched.watchedItemKey
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import kotlinx.serialization.Serializable
 
@@ -99,6 +109,7 @@ fun AppScreen(
     modifier: Modifier = Modifier,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     onLibraryPosterClick: ((LibraryItem) -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
@@ -108,12 +119,14 @@ fun AppScreen(
             modifier = modifier,
             onCatalogClick = onCatalogClick,
             onPosterClick = onPosterClick,
+            onPosterLongClick = onPosterLongClick,
             onContinueWatchingClick = onContinueWatchingClick,
             onContinueWatchingLongPress = onContinueWatchingLongPress,
         )
         AppScreenTab.Search -> SearchScreen(
             modifier = modifier,
             onPosterClick = onPosterClick,
+            onPosterLongClick = onPosterLongClick,
         )
         AppScreenTab.Library -> LibraryScreen(
             modifier = modifier,
@@ -136,7 +149,17 @@ fun App() {
     }
     NuvioTheme {
         val navController = rememberNavController()
+        val hapticFeedback = LocalHapticFeedback.current
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
+        var selectedPosterForActions by remember { mutableStateOf<MetaPreview?>(null) }
+        val libraryUiState by remember {
+            LibraryRepository.ensureLoaded()
+            LibraryRepository.uiState
+        }.collectAsStateWithLifecycle()
+        val watchedUiState by remember {
+            WatchedRepository.ensureLoaded()
+            WatchedRepository.uiState
+        }.collectAsStateWithLifecycle()
 
         val onPlay: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, Long?) -> Unit =
             { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, resumePositionMs ->
@@ -261,6 +284,10 @@ fun App() {
                     onCatalogClick = onCatalogClick,
                     onPosterClick = { meta ->
                         navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                    },
+                    onPosterLongClick = { meta ->
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        selectedPosterForActions = meta
                     },
                     onLibraryPosterClick = { item ->
                         navController.navigate(DetailRoute(type = item.type, id = item.id))
@@ -387,6 +414,27 @@ fun App() {
                     )
                 }
             }
+
+            NuvioPosterActionSheet(
+                item = selectedPosterForActions,
+                isSaved = selectedPosterForActions?.let { preview ->
+                    LibraryRepository.isSaved(preview.id)
+                } == true,
+                isWatched = selectedPosterForActions?.let { preview ->
+                    watchedUiState.watchedKeys.contains(watchedItemKey(preview.type, preview.id))
+                } == true,
+                onDismiss = { selectedPosterForActions = null },
+                onToggleLibrary = {
+                    selectedPosterForActions?.let { preview ->
+                        LibraryRepository.toggleSaved(preview.toLibraryItem(savedAtEpochMs = 0L))
+                    }
+                },
+                onToggleWatched = {
+                    selectedPosterForActions?.let { preview ->
+                        WatchedRepository.toggleWatched(preview.toWatchedItem(markedAtEpochMs = 0L))
+                    }
+                },
+            )
         }
     }
 }

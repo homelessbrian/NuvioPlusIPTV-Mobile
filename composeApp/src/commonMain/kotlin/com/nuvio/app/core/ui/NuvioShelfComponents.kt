@@ -94,6 +94,7 @@ fun NuvioPosterCard(
     modifier: Modifier = Modifier,
     shape: NuvioPosterShape = NuvioPosterShape.Poster,
     detailLine: String? = null,
+    isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
@@ -135,6 +136,12 @@ fun NuvioPosterCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            NuvioAnimatedWatchedBadge(
+                isVisible = isWatched,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp),
+            )
         }
         Text(
             text = title,

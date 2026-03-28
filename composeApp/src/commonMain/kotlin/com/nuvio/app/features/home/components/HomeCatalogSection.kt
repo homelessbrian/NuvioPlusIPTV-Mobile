@@ -13,8 +13,10 @@ fun HomeCatalogRowSection(
     section: HomeCatalogSection,
     modifier: Modifier = Modifier,
     entries: List<MetaPreview> = section.items,
+    watchedKeys: Set<String> = emptySet(),
     onViewAllClick: (() -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
     NuvioShelfSection(
         title = section.title,
@@ -28,7 +30,9 @@ fun HomeCatalogRowSection(
     ) { item ->
         HomePosterCard(
             item = item,
+            isWatched = watchedKeys.contains("${item.type}:${item.id}"),
             onClick = onPosterClick?.let { { it(item) } },
+            onLongClick = onPosterLongClick?.let { { it(item) } },
         )
     }
 }

@@ -11,6 +11,7 @@ import com.nuvio.app.features.home.PosterShape
 fun HomePosterCard(
     item: MetaPreview,
     modifier: Modifier = Modifier,
+    isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
@@ -20,6 +21,7 @@ fun HomePosterCard(
         modifier = modifier,
         shape = item.posterShape.toNuvioPosterShape(),
         detailLine = item.releaseInfo,
+        isWatched = isWatched,
         onClick = onClick,
         onLongClick = onLongClick,
     )
