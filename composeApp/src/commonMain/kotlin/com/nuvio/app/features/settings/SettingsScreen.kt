@@ -46,6 +46,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
+    onSwitchProfile: (() -> Unit)? = null,
 ) {
     BoxWithConstraints(
         modifier = modifier
@@ -89,6 +90,7 @@ fun SettingsScreen(
                 showLoadingOverlay = playerSettingsUiState.showLoadingOverlay,
                 continueWatchingVisible = continueWatchingPreferencesUiState.isVisible,
                 continueWatchingStyle = continueWatchingPreferencesUiState.style,
+                onSwitchProfile = onSwitchProfile,
             )
         } else {
             MobileSettingsScreen(
@@ -99,6 +101,7 @@ fun SettingsScreen(
                 showLoadingOverlay = playerSettingsUiState.showLoadingOverlay,
                 continueWatchingVisible = continueWatchingPreferencesUiState.isVisible,
                 continueWatchingStyle = continueWatchingPreferencesUiState.style,
+                onSwitchProfile = onSwitchProfile,
             )
         }
     }
@@ -113,6 +116,7 @@ private fun MobileSettingsScreen(
     showLoadingOverlay: Boolean,
     continueWatchingVisible: Boolean,
     continueWatchingStyle: ContinueWatchingSectionStyle,
+    onSwitchProfile: (() -> Unit)? = null,
 ) {
     NuvioScreen {
         stickyHeader {
@@ -131,6 +135,7 @@ private fun MobileSettingsScreen(
                 onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
                 onAccountClick = { onPageChange(SettingsPage.Account) },
                 onSyncOverviewClick = { onPageChange(SettingsPage.SyncOverview) },
+                onSwitchProfileClick = onSwitchProfile,
             )
             SettingsPage.Playback -> playbackSettingsContent(
                 isTablet = false,
@@ -175,6 +180,7 @@ private fun TabletSettingsScreen(
     showLoadingOverlay: Boolean,
     continueWatchingVisible: Boolean,
     continueWatchingStyle: ContinueWatchingSectionStyle,
+    onSwitchProfile: (() -> Unit)? = null,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
     val activeCategory = SettingsCategory.valueOf(selectedCategory)
@@ -242,6 +248,7 @@ private fun TabletSettingsScreen(
                     onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
                     onAccountClick = { onPageChange(SettingsPage.Account) },
                     onSyncOverviewClick = { onPageChange(SettingsPage.SyncOverview) },
+                    onSwitchProfileClick = onSwitchProfile,
                 )
                 SettingsPage.Playback -> playbackSettingsContent(
                     isTablet = true,

@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Sync
 
@@ -15,6 +16,7 @@ internal fun LazyListScope.settingsRootContent(
     onContentDiscoveryClick: () -> Unit,
     onAccountClick: () -> Unit,
     onSyncOverviewClick: () -> Unit,
+    onSwitchProfileClick: (() -> Unit)? = null,
 ) {
     item {
         SettingsSection(
@@ -49,6 +51,15 @@ internal fun LazyListScope.settingsRootContent(
             title = "ACCOUNT & SYNC",
             isTablet = isTablet,
         ) {
+            if (onSwitchProfileClick != null) {
+                SettingsNavigationRow(
+                    title = "Switch Profile",
+                    description = "Change to a different profile.",
+                    icon = Icons.Rounded.People,
+                    isTablet = isTablet,
+                    onClick = onSwitchProfileClick,
+                )
+            }
             SettingsNavigationRow(
                 title = "Account",
                 description = "Manage your account, sign out, or delete.",

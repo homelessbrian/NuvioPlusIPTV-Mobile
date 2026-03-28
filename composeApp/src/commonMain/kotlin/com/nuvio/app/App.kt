@@ -204,7 +204,11 @@ fun App() {
                     )
                 }
                 AppGateScreen.Main.name -> {
-                    MainAppContent()
+                    MainAppContent(
+                        onSwitchProfile = {
+                            gateScreen = AppGateScreen.ProfileSelection.name
+                        },
+                    )
                 }
             }
         }
@@ -213,7 +217,9 @@ fun App() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainAppContent() {
+private fun MainAppContent(
+    onSwitchProfile: () -> Unit = {},
+) {
         val navController = rememberNavController()
         val hapticFeedback = LocalHapticFeedback.current
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
@@ -360,6 +366,7 @@ private fun MainAppContent() {
                     },
                     onContinueWatchingClick = onContinueWatchingClick,
                     onContinueWatchingLongPress = onContinueWatchingLongPress,
+                    onSwitchProfile = onSwitchProfile,
                 )
             }
 
@@ -514,6 +521,7 @@ private fun AppTabHost(
     onLibraryPosterClick: ((LibraryItem) -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
+    onSwitchProfile: (() -> Unit)? = null,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         keepAliveTab(
@@ -550,6 +558,7 @@ private fun AppTabHost(
         ) {
             SettingsScreen(
                 modifier = Modifier.fillMaxSize(),
+                onSwitchProfile = onSwitchProfile,
             )
         }
     }

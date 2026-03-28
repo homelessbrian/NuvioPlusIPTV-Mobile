@@ -2,6 +2,7 @@ package com.nuvio.app.features.watchprogress
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.network.SupabaseProvider
+import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.profiles.ProfileRepository
 import io.github.jan.supabase.postgrest.postgrest
@@ -62,27 +63,83 @@ object WatchProgressRepository {
             val params = buildJsonObject { put("p_profile_id", profileId) }
             val result = SupabaseProvider.client.postgrest.rpc("sync_pull_watch_progress", params)
             val serverEntries = result.decodeList<WatchProgressSyncEntry>()
+
+            val oldLocal = entriesByVideoId.toMap()
+            val newMap = mutableMapOf<String, WatchProgressEntry>()
+
             serverEntries.forEach { entry ->
                 val videoId = entry.videoId
-                entriesByVideoId[videoId] = WatchProgressEntry(
+                val cached = oldLocal[videoId]
+                newMap[videoId] = WatchProgressEntry(
                     contentType = entry.contentType,
                     parentMetaId = entry.contentId,
-                    parentMetaType = entry.contentType,
+                    parentMetaType = cached?.parentMetaType ?: entry.contentType,
                     videoId = videoId,
-                    title = "",
+                    title = cached?.title?.takeIf { it.isNotBlank() } ?: entry.contentId,
+                    logo = cached?.logo,
+                    poster = cached?.poster,
+                    background = cached?.background,
                     seasonNumber = entry.season,
                     episodeNumber = entry.episode,
+                    episodeTitle = cached?.episodeTitle,
+                    episodeThumbnail = cached?.episodeThumbnail,
                     lastPositionMs = entry.position,
                     durationMs = entry.duration,
                     lastUpdatedEpochMs = entry.lastWatched,
+                    providerName = cached?.providerName,
+                    providerAddonId = cached?.providerAddonId,
+                    lastStreamTitle = cached?.lastStreamTitle,
+                    lastStreamSubtitle = cached?.lastStreamSubtitle,
+                    lastSourceUrl = cached?.lastSourceUrl,
                     isCompleted = entry.duration > 0 && entry.position >= entry.duration,
                 )
             }
+
+            entriesByVideoId = newMap
             hasLoaded = true
             publish()
             persist()
+
+            resolveRemoteMetadata()
         }.onFailure { e ->
             log.e(e) { "Failed to pull watch progress from server" }
+        }
+    }
+
+    private fun resolveRemoteMetadata() {
+        val needsResolution = entriesByVideoId.values
+            .filter { it.poster == null && it.background == null }
+            .groupBy { it.parentMetaId to it.contentType }
+
+        if (needsResolution.isEmpty()) return
+
+        syncScope.launch {
+            for ((key, entries) in needsResolution) {
+                val (metaId, metaType) = key
+                val meta = runCatching {
+                    MetaDetailsRepository.fetch(metaType, metaId)
+                }.getOrNull() ?: continue
+
+                for (entry in entries) {
+                    val episodeVideo = if (entry.seasonNumber != null && entry.episodeNumber != null) {
+                        meta.videos.find { v ->
+                            v.season == entry.seasonNumber && v.episode == entry.episodeNumber
+                        }
+                    } else null
+
+                    entriesByVideoId[entry.videoId] = entry.copy(
+                        title = meta.name,
+                        poster = meta.poster,
+                        background = meta.background,
+                        logo = meta.logo,
+                        episodeTitle = episodeVideo?.title ?: entry.episodeTitle,
+                        episodeThumbnail = episodeVideo?.thumbnail ?: entry.episodeThumbnail,
+                    )
+                }
+
+                publish()
+            }
+            persist()
         }
     }
 
