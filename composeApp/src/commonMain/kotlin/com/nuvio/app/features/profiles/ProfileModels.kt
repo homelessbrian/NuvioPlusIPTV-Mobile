@@ -70,3 +70,6 @@ val PROFILE_COLORS = listOf(
     "#C0CA33", "#D81B60", "#00897B", "#5E35B1",
     "#7CB342", "#039BE5", "#FFB300", "#6D4C41",
 )
+
+fun avatarStorageUrl(storagePath: String): String =
+    "${com.nuvio.app.core.network.SupabaseConfig.URL}/storage/v1/object/public/avatars/$storagePath"

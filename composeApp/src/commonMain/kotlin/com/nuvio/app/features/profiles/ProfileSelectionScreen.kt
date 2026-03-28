@@ -43,8 +43,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -62,6 +64,7 @@ fun ProfileSelectionScreen(
 
     LaunchedEffect(Unit) {
         ProfileRepository.pullProfiles()
+        AvatarRepository.fetchAvatars()
     }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -155,6 +158,10 @@ private fun ProfileAvatar(
     val avatarColor = remember(profile.avatarColorHex) {
         parseHexColor(profile.avatarColorHex)
     }
+    val avatars by AvatarRepository.avatars.collectAsStateWithLifecycle()
+    val avatarItem = remember(profile.avatarId, avatars) {
+        profile.avatarId?.let { id -> avatars.find { it.id == id } }
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -171,11 +178,28 @@ private fun ProfileAvatar(
                 modifier = Modifier
                     .size(96.dp)
                     .clip(CircleShape)
-                    .background(avatarColor.copy(alpha = 0.2f))
-                    .border(2.dp, avatarColor.copy(alpha = 0.5f), CircleShape),
+                    .background(
+                        if (avatarItem != null) {
+                            avatarItem.bgColor?.let { parseHexColor(it) } ?: avatarColor
+                        } else {
+                            avatarColor.copy(alpha = 0.2f)
+                        }
+                    )
+                    .border(
+                        2.dp,
+                        if (avatarItem != null) Color.Transparent else avatarColor.copy(alpha = 0.5f),
+                        CircleShape,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
-                if (profile.name.isNotBlank()) {
+                if (avatarItem != null) {
+                    AsyncImage(
+                        model = avatarStorageUrl(avatarItem.storagePath),
+                        contentDescription = avatarItem.displayName,
+                        modifier = Modifier.size(96.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else if (profile.name.isNotBlank()) {
                     Text(
                         text = profile.name.take(1).uppercase(),
                         style = MaterialTheme.typography.headlineLarge,

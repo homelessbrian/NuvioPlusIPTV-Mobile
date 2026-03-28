@@ -28,6 +28,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,9 +39,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioScreen
@@ -63,11 +67,18 @@ fun ProfileEditScreen(
 
     var name by rememberSaveable { mutableStateOf(profile?.name ?: "") }
     var selectedColor by rememberSaveable { mutableStateOf(profile?.avatarColorHex ?: PROFILE_COLORS.first()) }
+    var selectedAvatarId by rememberSaveable { mutableStateOf(profile?.avatarId) }
     var usesPrimaryAddons by rememberSaveable { mutableStateOf(profile?.usesPrimaryAddons ?: false) }
     var isSaving by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showPinSetup by remember { mutableStateOf(false) }
     var showPinClear by remember { mutableStateOf(false) }
+
+    val avatars by AvatarRepository.avatars.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { AvatarRepository.fetchAvatars() }
+    val selectedAvatarItem = remember(selectedAvatarId, avatars) {
+        selectedAvatarId?.let { id -> avatars.find { it.id == id } }
+    }
 
     NuvioScreen(modifier = modifier) {
         stickyHeader {
@@ -88,11 +99,28 @@ fun ProfileEditScreen(
                         modifier = Modifier
                             .size(100.dp)
                             .clip(CircleShape)
-                            .background(color.copy(alpha = 0.2f))
-                            .border(3.dp, color.copy(alpha = 0.6f), CircleShape),
+                            .background(
+                                if (selectedAvatarItem != null) {
+                                    selectedAvatarItem!!.bgColor?.let { parseHexColor(it) } ?: color
+                                } else {
+                                    color.copy(alpha = 0.2f)
+                                }
+                            )
+                            .border(
+                                3.dp,
+                                if (selectedAvatarItem != null) Color.Transparent else color.copy(alpha = 0.6f),
+                                CircleShape,
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (name.isNotBlank()) {
+                        if (selectedAvatarItem != null) {
+                            AsyncImage(
+                                model = avatarStorageUrl(selectedAvatarItem!!.storagePath),
+                                contentDescription = selectedAvatarItem!!.displayName,
+                                modifier = Modifier.size(100.dp).clip(CircleShape),
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else if (name.isNotBlank()) {
                             Text(
                                 text = name.take(1).uppercase(),
                                 style = MaterialTheme.typography.displayLarge,
@@ -126,6 +154,46 @@ fun ProfileEditScreen(
         }
 
         item {
+            NuvioSectionLabel(text = "AVATAR")
+        }
+        item {
+            NuvioSurfaceCard {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    avatars.forEach { avatar ->
+                        val isSelected = avatar.id == selectedAvatarId
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    avatar.bgColor?.let { parseHexColor(it) }
+                                        ?: MaterialTheme.colorScheme.surfaceVariant
+                                )
+                                .then(
+                                    if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                                    else Modifier
+                                )
+                                .clickable {
+                                    selectedAvatarId = avatar.id
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            AsyncImage(
+                                model = avatarStorageUrl(avatar.storagePath),
+                                contentDescription = avatar.displayName,
+                                modifier = Modifier.size(56.dp).clip(CircleShape),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
             NuvioSectionLabel(text = "COLOR")
         }
         item {
@@ -136,7 +204,7 @@ fun ProfileEditScreen(
                 ) {
                     PROFILE_COLORS.forEach { hex ->
                         val color = remember(hex) { parseHexColor(hex) }
-                        val isSelected = hex == selectedColor
+                        val isSelected = hex == selectedColor && selectedAvatarId == null
                         Box(
                             modifier = Modifier
                                 .size(44.dp)
@@ -146,7 +214,10 @@ fun ProfileEditScreen(
                                     if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
                                     else Modifier
                                 )
-                                .clickable { selectedColor = hex },
+                                .clickable {
+                                    selectedColor = hex
+                                    selectedAvatarId = null
+                                },
                             contentAlignment = Alignment.Center,
                         ) {
                             if (isSelected) {
@@ -234,6 +305,7 @@ fun ProfileEditScreen(
                             ProfileRepository.createProfile(
                                 name = name,
                                 avatarColorHex = selectedColor,
+                                avatarId = selectedAvatarId,
                                 usesPrimaryAddons = usesPrimaryAddons,
                             )
                         } else {
@@ -241,8 +313,8 @@ fun ProfileEditScreen(
                                 profileIndex = profile!!.profileIndex,
                                 name = name,
                                 avatarColorHex = selectedColor,
+                                avatarId = selectedAvatarId,
                                 usesPrimaryAddons = usesPrimaryAddons,
-                                avatarId = profile.avatarId,
                             )
                         }
                         isSaving = false
