@@ -3,7 +3,6 @@ package com.nuvio.app.features.search
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
+import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
@@ -268,16 +268,7 @@ private fun DiscoverPosterTile(
     onLongClick: (() -> Unit)? = null,
 ) {
     Column(
-        modifier = modifier.then(
-            if (onClick != null || onLongClick != null) {
-                Modifier.combinedClickable(
-                    onClick = { onClick?.invoke() },
-                    onLongClick = onLongClick,
-                )
-            } else {
-                Modifier
-            },
-        ),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
@@ -285,7 +276,8 @@ private fun DiscoverPosterTile(
                 .fillMaxWidth()
                 .aspectRatio(item.posterShape.discoverAspectRatio())
                 .clip(RoundedCornerShape(22.dp))
-                .background(MaterialTheme.colorScheme.surface),
+                .background(MaterialTheme.colorScheme.surface)
+                .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
             if (item.poster != null) {
                 AsyncImage(

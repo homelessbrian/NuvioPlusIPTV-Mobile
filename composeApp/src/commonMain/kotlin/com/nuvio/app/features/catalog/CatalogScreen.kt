@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
@@ -199,7 +200,6 @@ private fun CatalogPosterTile(
     onClick: (() -> Unit)? = null,
 ) {
     Column(
-        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
@@ -207,7 +207,8 @@ private fun CatalogPosterTile(
                 .fillMaxWidth()
                 .aspectRatio(item.posterShape.catalogAspectRatio())
                 .clip(RoundedCornerShape(22.dp))
-                .background(MaterialTheme.colorScheme.surface),
+                .background(MaterialTheme.colorScheme.surface)
+                .posterCardClickable(onClick = onClick, onLongClick = null),
         ) {
             if (item.poster != null) {
                 AsyncImage(

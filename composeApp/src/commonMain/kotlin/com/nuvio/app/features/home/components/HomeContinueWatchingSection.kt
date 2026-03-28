@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.core.ui.NuvioShelfSection
+import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import kotlin.math.roundToInt
@@ -279,13 +280,7 @@ private fun ContinueWatchingPosterCard(
     onLongClick: (() -> Unit)?,
 ) {
     Column(
-        modifier = Modifier
-            .width(layout.posterCardWidth)
-            .combinedClickable(
-                enabled = onClick != null || onLongClick != null,
-                onClick = { onClick?.invoke() },
-                onLongClick = onLongClick,
-            ),
+        modifier = Modifier.width(layout.posterCardWidth),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
@@ -298,7 +293,8 @@ private fun ContinueWatchingPosterCard(
                     width = 1.5.dp,
                     color = Color.White.copy(alpha = 0.15f),
                     shape = RoundedCornerShape(layout.cardRadius),
-                ),
+                )
+                .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
             val imageUrl = item.imageUrl
             if (imageUrl != null) {

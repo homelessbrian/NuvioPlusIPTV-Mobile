@@ -99,15 +99,7 @@ fun NuvioPosterCard(
     onLongClick: (() -> Unit)? = null,
 ) {
     Column(
-        modifier = modifier
-            .width(110.dp)
-            .then(
-                if (onClick != null || onLongClick != null) {
-                    Modifier.posterCardClickable(onClick = onClick, onLongClick = onLongClick)
-                } else {
-                    Modifier
-                }
-            ),
+        modifier = modifier.width(110.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(
@@ -115,7 +107,8 @@ fun NuvioPosterCard(
                 .fillMaxWidth()
                 .aspectRatio(shape.aspectRatio)
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surface),
+                .background(MaterialTheme.colorScheme.surface)
+                .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
             contentAlignment = Alignment.Center,
         ) {
             if (imageUrl != null) {
@@ -253,11 +246,15 @@ private val NuvioPosterShape.aspectRatio: Float
     }
 
 @OptIn(ExperimentalFoundationApi::class)
-private fun Modifier.posterCardClickable(
+internal fun Modifier.posterCardClickable(
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
 ): Modifier =
-    combinedClickable(
-        onClick = { onClick?.invoke() },
-        onLongClick = onLongClick,
-    )
+    if (onClick != null || onLongClick != null) {
+        combinedClickable(
+            onClick = { onClick?.invoke() },
+            onLongClick = onLongClick,
+        )
+    } else {
+        this
+    }
