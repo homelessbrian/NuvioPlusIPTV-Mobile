@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
@@ -26,6 +27,7 @@ internal object MetaDetailsParser {
             logo = meta.string("logo"),
             description = meta.string("description"),
             releaseInfo = meta.string("releaseInfo"),
+            status = meta.string("status"),
             imdbRating = meta.string("imdbRating"),
             runtime = meta.string("runtime"),
             genres = meta.stringList("genres"),
@@ -35,6 +37,7 @@ internal object MetaDetailsParser {
             awards = meta.string("awards"),
             language = meta.string("language"),
             website = meta.string("website"),
+            hasScheduledVideos = meta.behaviorHints().boolean("hasScheduledVideos") == true,
             links = links,
             videos = meta.videos(),
         )
@@ -76,6 +79,12 @@ internal object MetaDetailsParser {
 
     private fun JsonObject.int(name: String): Int? =
         this[name]?.jsonPrimitive?.intOrNull
+
+    private fun JsonObject.boolean(name: String): Boolean? =
+        this[name]?.jsonPrimitive?.booleanOrNull
+
+    private fun JsonObject.behaviorHints(): JsonObject =
+        this["behaviorHints"] as? JsonObject ?: JsonObject(emptyMap())
 
     private fun JsonObject.directors(links: List<MetaLink>): List<String> {
         val appExtras = this["app_extras"] as? JsonObject

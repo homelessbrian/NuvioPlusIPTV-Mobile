@@ -57,6 +57,27 @@ fun DetailSeriesContent(
     progressByVideoId: Map<String, WatchProgressEntry> = emptyMap(),
     onEpisodeClick: ((MetaVideo) -> Unit)? = null,
 ) {
+    if (meta.type != "series") return
+
+    if (meta.videos.isEmpty()) {
+        DetailSection(
+            title = "Episodes",
+            modifier = modifier,
+        ) {
+            Text(
+                text = when {
+                    meta.status.equals("Not yet aired", ignoreCase = true) || meta.hasScheduledVideos ->
+                        "Episodes have not been published by this addon yet."
+                    else ->
+                        "This addon did not provide episode metadata for this series."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+
     val groupedEpisodes = remember(meta.videos) {
         log.d { "videos count=${meta.videos.size}, type=${meta.type}" }
         val withSeasonOrEp = meta.videos.filter { it.season != null || it.episode != null }
@@ -69,7 +90,19 @@ fun DetailSeriesContent(
             .groupBy { normalizeSeasonNumber(it.season) }
     }
 
-    if (groupedEpisodes.isEmpty()) return
+    if (groupedEpisodes.isEmpty()) {
+        DetailSection(
+            title = "Episodes",
+            modifier = modifier,
+        ) {
+            Text(
+                text = "This addon returned videos for the series, but none included season or episode numbers.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
 
     val seasons = groupedEpisodes.keys.sortedBy(::seasonSortKey)
     val defaultSeason = seasons.first()

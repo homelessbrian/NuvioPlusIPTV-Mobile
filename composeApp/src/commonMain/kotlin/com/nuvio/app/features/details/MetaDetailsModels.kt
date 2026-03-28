@@ -9,6 +9,7 @@ data class MetaDetails(
     val logo: String? = null,
     val description: String? = null,
     val releaseInfo: String? = null,
+    val status: String? = null,
     val imdbRating: String? = null,
     val runtime: String? = null,
     val genres: List<String> = emptyList(),
@@ -18,6 +19,7 @@ data class MetaDetails(
     val awards: String? = null,
     val language: String? = null,
     val website: String? = null,
+    val hasScheduledVideos: Boolean = false,
     val links: List<MetaLink> = emptyList(),
     val videos: List<MetaVideo> = emptyList(),
 )
