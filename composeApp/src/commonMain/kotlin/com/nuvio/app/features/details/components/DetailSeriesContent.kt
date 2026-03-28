@@ -42,6 +42,9 @@ import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.metaVideoSeasonEpisodeComparator
+import com.nuvio.app.features.details.normalizeSeasonNumber
+import com.nuvio.app.features.details.seasonSortKey
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 
@@ -62,20 +65,13 @@ fun DetailSeriesContent(
             log.w { "All videos lack season/episode fields! First: ${meta.videos.first()}" }
         }
         withSeasonOrEp
-            .sortedWith(
-                compareBy<MetaVideo>(
-                    { it.season ?: Int.MAX_VALUE },
-                    { it.episode ?: Int.MAX_VALUE },
-                    { it.released ?: "" },
-                    { it.title },
-                ),
-            )
-            .groupBy { it.season ?: 1 }
+            .sortedWith(metaVideoSeasonEpisodeComparator)
+            .groupBy { normalizeSeasonNumber(it.season) }
     }
 
     if (groupedEpisodes.isEmpty()) return
 
-    val seasons = groupedEpisodes.keys.sorted()
+    val seasons = groupedEpisodes.keys.sortedBy(::seasonSortKey)
     val defaultSeason = seasons.first()
     var selectedSeason by rememberSaveable(meta.id) { mutableStateOf(defaultSeason) }
     val currentSeason = selectedSeason.takeIf { it in groupedEpisodes } ?: defaultSeason

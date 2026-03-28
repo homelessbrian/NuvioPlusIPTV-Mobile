@@ -7,14 +7,7 @@ import com.nuvio.app.features.watchprogress.resumeEntryForSeries
 internal fun MetaDetails.sortedPlayableEpisodes(): List<MetaVideo> =
     videos
         .filter { it.season != null || it.episode != null }
-        .sortedWith(
-            compareBy<MetaVideo>(
-                { it.season ?: Int.MAX_VALUE },
-                { it.episode ?: Int.MAX_VALUE },
-                { it.released ?: "" },
-                { it.title },
-            ),
-        )
+        .sortedWith(metaVideoSeasonEpisodeComparator)
 
 internal fun MetaDetails.firstPlayableEpisode(): MetaVideo? =
     sortedPlayableEpisodes().firstOrNull()
@@ -126,4 +119,3 @@ private fun MetaVideo.isReleasedBy(todayIsoDate: String): Boolean {
         ?: return true
     return releaseDate <= todayIsoDate
 }
-
