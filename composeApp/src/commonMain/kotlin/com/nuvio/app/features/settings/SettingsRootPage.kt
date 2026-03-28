@@ -23,27 +23,31 @@ internal fun LazyListScope.settingsRootContent(
             title = "GENERAL",
             isTablet = isTablet,
         ) {
-            SettingsNavigationRow(
-                title = "Playback",
-                description = "Control player behavior and viewing defaults.",
-                icon = Icons.Rounded.PlayArrow,
-                isTablet = isTablet,
-                onClick = onPlaybackClick,
-            )
-            SettingsNavigationRow(
-                title = "Appearance",
-                description = "Tune home presentation and visual preferences.",
-                icon = Icons.Rounded.Palette,
-                isTablet = isTablet,
-                onClick = onAppearanceClick,
-            )
-            SettingsNavigationRow(
-                title = "Content & Discovery",
-                description = "Manage addons and discovery sources.",
-                icon = Icons.Rounded.Extension,
-                isTablet = isTablet,
-                onClick = onContentDiscoveryClick,
-            )
+            SettingsGroup(isTablet = isTablet) {
+                SettingsNavigationRow(
+                    title = "Playback",
+                    description = "Control player behavior and viewing defaults.",
+                    icon = Icons.Rounded.PlayArrow,
+                    isTablet = isTablet,
+                    onClick = onPlaybackClick,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Appearance",
+                    description = "Tune home presentation and visual preferences.",
+                    icon = Icons.Rounded.Palette,
+                    isTablet = isTablet,
+                    onClick = onAppearanceClick,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Content & Discovery",
+                    description = "Manage addons and discovery sources.",
+                    icon = Icons.Rounded.Extension,
+                    isTablet = isTablet,
+                    onClick = onContentDiscoveryClick,
+                )
+            }
         }
     }
     item {
@@ -51,29 +55,33 @@ internal fun LazyListScope.settingsRootContent(
             title = "ACCOUNT & SYNC",
             isTablet = isTablet,
         ) {
-            if (onSwitchProfileClick != null) {
+            SettingsGroup(isTablet = isTablet) {
+                if (onSwitchProfileClick != null) {
+                    SettingsNavigationRow(
+                        title = "Switch Profile",
+                        description = "Change to a different profile.",
+                        icon = Icons.Rounded.People,
+                        isTablet = isTablet,
+                        onClick = onSwitchProfileClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                }
                 SettingsNavigationRow(
-                    title = "Switch Profile",
-                    description = "Change to a different profile.",
-                    icon = Icons.Rounded.People,
+                    title = "Account",
+                    description = "Manage your account, sign out, or delete.",
+                    icon = Icons.Rounded.AccountCircle,
                     isTablet = isTablet,
-                    onClick = onSwitchProfileClick,
+                    onClick = onAccountClick,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Sync Overview",
+                    description = "View synced data counts per profile.",
+                    icon = Icons.Rounded.Sync,
+                    isTablet = isTablet,
+                    onClick = onSyncOverviewClick,
                 )
             }
-            SettingsNavigationRow(
-                title = "Account",
-                description = "Manage your account, sign out, or delete.",
-                icon = Icons.Rounded.AccountCircle,
-                isTablet = isTablet,
-                onClick = onAccountClick,
-            )
-            SettingsNavigationRow(
-                title = "Sync Overview",
-                description = "View synced data counts per profile.",
-                icon = Icons.Rounded.Sync,
-                isTablet = isTablet,
-                onClick = onSyncOverviewClick,
-            )
         }
     }
 }

@@ -12,13 +12,15 @@ internal fun LazyListScope.playbackSettingsContent(
             title = "PLAYER",
             isTablet = isTablet,
         ) {
-            SettingsSwitchRow(
-                title = "Show Loading Overlay",
-                description = "Show the opening loading overlay while a stream starts playing.",
-                checked = showLoadingOverlay,
-                isTablet = isTablet,
-                onCheckedChange = PlayerSettingsRepository::setShowLoadingOverlay,
-            )
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Show Loading Overlay",
+                    description = "Show the opening loading overlay while a stream starts playing.",
+                    checked = showLoadingOverlay,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setShowLoadingOverlay,
+                )
+            }
         }
     }
 }

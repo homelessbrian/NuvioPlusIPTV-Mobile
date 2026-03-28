@@ -15,13 +15,15 @@ internal fun LazyListScope.contentDiscoveryContent(
             title = "SOURCES",
             isTablet = isTablet,
         ) {
-            SettingsNavigationRow(
-                title = "Addons",
-                description = "Install, remove, refresh, and sort your content sources.",
-                icon = Icons.Rounded.Extension,
-                isTablet = isTablet,
-                onClick = onAddonsClick,
-            )
+            SettingsGroup(isTablet = isTablet) {
+                SettingsNavigationRow(
+                    title = "Addons",
+                    description = "Install, remove, refresh, and sort your content sources.",
+                    icon = Icons.Rounded.Extension,
+                    isTablet = isTablet,
+                    onClick = onAddonsClick,
+                )
+            }
         }
     }
     item {
@@ -29,13 +31,15 @@ internal fun LazyListScope.contentDiscoveryContent(
             title = "HOME",
             isTablet = isTablet,
         ) {
-            SettingsNavigationRow(
-                title = "Homescreen",
-                description = "Control which catalogs appear on Home and in what order.",
-                icon = Icons.Rounded.Tune,
-                isTablet = isTablet,
-                onClick = onHomescreenClick,
-            )
+            SettingsGroup(isTablet = isTablet) {
+                SettingsNavigationRow(
+                    title = "Homescreen",
+                    description = "Control which catalogs appear on Home and in what order.",
+                    icon = Icons.Rounded.Tune,
+                    isTablet = isTablet,
+                    onClick = onHomescreenClick,
+                )
+            }
         }
     }
 }

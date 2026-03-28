@@ -34,13 +34,15 @@ internal fun LazyListScope.continueWatchingSettingsContent(
             title = "VISIBILITY",
             isTablet = isTablet,
         ) {
-            SettingsSwitchRow(
-                title = "Show Continue Watching",
-                description = "Display the Continue Watching shelf on the Home screen.",
-                checked = isVisible,
-                isTablet = isTablet,
-                onCheckedChange = ContinueWatchingPreferencesRepository::setVisible,
-            )
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Show Continue Watching",
+                    description = "Display the Continue Watching shelf on the Home screen.",
+                    checked = isVisible,
+                    isTablet = isTablet,
+                    onCheckedChange = ContinueWatchingPreferencesRepository::setVisible,
+                )
+            }
         }
     }
     item {

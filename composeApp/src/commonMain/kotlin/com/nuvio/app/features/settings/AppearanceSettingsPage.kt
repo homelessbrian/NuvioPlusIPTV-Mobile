@@ -13,13 +13,15 @@ internal fun LazyListScope.appearanceSettingsContent(
             title = "HOME",
             isTablet = isTablet,
         ) {
-            SettingsNavigationRow(
-                title = "Continue Watching",
-                description = "Show, hide, and style the Continue Watching shelf.",
-                icon = Icons.Rounded.Style,
-                isTablet = isTablet,
-                onClick = onContinueWatchingClick,
-            )
+            SettingsGroup(isTablet = isTablet) {
+                SettingsNavigationRow(
+                    title = "Continue Watching",
+                    description = "Show, hide, and style the Continue Watching shelf.",
+                    icon = Icons.Rounded.Style,
+                    isTablet = isTablet,
+                    onClick = onContinueWatchingClick,
+                )
+            }
         }
     }
 }

@@ -17,13 +17,15 @@ internal fun LazyListScope.homescreenSettingsContent(
             title = "HERO",
             isTablet = isTablet,
         ) {
-            SettingsSwitchRow(
-                title = "Show Hero",
-                description = "Display a featured hero carousel at the top of Home.",
-                checked = heroEnabled,
-                isTablet = isTablet,
-                onCheckedChange = HomeCatalogSettingsRepository::setHeroEnabled,
-            )
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Show Hero",
+                    description = "Display a featured hero carousel at the top of Home.",
+                    checked = heroEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = HomeCatalogSettingsRepository::setHeroEnabled,
+                )
+            }
         }
     }
     item {
@@ -32,14 +34,19 @@ internal fun LazyListScope.homescreenSettingsContent(
                 title = "HERO SOURCES",
                 isTablet = isTablet,
             ) {
-                items.forEach { item ->
-                    SettingsSwitchRow(
-                        title = item.displayTitle,
-                        description = item.addonName,
-                        checked = item.heroSourceEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = { HomeCatalogSettingsRepository.setHeroSourceEnabled(item.key, it) },
-                    )
+                SettingsGroup(isTablet = isTablet) {
+                    items.forEachIndexed { index, item ->
+                        if (index > 0) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                        }
+                        SettingsSwitchRow(
+                            title = item.displayTitle,
+                            description = item.addonName,
+                            checked = item.heroSourceEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = { HomeCatalogSettingsRepository.setHeroSourceEnabled(item.key, it) },
+                        )
+                    }
                 }
             }
         }
@@ -56,17 +63,22 @@ internal fun LazyListScope.homescreenSettingsContent(
                 title = "CATALOGS",
                 isTablet = isTablet,
             ) {
-                items.forEachIndexed { index, item ->
-                    HomescreenCatalogRow(
-                        item = item,
-                        isTablet = isTablet,
-                        canMoveUp = index > 0,
-                        canMoveDown = index < items.lastIndex,
-                        onTitleChange = { HomeCatalogSettingsRepository.setCustomTitle(item.key, it) },
-                        onEnabledChange = { HomeCatalogSettingsRepository.setEnabled(item.key, it) },
-                        onMoveUp = { HomeCatalogSettingsRepository.moveUp(item.key) },
-                        onMoveDown = { HomeCatalogSettingsRepository.moveDown(item.key) },
-                    )
+                SettingsGroup(isTablet = isTablet) {
+                    items.forEachIndexed { index, item ->
+                        if (index > 0) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                        }
+                        HomescreenCatalogRow(
+                            item = item,
+                            isTablet = isTablet,
+                            canMoveUp = index > 0,
+                            canMoveDown = index < items.lastIndex,
+                            onTitleChange = { HomeCatalogSettingsRepository.setCustomTitle(item.key, it) },
+                            onEnabledChange = { HomeCatalogSettingsRepository.setEnabled(item.key, it) },
+                            onMoveUp = { HomeCatalogSettingsRepository.moveUp(item.key) },
+                            onMoveDown = { HomeCatalogSettingsRepository.moveDown(item.key) },
+                        )
+                    }
                 }
             }
         }
