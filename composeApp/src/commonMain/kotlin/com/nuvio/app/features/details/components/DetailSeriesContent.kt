@@ -342,8 +342,9 @@ private fun EpisodeCard(
                 NuvioProgressBar(
                     progress = entry.progressFraction,
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .align(Alignment.BottomStart)
+                        .width(sizing.imageWidth - 24.dp)
+                        .padding(start = 12.dp, bottom = 10.dp),
                     height = 5.dp,
                     trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.14f),
                     fillColor = MaterialTheme.colorScheme.primary,

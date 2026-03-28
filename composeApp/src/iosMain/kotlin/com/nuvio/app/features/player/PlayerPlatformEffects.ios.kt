@@ -2,12 +2,27 @@ package com.nuvio.app.features.player
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import platform.Foundation.NSNotificationCenter
 import platform.UIKit.UIApplication
+
+private const val lockPlayerToLandscapeNotification = "NuvioPlayerLockLandscape"
+private const val unlockPlayerOrientationNotification = "NuvioPlayerUnlockOrientation"
 
 @Composable
 actual fun LockPlayerToLandscape() {
-    // iOS handles orientation through Info.plist supported orientations
-    // The player view will fill available space in landscape
+    DisposableEffect(Unit) {
+        NSNotificationCenter.defaultCenter.postNotificationName(
+            lockPlayerToLandscapeNotification,
+            null,
+        )
+
+        onDispose {
+            NSNotificationCenter.defaultCenter.postNotificationName(
+                unlockPlayerOrientationNotification,
+                null,
+            )
+        }
+    }
 }
 
 @Composable
