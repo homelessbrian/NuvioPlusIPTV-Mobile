@@ -156,8 +156,13 @@ fun App() {
         LaunchedEffect(authState) {
             when (authState) {
                 is AuthState.Loading -> gateScreen = AppGateScreen.Loading.name
-                is AuthState.Unauthenticated -> gateScreen = AppGateScreen.Auth.name
+                is AuthState.Unauthenticated -> {
+                    ProfileRepository.clearInMemory()
+                    gateScreen = AppGateScreen.Auth.name
+                }
                 is AuthState.Authenticated -> {
+                    val authenticatedState = authState as AuthState.Authenticated
+                    ProfileRepository.ensureLoaded(authenticatedState.userId)
                     if (gateScreen == AppGateScreen.Loading.name || gateScreen == AppGateScreen.Auth.name) {
                         gateScreen = AppGateScreen.ProfileSelection.name
                     }

@@ -1,6 +1,8 @@
 package com.nuvio.app.features.profiles
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.auth.AuthRepository
+import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.SupabaseProvider
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
@@ -11,10 +13,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
+
+@Serializable
+private data class StoredProfilePayload(
+    val userId: String,
+    val activeProfileIndex: Int = 1,
+    val profiles: List<NuvioProfile> = emptyList(),
+)
 
 object ProfileRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -25,8 +37,46 @@ object ProfileRepository {
     val state: StateFlow<ProfileState> = _state.asStateFlow()
 
     private var activeProfileIndex: Int = 1
+    private var loadedCacheForUserId: String? = null
 
     val activeProfileId: Int get() = activeProfileIndex
+
+    fun ensureLoaded(userId: String) {
+        if (loadedCacheForUserId == userId && _state.value.isLoaded) return
+
+        loadedCacheForUserId = userId
+        val payload = ProfileStorage.loadPayload().orEmpty().trim()
+        if (payload.isEmpty()) {
+            _state.value = ProfileState()
+            activeProfileIndex = 1
+            return
+        }
+
+        val stored = runCatching {
+            json.decodeFromString<StoredProfilePayload>(payload)
+        }.getOrNull() ?: return
+
+        if (stored.userId != userId) {
+            _state.value = ProfileState()
+            activeProfileIndex = 1
+            return
+        }
+
+        val profiles = stored.profiles.sortedBy { it.profileIndex }
+        activeProfileIndex = stored.activeProfileIndex
+        _state.value = ProfileState(
+            profiles = profiles,
+            activeProfile = profiles.find { it.profileIndex == activeProfileIndex } ?: profiles.firstOrNull(),
+            isLoaded = profiles.isNotEmpty(),
+        )
+        _state.value.activeProfile?.let { activeProfileIndex = it.profileIndex }
+    }
+
+    fun clearInMemory() {
+        loadedCacheForUserId = null
+        activeProfileIndex = 1
+        _state.value = ProfileState()
+    }
 
     suspend fun pullProfiles() {
         runCatching {
@@ -41,6 +91,7 @@ object ProfileRepository {
             if (_state.value.activeProfile != null) {
                 activeProfileIndex = _state.value.activeProfile!!.profileIndex
             }
+            persist()
         }.onFailure { e ->
             log.e(e) { "Failed to pull profiles" }
             if (!_state.value.isLoaded) {
@@ -54,6 +105,7 @@ object ProfileRepository {
         _state.value = _state.value.copy(
             activeProfile = _state.value.profiles.find { it.profileIndex == profileIndex },
         )
+        persist()
     }
 
     suspend fun pushProfiles(profiles: List<ProfilePushPayload>) {
@@ -200,6 +252,19 @@ object ProfileRepository {
             log.e(e) { "Failed to pull profile locks" }
             emptyList()
         }
+    }
+
+    private fun persist() {
+        val authState = AuthRepository.state.value as? AuthState.Authenticated ?: return
+        ProfileStorage.savePayload(
+            json.encodeToString(
+                StoredProfilePayload(
+                    userId = authState.userId,
+                    activeProfileIndex = activeProfileIndex,
+                    profiles = _state.value.profiles,
+                ),
+            ),
+        )
     }
 }
 
