@@ -1,6 +1,7 @@
 package com.nuvio.app
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -586,10 +587,16 @@ private fun BoxScope.keepAliveTab(
     selected: Boolean,
     content: @Composable () -> Unit,
 ) {
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(durationMillis = 220),
+        label = "tab_content_alpha",
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .alpha(if (selected) 1f else 0f)
+            .alpha(contentAlpha)
             .zIndex(if (selected) 1f else 0f),
     ) {
         content()
