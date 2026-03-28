@@ -4,6 +4,7 @@ import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.catalog.fetchCatalogPage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -19,6 +20,8 @@ object HomeRepository {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private var activeJob: Job? = null
+    private var activeRequestKey: String? = null
     private var lastRequestKey: String? = null
     private var currentDefinitions: List<HomeCatalogDefinition> = emptyList()
     private var cachedSections: Map<String, HomeCatalogSection> = emptyMap()
@@ -31,13 +34,23 @@ object HomeRepository {
             "${request.manifestUrl}:${request.type}:${request.catalogId}"
         }
 
+        if (!force && activeRequestKey == requestKey && _uiState.value.isLoading) {
+            return
+        }
+
         if (!force && requestKey == lastRequestKey && cachedSections.isNotEmpty()) {
-            applyCurrentSettings()
+            if (_uiState.value.sections.isEmpty() || _uiState.value.heroItems.isEmpty()) {
+                applyCurrentSettings()
+            }
             return
         }
         lastRequestKey = requestKey
+        activeRequestKey = requestKey
 
         if (requests.isEmpty()) {
+            activeJob?.cancel()
+            activeJob = null
+            activeRequestKey = null
             cachedSections = emptyMap()
             lastErrorMessage = null
             _uiState.value = HomeUiState(
@@ -48,13 +61,20 @@ object HomeRepository {
             return
         }
 
+        activeJob?.cancel()
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-        scope.launch {
-            val results = requests.map { request ->
-                async {
-                    runCatching { request.toSection() }
-                }
-            }.awaitAll()
+        activeJob = scope.launch {
+            val results = mutableListOf<Result<HomeCatalogSection>>()
+            requests.chunked(HOME_CATALOG_FETCH_BATCH_SIZE).forEach { batch ->
+                if (activeRequestKey != requestKey) return@launch
+                results += batch.map { request ->
+                    async {
+                        runCatching { request.toSection() }
+                    }
+                }.awaitAll()
+            }
+
+            if (activeRequestKey != requestKey) return@launch
 
             cachedSections = results
                 .mapNotNull { it.getOrNull() }
@@ -124,3 +144,4 @@ object HomeRepository {
 }
 
 private const val HOME_HERO_ITEM_LIMIT = 8
+private const val HOME_CATALOG_FETCH_BATCH_SIZE = 4
