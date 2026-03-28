@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 fun DetailActionButtons(
     modifier: Modifier = Modifier,
     playLabel: String = "Play",
+    saveLabel: String = "Save",
     onPlayClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
 ) {
@@ -73,7 +74,7 @@ fun DetailActionButtons(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "Save",
+                text = saveLabel,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )

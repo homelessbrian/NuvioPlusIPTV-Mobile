@@ -43,6 +43,8 @@ import com.nuvio.app.features.details.components.DetailCastSection
 import com.nuvio.app.features.details.components.DetailHero
 import com.nuvio.app.features.details.components.DetailMetaInfo
 import com.nuvio.app.features.details.components.DetailSeriesContent
+import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.library.toLibraryItem
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
@@ -56,6 +58,10 @@ fun MetaDetailsScreen(
     modifier: Modifier = Modifier,
 ) {
     val uiState by MetaDetailsRepository.uiState.collectAsStateWithLifecycle()
+    val libraryUiState by remember {
+        LibraryRepository.ensureLoaded()
+        LibraryRepository.uiState
+    }.collectAsStateWithLifecycle()
     val watchProgressUiState by remember {
         WatchProgressRepository.ensureLoaded()
         WatchProgressRepository.uiState
@@ -114,6 +120,9 @@ fun MetaDetailsScreen(
 
             requestedMeta != null -> {
                 val meta = requestedMeta
+                val isSaved = remember(libraryUiState.items, meta.id) {
+                    libraryUiState.items.any { it.id == meta.id }
+                }
                 val movieProgress = watchProgressUiState.byVideoId[meta.id]
                 val seriesResumeEntry = watchProgressUiState.entries
                     .filter { it.parentMetaId == meta.id }
@@ -146,6 +155,7 @@ fun MetaDetailsScreen(
                     ) {
                         DetailActionButtons(
                             playLabel = playButtonLabel,
+                            saveLabel = if (isSaved) "Saved" else "Save",
                             onPlayClick = {
                                 when {
                                     meta.type == "series" && seriesResumeEntry != null -> {
@@ -207,6 +217,11 @@ fun MetaDetailsScreen(
                                         )
                                     }
                                 }
+                            },
+                            onSaveClick = {
+                                LibraryRepository.toggleSaved(
+                                    meta.toLibraryItem(savedAtEpochMs = 0L),
+                                )
                             },
                         )
 

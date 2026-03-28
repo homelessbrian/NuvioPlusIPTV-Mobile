@@ -12,6 +12,7 @@ fun HomePosterCard(
     item: MetaPreview,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     NuvioPosterCard(
         title = item.name,
@@ -20,6 +21,7 @@ fun HomePosterCard(
         shape = item.posterShape.toNuvioPosterShape(),
         detailLine = item.releaseInfo,
         onClick = onClick,
+        onLongClick = onLongClick,
     )
 }
 

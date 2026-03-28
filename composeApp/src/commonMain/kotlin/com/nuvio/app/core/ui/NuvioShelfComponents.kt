@@ -1,7 +1,9 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,11 +95,18 @@ fun NuvioPosterCard(
     shape: NuvioPosterShape = NuvioPosterShape.Poster,
     detailLine: String? = null,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
             .width(110.dp)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(
+                if (onClick != null || onLongClick != null) {
+                    Modifier.posterCardClickable(onClick = onClick, onLongClick = onLongClick)
+                } else {
+                    Modifier
+                }
+            ),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(
@@ -235,3 +244,13 @@ private val NuvioPosterShape.aspectRatio: Float
         NuvioPosterShape.Square -> 1f
         NuvioPosterShape.Landscape -> 1.77f
     }
+
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.posterCardClickable(
+    onClick: (() -> Unit)?,
+    onLongClick: (() -> Unit)?,
+): Modifier =
+    combinedClickable(
+        onClick = { onClick?.invoke() },
+        onLongClick = onLongClick,
+    )

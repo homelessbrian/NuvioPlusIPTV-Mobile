@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +41,8 @@ import com.nuvio.app.features.details.MetaDetailsScreen
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.library.LibraryItem
+import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.player.PlayerRoute
 import com.nuvio.app.features.player.PlayerScreen
 import com.nuvio.app.features.search.SearchScreen
@@ -86,6 +89,7 @@ data class CatalogRoute(
 enum class AppScreenTab {
     Home,
     Search,
+    Library,
     Settings,
 }
 
@@ -95,6 +99,7 @@ fun AppScreen(
     modifier: Modifier = Modifier,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
+    onLibraryPosterClick: ((LibraryItem) -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
 ) {
@@ -109,6 +114,10 @@ fun AppScreen(
         AppScreenTab.Search -> SearchScreen(
             modifier = modifier,
             onPosterClick = onPosterClick,
+        )
+        AppScreenTab.Library -> LibraryScreen(
+            modifier = modifier,
+            onPosterClick = onLibraryPosterClick,
         )
         AppScreenTab.Settings -> SettingsScreen(
             modifier = modifier,
@@ -228,6 +237,13 @@ fun App() {
                             colors = navigationItemColors,
                         )
                         NavigationBarItem(
+                            selected = selectedTab == AppScreenTab.Library,
+                            onClick = { selectedTab = AppScreenTab.Library },
+                            icon = { Icon(Icons.Rounded.VideoLibrary, contentDescription = null) },
+                            label = { Text("Library") },
+                            colors = navigationItemColors,
+                        )
+                        NavigationBarItem(
                             selected = selectedTab == AppScreenTab.Settings,
                             onClick = { selectedTab = AppScreenTab.Settings },
                             icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
@@ -245,6 +261,9 @@ fun App() {
                     onCatalogClick = onCatalogClick,
                     onPosterClick = { meta ->
                         navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                    },
+                    onLibraryPosterClick = { item ->
+                        navController.navigate(DetailRoute(type = item.type, id = item.id))
                     },
                     onContinueWatchingClick = onContinueWatchingClick,
                     onContinueWatchingLongPress = onContinueWatchingLongPress,
