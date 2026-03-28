@@ -1,6 +1,8 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -16,6 +18,8 @@ internal enum class SettingsPage(
 ) {
     Root("Settings"),
     Playback("Playback"),
+    Appearance("Appearance"),
+    ContinueWatching("Continue Watching"),
     ContentDiscovery("Content & Discovery"),
     Addons("Addons"),
     Homescreen("Homescreen"),
@@ -25,6 +29,8 @@ internal fun SettingsPage.previousPage(): SettingsPage? =
     when (this) {
         SettingsPage.Root -> null
         SettingsPage.Playback -> SettingsPage.Root
+        SettingsPage.Appearance -> SettingsPage.Root
+        SettingsPage.ContinueWatching -> SettingsPage.Appearance
         SettingsPage.ContentDiscovery -> SettingsPage.Root
         SettingsPage.Addons -> SettingsPage.ContentDiscovery
         SettingsPage.Homescreen -> SettingsPage.ContentDiscovery

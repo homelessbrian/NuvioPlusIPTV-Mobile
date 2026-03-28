@@ -49,6 +49,7 @@ fun <T> NuvioShelfSection(
     modifier: Modifier = Modifier,
     headerHorizontalPadding: Dp = 0.dp,
     rowContentPadding: PaddingValues = PaddingValues(0.dp),
+    itemSpacing: Dp = 10.dp,
     onViewAllClick: (() -> Unit)? = null,
     viewAllPillSize: NuvioViewAllPillSize = NuvioViewAllPillSize.Default,
     key: ((T) -> Any)? = null,
@@ -66,7 +67,7 @@ fun <T> NuvioShelfSection(
         )
         LazyRow(
             contentPadding = rowContentPadding,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(itemSpacing),
         ) {
             if (key != null) {
                 items(

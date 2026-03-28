@@ -40,6 +40,8 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
+import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 
 @Composable
 fun SettingsScreen(
@@ -59,6 +61,10 @@ fun SettingsScreen(
         val playerSettingsUiState by remember {
             PlayerSettingsRepository.ensureLoaded()
             PlayerSettingsRepository.uiState
+        }.collectAsStateWithLifecycle()
+        val continueWatchingPreferencesUiState by remember {
+            ContinueWatchingPreferencesRepository.ensureLoaded()
+            ContinueWatchingPreferencesRepository.uiState
         }.collectAsStateWithLifecycle()
 
         LaunchedEffect(addonsUiState.addons) {
@@ -81,6 +87,8 @@ fun SettingsScreen(
                 heroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenSettings = homescreenSettingsUiState.items,
                 showLoadingOverlay = playerSettingsUiState.showLoadingOverlay,
+                continueWatchingVisible = continueWatchingPreferencesUiState.isVisible,
+                continueWatchingStyle = continueWatchingPreferencesUiState.style,
             )
         } else {
             MobileSettingsScreen(
@@ -89,6 +97,8 @@ fun SettingsScreen(
                 heroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenSettings = homescreenSettingsUiState.items,
                 showLoadingOverlay = playerSettingsUiState.showLoadingOverlay,
+                continueWatchingVisible = continueWatchingPreferencesUiState.isVisible,
+                continueWatchingStyle = continueWatchingPreferencesUiState.style,
             )
         }
     }
@@ -101,6 +111,8 @@ private fun MobileSettingsScreen(
     heroEnabled: Boolean,
     homescreenSettings: List<HomeCatalogSettingsItem>,
     showLoadingOverlay: Boolean,
+    continueWatchingVisible: Boolean,
+    continueWatchingStyle: ContinueWatchingSectionStyle,
 ) {
     NuvioScreen {
         stickyHeader {
@@ -115,11 +127,21 @@ private fun MobileSettingsScreen(
             SettingsPage.Root -> settingsRootContent(
                 isTablet = false,
                 onPlaybackClick = { onPageChange(SettingsPage.Playback) },
+                onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                 onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
             )
             SettingsPage.Playback -> playbackSettingsContent(
                 isTablet = false,
                 showLoadingOverlay = showLoadingOverlay,
+            )
+            SettingsPage.Appearance -> appearanceSettingsContent(
+                isTablet = false,
+                onContinueWatchingClick = { onPageChange(SettingsPage.ContinueWatching) },
+            )
+            SettingsPage.ContinueWatching -> continueWatchingSettingsContent(
+                isTablet = false,
+                isVisible = continueWatchingVisible,
+                style = continueWatchingStyle,
             )
             SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                 isTablet = false,
@@ -143,6 +165,8 @@ private fun TabletSettingsScreen(
     heroEnabled: Boolean,
     homescreenSettings: List<HomeCatalogSettingsItem>,
     showLoadingOverlay: Boolean,
+    continueWatchingVisible: Boolean,
+    continueWatchingStyle: ContinueWatchingSectionStyle,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
     val activeCategory = SettingsCategory.valueOf(selectedCategory)
@@ -206,11 +230,21 @@ private fun TabletSettingsScreen(
                 SettingsPage.Root -> settingsRootContent(
                     isTablet = true,
                     onPlaybackClick = { onPageChange(SettingsPage.Playback) },
+                    onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                     onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
                 )
                 SettingsPage.Playback -> playbackSettingsContent(
                     isTablet = true,
                     showLoadingOverlay = showLoadingOverlay,
+                )
+                SettingsPage.Appearance -> appearanceSettingsContent(
+                    isTablet = true,
+                    onContinueWatchingClick = { onPageChange(SettingsPage.ContinueWatching) },
+                )
+                SettingsPage.ContinueWatching -> continueWatchingSettingsContent(
+                    isTablet = true,
+                    isVisible = continueWatchingVisible,
+                    style = continueWatchingStyle,
                 )
                 SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                     isTablet = true,

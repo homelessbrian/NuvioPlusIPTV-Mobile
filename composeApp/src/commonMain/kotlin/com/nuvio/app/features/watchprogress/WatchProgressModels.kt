@@ -3,6 +3,12 @@ package com.nuvio.app.features.watchprogress
 import kotlinx.serialization.Serializable
 
 @Serializable
+enum class ContinueWatchingSectionStyle {
+    Wide,
+    Poster,
+}
+
+@Serializable
 data class WatchProgressEntry(
     val contentType: String,
     val parentMetaId: String,
@@ -80,6 +86,11 @@ data class ContinueWatchingItem(
     val resumePositionMs: Long,
     val durationMs: Long,
     val progressFraction: Float,
+)
+
+data class ContinueWatchingPreferencesUiState(
+    val isVisible: Boolean = true,
+    val style: ContinueWatchingSectionStyle = ContinueWatchingSectionStyle.Wide,
 )
 
 internal fun WatchProgressEntry.toContinueWatchingItem(): ContinueWatchingItem {

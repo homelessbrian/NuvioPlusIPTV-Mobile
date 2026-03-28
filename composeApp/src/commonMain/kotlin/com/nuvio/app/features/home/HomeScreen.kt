@@ -15,6 +15,7 @@ import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeSkeletonRow
+import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.toContinueWatchingItem
@@ -29,11 +30,13 @@ fun HomeScreen(
 ) {
     LaunchedEffect(Unit) {
         AddonRepository.initialize()
+        ContinueWatchingPreferencesRepository.ensureLoaded()
         WatchProgressRepository.ensureLoaded()
     }
 
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
+    val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
     val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
     val continueWatchingItems = remember(watchProgressUiState.entries) {
         watchProgressUiState.entries.take(20).map { it.toContinueWatchingItem() }
@@ -64,10 +67,11 @@ fun HomeScreen(
     ) {
         when {
             addonsUiState.addons.none { it.manifest != null } -> {
-                if (continueWatchingItems.isNotEmpty()) {
+                if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
                     item {
                         HomeContinueWatchingSection(
                             items = continueWatchingItems,
+                            style = continueWatchingPreferences.style,
                             modifier = Modifier.padding(bottom = 12.dp),
                             onItemClick = onContinueWatchingClick,
                             onItemLongPress = onContinueWatchingLongPress,
@@ -84,10 +88,11 @@ fun HomeScreen(
             }
 
             homeUiState.isLoading && homeUiState.sections.isEmpty() -> {
-                if (continueWatchingItems.isNotEmpty()) {
+                if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
                     item {
                         HomeContinueWatchingSection(
                             items = continueWatchingItems,
+                            style = continueWatchingPreferences.style,
                             modifier = Modifier.padding(bottom = 12.dp),
                             onItemClick = onContinueWatchingClick,
                             onItemLongPress = onContinueWatchingLongPress,
@@ -99,7 +104,8 @@ fun HomeScreen(
                 }
             }
 
-            homeUiState.sections.isEmpty() && homeUiState.heroItems.isEmpty() && continueWatchingItems.isEmpty() -> {
+            homeUiState.sections.isEmpty() && homeUiState.heroItems.isEmpty() &&
+                (!continueWatchingPreferences.isVisible || continueWatchingItems.isEmpty()) -> {
                 item {
                     HomeEmptyStateCard(
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -120,10 +126,11 @@ fun HomeScreen(
                         )
                     }
                 }
-                if (continueWatchingItems.isNotEmpty()) {
+                if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
                     item {
                         HomeContinueWatchingSection(
                             items = continueWatchingItems,
+                            style = continueWatchingPreferences.style,
                             modifier = Modifier.padding(bottom = 12.dp),
                             onItemClick = onContinueWatchingClick,
                             onItemLongPress = onContinueWatchingLongPress,
