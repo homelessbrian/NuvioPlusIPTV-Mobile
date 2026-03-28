@@ -23,8 +23,14 @@ object SyncManager {
         if (authState.isAnonymous) return
 
         scope.launch {
-            log.i { "Starting pull-all for profile $profileId" }
+            log.i { "pullAllForProfile($profileId) — auth=${(authState as AuthState.Authenticated).isAnonymous}" }
 
+            log.i { "pullAllForProfile — pulling addons first (await)..." }
+            runCatching { AddonRepository.pullFromServer(profileId) }
+                .onSuccess { log.i { "pullAllForProfile — addons pull completed" } }
+                .onFailure { log.e(it) { "Addon pull failed" } }
+
+            log.i { "pullAllForProfile — launching remaining pulls in parallel" }
             launch {
                 runCatching { LibraryRepository.pullFromServer(profileId) }
                     .onFailure { log.e(it) { "Library pull failed" } }
@@ -32,10 +38,6 @@ object SyncManager {
             launch {
                 runCatching { WatchProgressRepository.pullFromServer(profileId) }
                     .onFailure { log.e(it) { "WatchProgress pull failed" } }
-            }
-            launch {
-                runCatching { AddonRepository.pullFromServer(profileId) }
-                    .onFailure { log.e(it) { "Addon pull failed" } }
             }
             launch {
                 runCatching { WatchedRepository.pullFromServer(profileId) }
@@ -46,7 +48,7 @@ object SyncManager {
                     .onFailure { log.e(it) { "ProfileSettings pull failed" } }
             }
 
-            log.i { "Pull-all launched for profile $profileId" }
+            log.i { "pullAllForProfile($profileId) — all pulls launched" }
         }
     }
 }

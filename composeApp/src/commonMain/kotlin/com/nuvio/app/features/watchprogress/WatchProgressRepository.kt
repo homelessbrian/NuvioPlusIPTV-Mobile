@@ -2,6 +2,7 @@ package com.nuvio.app.features.watchprogress
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.network.SupabaseProvider
+import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.profiles.ProfileRepository
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -114,6 +116,13 @@ object WatchProgressRepository {
         if (needsResolution.isEmpty()) return
 
         syncScope.launch {
+            withTimeoutOrNull(30_000L) {
+                AddonRepository.awaitManifestsLoaded()
+            } ?: run {
+                log.w { "Timed out waiting for addon manifests" }
+                return@launch
+            }
+
             for ((key, entries) in needsResolution) {
                 val (metaId, metaType) = key
                 val meta = runCatching {

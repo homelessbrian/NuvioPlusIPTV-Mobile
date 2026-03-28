@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.features.profiles.ProfileRepository
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -22,11 +24,19 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 
 @Serializable
-private data class AddonSyncItem(
-    @SerialName("manifest_url") val manifestUrl: String,
+private data class AddonRow(
+    val url: String,
+    val name: String? = null,
+    val enabled: Boolean = true,
     @SerialName("sort_order") val sortOrder: Int = 0,
-    @SerialName("display_name") val displayName: String = "",
-    @SerialName("is_enabled") val isEnabled: Boolean = true,
+)
+
+@Serializable
+private data class AddonPushItem(
+    val url: String,
+    val name: String = "",
+    val enabled: Boolean = true,
+    @SerialName("sort_order") val sortOrder: Int = 0,
 )
 
 object AddonRepository {
@@ -37,12 +47,15 @@ object AddonRepository {
     val uiState: StateFlow<AddonsUiState> = _uiState.asStateFlow()
 
     private var initialized = false
+    private var pulledFromServer = false
 
     fun initialize() {
         if (initialized) return
         initialized = true
+        log.d { "initialize() — loading local addons" }
 
         val storedUrls = AddonStorage.loadInstalledAddonUrls()
+        log.d { "initialize() — local addon count: ${storedUrls.size}" }
         if (storedUrls.isEmpty()) return
 
         _uiState.value = AddonsUiState(
@@ -58,27 +71,70 @@ object AddonRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
+        log.i { "pullFromServer() — profileId=$profileId, initialized=$initialized, pulledFromServer=$pulledFromServer" }
         runCatching {
-            val params = buildJsonObject { put("p_profile_id", profileId) }
-            val result = SupabaseProvider.client.postgrest.rpc("sync_pull_addons", params)
-            val serverAddons = result.decodeList<AddonSyncItem>()
-            val urls = serverAddons.sortedBy { it.sortOrder }.map { it.manifestUrl }
-            if (urls.isNotEmpty()) {
-                _uiState.value = AddonsUiState(
-                    addons = urls.map { url ->
-                        ManagedAddon(manifestUrl = url, isRefreshing = true)
-                    },
-                )
-                persist()
-                urls.forEach(::refreshAddon)
+            val rows = SupabaseProvider.client.postgrest
+                .from("addons")
+                .select {
+                    filter { eq("profile_id", profileId) }
+                    order("sort_order", Order.ASCENDING)
+                }
+                .decodeList<AddonRow>()
+
+            val urls = rows.map { ensureManifestSuffix(it.url) }
+            log.i { "pullFromServer() — server returned ${rows.size} addons" }
+            urls.forEachIndexed { i, u -> log.d { "  server[$i]: $u" } }
+
+            if (urls.isEmpty() && !pulledFromServer) {
+                val localUrls = AddonStorage.loadInstalledAddonUrls()
+                log.i { "pullFromServer() — server empty, local has ${localUrls.size} addons" }
+                if (localUrls.isNotEmpty()) {
+                    log.i { "pullFromServer() — migrating local addons to server for profile $profileId" }
+                    initialize()
+                    pulledFromServer = true
+                    val addons = localUrls.mapIndexed { index, addonUrl ->
+                        AddonPushItem(
+                            url = addonUrl,
+                            name = _uiState.value.addons
+                                .find { it.manifestUrl == addonUrl }?.manifest?.name ?: "",
+                            enabled = true,
+                            sortOrder = index,
+                        )
+                    }
+                    val params = buildJsonObject {
+                        put("p_profile_id", profileId)
+                        put("p_addons", json.encodeToJsonElement(addons))
+                    }
+                    SupabaseProvider.client.postgrest.rpc("sync_push_addons", params)
+                    log.i { "pullFromServer() — migration push done (${addons.size} addons)" }
+                    return
+                }
             }
+
+            _uiState.value = AddonsUiState(
+                addons = urls.map { url ->
+                    ManagedAddon(manifestUrl = url, isRefreshing = true)
+                },
+            )
+            persist()
+            urls.forEach(::refreshAddon)
+            pulledFromServer = true
             initialized = true
+            log.i { "pullFromServer() — applied ${urls.size} addons to state" }
         }.onFailure { e ->
-            log.e(e) { "Failed to pull addons from server" }
+            log.e(e) { "pullFromServer() — FAILED" }
+        }
+    }
+
+    suspend fun awaitManifestsLoaded() {
+        if (_uiState.value.addons.isEmpty()) return
+        uiState.first { state ->
+            state.addons.isEmpty() || state.addons.any { it.manifest != null }
         }
     }
 
     suspend fun addAddon(rawUrl: String): AddAddonResult {
+        log.i { "addAddon() — rawUrl=$rawUrl" }
         val manifestUrl = try {
             normalizeManifestUrl(rawUrl)
         } catch (error: IllegalArgumentException) {
@@ -117,6 +173,7 @@ object AddonRepository {
     }
 
     fun removeAddon(manifestUrl: String) {
+        log.i { "removeAddon() — $manifestUrl" }
         _uiState.update { current ->
             current.copy(
                 addons = current.addons.filterNot { it.manifestUrl == manifestUrl },
@@ -176,20 +233,22 @@ object AddonRepository {
             runCatching {
                 val profileId = ProfileRepository.activeProfileId
                 val addons = _uiState.value.addons.mapIndexed { index, addon ->
-                    AddonSyncItem(
-                        manifestUrl = addon.manifestUrl,
+                    AddonPushItem(
+                        url = addon.manifestUrl,
+                        name = addon.manifest?.name ?: "",
+                        enabled = true,
                         sortOrder = index,
-                        displayName = addon.manifest?.name ?: "",
-                        isEnabled = true,
                     )
                 }
+                log.d { "pushToServer() — profileId=$profileId, pushing ${addons.size} addons" }
                 val params = buildJsonObject {
                     put("p_profile_id", profileId)
                     put("p_addons", json.encodeToJsonElement(addons))
                 }
                 SupabaseProvider.client.postgrest.rpc("sync_push_addons", params)
+                log.d { "pushToServer() — success" }
             }.onFailure { e ->
-                log.e(e) { "Failed to push addons to server" }
+                log.e(e) { "pushToServer() — FAILED" }
             }
         }
     }
@@ -216,6 +275,13 @@ object AddonRepository {
             _uiState.value.addons.map { it.manifestUrl },
         )
     }
+}
+
+private fun ensureManifestSuffix(url: String): String {
+    val path = url.substringBefore("?").trimEnd('/')
+    val query = url.substringAfter("?", "")
+    val withSuffix = if (path.endsWith("/manifest.json")) path else "$path/manifest.json"
+    return if (query.isEmpty()) withSuffix else "$withSuffix?$query"
 }
 
 private fun normalizeManifestUrl(rawUrl: String): String {
