@@ -2,20 +2,22 @@ package com.nuvio.app.features.details
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 internal object MetaDetailsParser {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun parse(payload: String): MetaDetails {
-        val root = json.parseToJsonElement(payload).jsonObject
-        val meta = root["meta"]?.jsonObject ?: error("Missing 'meta' in response")
+        val root = json.parseToJsonElement(payload).asJsonObjectOrNull()
+            ?: error("Expected top-level JSON object in response")
+        val meta = root["meta"].asJsonObjectOrNull()
+            ?: error("Missing or invalid 'meta' object in response")
         val links = meta.links()
 
         return MetaDetails(
@@ -190,3 +192,5 @@ internal object MetaDetailsParser {
             )
         }
 }
+
+private fun JsonElement?.asJsonObjectOrNull(): JsonObject? = this as? JsonObject

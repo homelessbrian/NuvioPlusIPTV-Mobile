@@ -68,6 +68,8 @@ import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.library.toLibraryItem
+import com.nuvio.app.features.player.PlayerLaunch
+import com.nuvio.app.features.player.PlayerLaunchStore
 import com.nuvio.app.features.player.PlayerRoute
 import com.nuvio.app.features.player.PlayerScreen
 import com.nuvio.app.features.profiles.NuvioProfile
@@ -428,8 +430,8 @@ private fun MainAppContent(
                         onStreamSelected = { stream ->
                             val sourceUrl = stream.directPlaybackUrl
                             if (sourceUrl != null) {
-                                navController.navigate(
-                                    PlayerRoute(
+                                val launchId = PlayerLaunchStore.put(
+                                    PlayerLaunch(
                                         title = route.title,
                                         sourceUrl = sourceUrl,
                                         logo = route.logo,
@@ -450,6 +452,9 @@ private fun MainAppContent(
                                         initialPositionMs = route.resumePositionMs ?: 0L,
                                     )
                                 )
+                                navController.navigate(
+                                    PlayerRoute(launchId = launchId)
+                                )
                             }
                         },
                         onBack = {
@@ -461,26 +466,37 @@ private fun MainAppContent(
                 }
                 composable<PlayerRoute> { backStackEntry ->
                     val route = backStackEntry.toRoute<PlayerRoute>()
+                    val launch = remember(route.launchId) { PlayerLaunchStore.get(route.launchId) }
+                    if (launch == null) {
+                        LaunchedEffect(route.launchId) {
+                            navController.popBackStack()
+                        }
+                        Box(modifier = Modifier.fillMaxSize())
+                        return@composable
+                    }
                     PlayerScreen(
-                        title = route.title,
-                        sourceUrl = route.sourceUrl,
-                        logo = route.logo,
-                        poster = route.poster,
-                        background = route.background,
-                        seasonNumber = route.seasonNumber,
-                        episodeNumber = route.episodeNumber,
-                        episodeTitle = route.episodeTitle,
-                        episodeThumbnail = route.episodeThumbnail,
-                        streamTitle = route.streamTitle,
-                        streamSubtitle = route.streamSubtitle,
-                        providerName = route.providerName,
-                        providerAddonId = route.providerAddonId,
-                        contentType = route.contentType,
-                        videoId = route.videoId,
-                        parentMetaId = route.parentMetaId,
-                        parentMetaType = route.parentMetaType,
-                        initialPositionMs = route.initialPositionMs,
-                        onBack = { navController.popBackStack() },
+                        title = launch.title,
+                        sourceUrl = launch.sourceUrl,
+                        logo = launch.logo,
+                        poster = launch.poster,
+                        background = launch.background,
+                        seasonNumber = launch.seasonNumber,
+                        episodeNumber = launch.episodeNumber,
+                        episodeTitle = launch.episodeTitle,
+                        episodeThumbnail = launch.episodeThumbnail,
+                        streamTitle = launch.streamTitle,
+                        streamSubtitle = launch.streamSubtitle,
+                        providerName = launch.providerName,
+                        providerAddonId = launch.providerAddonId,
+                        contentType = launch.contentType,
+                        videoId = launch.videoId,
+                        parentMetaId = launch.parentMetaId,
+                        parentMetaType = launch.parentMetaType,
+                        initialPositionMs = launch.initialPositionMs,
+                        onBack = {
+                            PlayerLaunchStore.remove(route.launchId)
+                            navController.popBackStack()
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

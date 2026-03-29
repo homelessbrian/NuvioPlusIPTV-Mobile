@@ -60,15 +60,6 @@ final class OrientationLockCoordinator {
                         print("[OrientationLockCoordinator] Geometry update failed: \(error.localizedDescription)")
                     }
                 }
-        }
-
-        if forceRotate {
-            UIDevice.current.setValue(preferredLandscapeOrientation.rawValue, forKey: "orientation")
-        } else if UIDevice.current.orientation.isPortrait {
-            UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
-        }
-
-        if #available(iOS 16.0, *) {
             UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }
                 .flatMap(\.windows)
@@ -76,6 +67,11 @@ final class OrientationLockCoordinator {
                     window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
                 }
         } else {
+            if forceRotate {
+                UIDevice.current.setValue(preferredLandscapeOrientation.rawValue, forKey: "orientation")
+            } else if UIDevice.current.orientation.isPortrait {
+                UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
+            }
             UIViewController.attemptRotationToDeviceOrientation()
         }
     }

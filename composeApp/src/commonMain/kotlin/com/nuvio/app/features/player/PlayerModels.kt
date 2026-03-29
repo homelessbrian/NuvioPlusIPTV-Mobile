@@ -4,6 +4,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class PlayerRoute(
+    val launchId: Long,
+)
+
+data class PlayerLaunch(
     val title: String,
     val sourceUrl: String,
     val logo: String? = null,
@@ -23,6 +27,23 @@ data class PlayerRoute(
     val parentMetaType: String,
     val initialPositionMs: Long = 0L,
 )
+
+object PlayerLaunchStore {
+    private var nextLaunchId = 1L
+    private val launches = mutableMapOf<Long, PlayerLaunch>()
+
+    fun put(launch: PlayerLaunch): Long {
+        val launchId = nextLaunchId++
+        launches[launchId] = launch
+        return launchId
+    }
+
+    fun get(launchId: Long): PlayerLaunch? = launches[launchId]
+
+    fun remove(launchId: Long) {
+        launches.remove(launchId)
+    }
+}
 
 enum class PlayerResizeMode {
     Fit,
