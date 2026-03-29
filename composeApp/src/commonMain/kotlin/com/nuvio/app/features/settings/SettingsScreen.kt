@@ -22,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,41 +35,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioScreenHeader
-import com.nuvio.app.features.addons.AddonRepository
-import com.nuvio.app.features.home.HomeCatalogSettingsItem
-import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
-import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
-import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
     onSwitchProfile: (() -> Unit)? = null,
+    onHomescreenClick: () -> Unit = {},
+    onContinueWatchingClick: () -> Unit = {},
+    onAddonsClick: () -> Unit = {},
+    onAccountClick: () -> Unit = {},
 ) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        LaunchedEffect(Unit) {
-            AddonRepository.initialize()
-        }
-
-        val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
-        val homescreenSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
         val playerSettingsUiState by remember {
             PlayerSettingsRepository.ensureLoaded()
             PlayerSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
-        val continueWatchingPreferencesUiState by remember {
-            ContinueWatchingPreferencesRepository.ensureLoaded()
-            ContinueWatchingPreferencesRepository.uiState
-        }.collectAsStateWithLifecycle()
-
-        LaunchedEffect(addonsUiState.addons) {
-            HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons)
-        }
 
         var currentPage by rememberSaveable { mutableStateOf(SettingsPage.Root.name) }
         val page = remember(currentPage) { SettingsPage.valueOf(currentPage) }
@@ -85,23 +69,23 @@ fun SettingsScreen(
             TabletSettingsScreen(
                 page = page,
                 onPageChange = { currentPage = it.name },
-                heroEnabled = homescreenSettingsUiState.heroEnabled,
-                homescreenSettings = homescreenSettingsUiState.items,
                 showLoadingOverlay = playerSettingsUiState.showLoadingOverlay,
-                continueWatchingVisible = continueWatchingPreferencesUiState.isVisible,
-                continueWatchingStyle = continueWatchingPreferencesUiState.style,
                 onSwitchProfile = onSwitchProfile,
+                onHomescreenClick = onHomescreenClick,
+                onContinueWatchingClick = onContinueWatchingClick,
+                onAddonsClick = onAddonsClick,
+                onAccountClick = onAccountClick,
             )
         } else {
             MobileSettingsScreen(
                 page = page,
                 onPageChange = { currentPage = it.name },
-                heroEnabled = homescreenSettingsUiState.heroEnabled,
-                homescreenSettings = homescreenSettingsUiState.items,
                 showLoadingOverlay = playerSettingsUiState.showLoadingOverlay,
-                continueWatchingVisible = continueWatchingPreferencesUiState.isVisible,
-                continueWatchingStyle = continueWatchingPreferencesUiState.style,
                 onSwitchProfile = onSwitchProfile,
+                onHomescreenClick = onHomescreenClick,
+                onContinueWatchingClick = onContinueWatchingClick,
+                onAddonsClick = onAddonsClick,
+                onAccountClick = onAccountClick,
             )
         }
     }
@@ -111,12 +95,12 @@ fun SettingsScreen(
 private fun MobileSettingsScreen(
     page: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
-    heroEnabled: Boolean,
-    homescreenSettings: List<HomeCatalogSettingsItem>,
     showLoadingOverlay: Boolean,
-    continueWatchingVisible: Boolean,
-    continueWatchingStyle: ContinueWatchingSectionStyle,
     onSwitchProfile: (() -> Unit)? = null,
+    onHomescreenClick: () -> Unit = {},
+    onContinueWatchingClick: () -> Unit = {},
+    onAddonsClick: () -> Unit = {},
+    onAccountClick: () -> Unit = {},
 ) {
     NuvioScreen {
         stickyHeader {
@@ -133,7 +117,7 @@ private fun MobileSettingsScreen(
                 onPlaybackClick = { onPageChange(SettingsPage.Playback) },
                 onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                 onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
-                onAccountClick = { onPageChange(SettingsPage.Account) },
+                onAccountClick = onAccountClick,
                 onSwitchProfileClick = onSwitchProfile,
             )
             SettingsPage.Playback -> playbackSettingsContent(
@@ -142,26 +126,12 @@ private fun MobileSettingsScreen(
             )
             SettingsPage.Appearance -> appearanceSettingsContent(
                 isTablet = false,
-                onContinueWatchingClick = { onPageChange(SettingsPage.ContinueWatching) },
-            )
-            SettingsPage.ContinueWatching -> continueWatchingSettingsContent(
-                isTablet = false,
-                isVisible = continueWatchingVisible,
-                style = continueWatchingStyle,
+                onContinueWatchingClick = onContinueWatchingClick,
             )
             SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                 isTablet = false,
-                onAddonsClick = { onPageChange(SettingsPage.Addons) },
-                onHomescreenClick = { onPageChange(SettingsPage.Homescreen) },
-            )
-            SettingsPage.Addons -> addonsSettingsContent()
-            SettingsPage.Homescreen -> homescreenSettingsContent(
-                isTablet = false,
-                heroEnabled = heroEnabled,
-                items = homescreenSettings,
-            )
-            SettingsPage.Account -> accountSettingsContent(
-                isTablet = false,
+                onAddonsClick = onAddonsClick,
+                onHomescreenClick = onHomescreenClick,
             )
         }
     }
@@ -171,12 +141,12 @@ private fun MobileSettingsScreen(
 private fun TabletSettingsScreen(
     page: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
-    heroEnabled: Boolean,
-    homescreenSettings: List<HomeCatalogSettingsItem>,
     showLoadingOverlay: Boolean,
-    continueWatchingVisible: Boolean,
-    continueWatchingStyle: ContinueWatchingSectionStyle,
     onSwitchProfile: (() -> Unit)? = null,
+    onHomescreenClick: () -> Unit = {},
+    onContinueWatchingClick: () -> Unit = {},
+    onAddonsClick: () -> Unit = {},
+    onAccountClick: () -> Unit = {},
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
     val activeCategory = SettingsCategory.valueOf(selectedCategory)
@@ -242,7 +212,7 @@ private fun TabletSettingsScreen(
                     onPlaybackClick = { onPageChange(SettingsPage.Playback) },
                     onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                     onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
-                    onAccountClick = { onPageChange(SettingsPage.Account) },
+                    onAccountClick = onAccountClick,
                     onSwitchProfileClick = onSwitchProfile,
                 )
                 SettingsPage.Playback -> playbackSettingsContent(
@@ -251,26 +221,12 @@ private fun TabletSettingsScreen(
                 )
                 SettingsPage.Appearance -> appearanceSettingsContent(
                     isTablet = true,
-                    onContinueWatchingClick = { onPageChange(SettingsPage.ContinueWatching) },
-                )
-                SettingsPage.ContinueWatching -> continueWatchingSettingsContent(
-                    isTablet = true,
-                    isVisible = continueWatchingVisible,
-                    style = continueWatchingStyle,
+                    onContinueWatchingClick = onContinueWatchingClick,
                 )
                 SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                     isTablet = true,
-                    onAddonsClick = { onPageChange(SettingsPage.Addons) },
-                    onHomescreenClick = { onPageChange(SettingsPage.Homescreen) },
-                )
-                SettingsPage.Addons -> addonsSettingsContent()
-                SettingsPage.Homescreen -> homescreenSettingsContent(
-                    isTablet = true,
-                    heroEnabled = heroEnabled,
-                    items = homescreenSettings,
-                )
-                SettingsPage.Account -> accountSettingsContent(
-                    isTablet = true,
+                    onAddonsClick = onAddonsClick,
+                    onHomescreenClick = onHomescreenClick,
                 )
             }
         }

@@ -78,6 +78,10 @@ import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.profiles.ProfileSelectionScreen
 import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.settings.SettingsScreen
+import com.nuvio.app.features.settings.HomescreenSettingsScreen
+import com.nuvio.app.features.settings.ContinueWatchingSettingsScreen
+import com.nuvio.app.features.settings.AddonsSettingsScreen
+import com.nuvio.app.features.settings.AccountSettingsScreen
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
 import com.nuvio.app.features.watched.WatchedRepository
@@ -91,6 +95,18 @@ object TabsRoute
 
 @Serializable
 data class DetailRoute(val type: String, val id: String)
+
+@Serializable
+object HomescreenSettingsRoute
+
+@Serializable
+object ContinueWatchingSettingsRoute
+
+@Serializable
+object AddonsSettingsRoute
+
+@Serializable
+object AccountSettingsRoute
 
 @Serializable
 data class StreamRoute(
@@ -393,6 +409,10 @@ private fun MainAppContent(
                             onContinueWatchingClick = onContinueWatchingClick,
                             onContinueWatchingLongPress = onContinueWatchingLongPress,
                             onSwitchProfile = onSwitchProfile,
+                            onHomescreenSettingsClick = { navController.navigate(HomescreenSettingsRoute) },
+                            onContinueWatchingSettingsClick = { navController.navigate(ContinueWatchingSettingsRoute) },
+                            onAddonsSettingsClick = { navController.navigate(AddonsSettingsRoute) },
+                            onAccountSettingsClick = { navController.navigate(AccountSettingsRoute) },
                         )
                     }
                 }
@@ -518,6 +538,26 @@ private fun MainAppContent(
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
+                composable<HomescreenSettingsRoute> {
+                    HomescreenSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable<ContinueWatchingSettingsRoute> {
+                    ContinueWatchingSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable<AddonsSettingsRoute> {
+                    AddonsSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable<AccountSettingsRoute> {
+                    AccountSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
 
             NuvioPosterActionSheet(
@@ -554,6 +594,10 @@ private fun AppTabHost(
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
     onSwitchProfile: (() -> Unit)? = null,
+    onHomescreenSettingsClick: () -> Unit = {},
+    onContinueWatchingSettingsClick: () -> Unit = {},
+    onAddonsSettingsClick: () -> Unit = {},
+    onAccountSettingsClick: () -> Unit = {},
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         keepAliveTab(
@@ -591,6 +635,10 @@ private fun AppTabHost(
             SettingsScreen(
                 modifier = Modifier.fillMaxSize(),
                 onSwitchProfile = onSwitchProfile,
+                onHomescreenClick = onHomescreenSettingsClick,
+                onContinueWatchingClick = onContinueWatchingSettingsClick,
+                onAddonsClick = onAddonsSettingsClick,
+                onAccountClick = onAccountSettingsClick,
             )
         }
     }

@@ -1,0 +1,123 @@
+package com.nuvio.app.features.settings
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioScreen
+import com.nuvio.app.core.ui.NuvioScreenHeader
+import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
+
+@Composable
+fun HomescreenSettingsScreen(
+    onBack: () -> Unit,
+) {
+    val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
+    val homescreenSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        AddonRepository.initialize()
+    }
+
+    LaunchedEffect(addonsUiState.addons) {
+        HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons)
+    }
+
+    NuvioScreen(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        stickyHeader {
+            NuvioScreenHeader(
+                title = "Homescreen",
+                onBack = onBack,
+            )
+        }
+        homescreenSettingsContent(
+            isTablet = false,
+            heroEnabled = homescreenSettingsUiState.heroEnabled,
+            items = homescreenSettingsUiState.items,
+        )
+    }
+}
+
+@Composable
+fun ContinueWatchingSettingsScreen(
+    onBack: () -> Unit,
+) {
+    val continueWatchingPreferencesUiState by remember {
+        ContinueWatchingPreferencesRepository.ensureLoaded()
+        ContinueWatchingPreferencesRepository.uiState
+    }.collectAsStateWithLifecycle()
+
+    NuvioScreen(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        stickyHeader {
+            NuvioScreenHeader(
+                title = "Continue Watching",
+                onBack = onBack,
+            )
+        }
+        continueWatchingSettingsContent(
+            isTablet = false,
+            isVisible = continueWatchingPreferencesUiState.isVisible,
+            style = continueWatchingPreferencesUiState.style,
+        )
+    }
+}
+
+@Composable
+fun AddonsSettingsScreen(
+    onBack: () -> Unit,
+) {
+    LaunchedEffect(Unit) {
+        AddonRepository.initialize()
+    }
+
+    NuvioScreen(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        stickyHeader {
+            NuvioScreenHeader(
+                title = "Addons",
+                onBack = onBack,
+            )
+        }
+        addonsSettingsContent()
+    }
+}
+
+@Composable
+fun AccountSettingsScreen(
+    onBack: () -> Unit,
+) {
+    NuvioScreen(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        stickyHeader {
+            NuvioScreenHeader(
+                title = "Account",
+                onBack = onBack,
+            )
+        }
+        accountSettingsContent(
+            isTablet = false,
+        )
+    }
+}

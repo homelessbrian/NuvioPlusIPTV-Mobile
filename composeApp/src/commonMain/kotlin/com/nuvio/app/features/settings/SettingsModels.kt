@@ -19,11 +19,7 @@ internal enum class SettingsPage(
     Root("Settings"),
     Playback("Playback"),
     Appearance("Appearance"),
-    ContinueWatching("Continue Watching"),
     ContentDiscovery("Content & Discovery"),
-    Addons("Addons"),
-    Homescreen("Homescreen"),
-    Account("Account"),
 }
 
 internal fun SettingsPage.previousPage(): SettingsPage? =
@@ -31,9 +27,5 @@ internal fun SettingsPage.previousPage(): SettingsPage? =
         SettingsPage.Root -> null
         SettingsPage.Playback -> SettingsPage.Root
         SettingsPage.Appearance -> SettingsPage.Root
-        SettingsPage.ContinueWatching -> SettingsPage.Appearance
         SettingsPage.ContentDiscovery -> SettingsPage.Root
-        SettingsPage.Addons -> SettingsPage.ContentDiscovery
-        SettingsPage.Homescreen -> SettingsPage.ContentDiscovery
-        SettingsPage.Account -> SettingsPage.Root
     }
