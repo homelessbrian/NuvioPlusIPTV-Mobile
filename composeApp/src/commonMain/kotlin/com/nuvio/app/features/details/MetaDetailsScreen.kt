@@ -186,6 +186,7 @@ fun MetaDetailsScreen(
                             DetailActionButtons(
                                 playLabel = playButtonLabel,
                                 saveLabel = if (isSaved) "Saved" else "Save",
+                                isSaved = isSaved,
                                 onPlayClick = {
                                     when {
                                         meta.type == "series" && seriesAction != null -> {

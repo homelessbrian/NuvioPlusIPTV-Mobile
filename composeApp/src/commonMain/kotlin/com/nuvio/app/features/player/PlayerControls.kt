@@ -20,14 +20,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Forward10
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,12 +36,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.nuvioTypeScale
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.ic_player_aspect_ratio
+import nuvio.composeapp.generated.resources.ic_player_audio_filled
+import nuvio.composeapp.generated.resources.ic_player_pause
+import nuvio.composeapp.generated.resources.ic_player_play
+import nuvio.composeapp.generated.resources.ic_player_subtitles
+import org.jetbrains.compose.resources.painterResource
 
 @Composable
 internal fun PlayerControlsShell(
@@ -318,6 +322,10 @@ private fun PlayPauseControlButton(
     metrics: PlayerLayoutMetrics,
     onClick: () -> Unit,
 ) {
+    val playPausePainter = painterResource(
+        if (isPlaying) Res.drawable.ic_player_pause else Res.drawable.ic_player_play,
+    )
+
     Box(
         modifier = Modifier
             .clip(CircleShape)
@@ -334,7 +342,7 @@ private fun PlayPauseControlButton(
             )
         } else {
             Icon(
-                imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                painter = playPausePainter,
                 contentDescription = if (isPlaying) "Pause" else "Play",
                 tint = Color.White,
                 modifier = Modifier.size(metrics.playIconSize),
@@ -358,6 +366,10 @@ private fun ProgressControls(
     modifier: Modifier = Modifier,
 ) {
     val durationMs = playbackSnapshot.durationMs.coerceAtLeast(1L)
+    val aspectRatioPainter = painterResource(Res.drawable.ic_player_aspect_ratio)
+    val subtitlesPainter = painterResource(Res.drawable.ic_player_subtitles)
+    val audioPainter = painterResource(Res.drawable.ic_player_audio_filled)
+
     Column(modifier = modifier) {
         Slider(
             modifier = Modifier
@@ -399,23 +411,23 @@ private fun ProgressControls(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlayerActionPillButton(
-                        icon = Icons.Rounded.AspectRatio,
                         label = resizeMode.label,
+                        painter = aspectRatioPainter,
                         onClick = onResizeModeClick,
                     )
                     PlayerActionPillButton(
-                        icon = Icons.Rounded.Speed,
                         label = "${playbackSnapshot.playbackSpeed}x",
+                        icon = Icons.Rounded.Speed,
                         onClick = onSpeedClick,
                     )
                     PlayerActionPillButton(
-                        icon = Icons.Rounded.Subtitles,
                         label = "Subs",
+                        painter = subtitlesPainter,
                         onClick = onSubtitleClick,
                     )
                     PlayerActionPillButton(
-                        icon = Icons.Rounded.Audiotrack,
                         label = "Audio",
+                        painter = audioPainter,
                         onClick = onAudioClick,
                     )
                 }
@@ -450,9 +462,10 @@ private fun TimePill(
 
 @Composable
 private fun PlayerActionPillButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     onClick: () -> Unit,
+    icon: ImageVector? = null,
+    painter: Painter? = null,
 ) {
     Row(
         modifier = Modifier
@@ -462,12 +475,21 @@ private fun PlayerActionPillButton(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = Color.White,
-            modifier = Modifier.size(18.dp),
-        )
+        when {
+            painter != null -> Icon(
+                painter = painter,
+                contentDescription = label,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+
+            icon != null -> Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+        }
         Text(
             text = label,
             style = MaterialTheme.nuvioTypeScale.labelSm,

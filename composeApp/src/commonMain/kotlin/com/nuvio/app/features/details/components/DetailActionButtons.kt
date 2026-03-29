@@ -10,8 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -22,15 +21,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.ic_player_play
+import nuvio.composeapp.generated.resources.library_add_plus
+import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun DetailActionButtons(
     modifier: Modifier = Modifier,
     playLabel: String = "Play",
     saveLabel: String = "Save",
+    isSaved: Boolean = false,
     onPlayClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
 ) {
+    val playPainter = painterResource(Res.drawable.ic_player_play)
+    val libraryAddPainter = painterResource(Res.drawable.library_add_plus)
+
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -38,7 +45,6 @@ fun DetailActionButtons(
         Button(
             onClick = onPlayClick,
             modifier = Modifier
-
                 .weight(1f)
                 .height(50.dp),
             shape = RoundedCornerShape(40.dp),
@@ -48,9 +54,9 @@ fun DetailActionButtons(
             ),
         ) {
             Icon(
-                imageVector = Icons.Default.PlayArrow,
+                painter = playPainter,
                 contentDescription = null,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(18.dp),
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
@@ -69,12 +75,21 @@ fun DetailActionButtons(
             shape = RoundedCornerShape(40.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         ) {
-            Icon(
-                imageVector = Icons.Default.BookmarkBorder,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
+            if (isSaved) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                Icon(
+                    painter = libraryAddPainter,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = saveLabel,
