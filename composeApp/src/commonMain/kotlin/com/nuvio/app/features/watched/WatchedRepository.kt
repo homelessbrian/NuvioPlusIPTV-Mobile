@@ -44,6 +44,8 @@ private data class WatchedDeleteKey(
 )
 
 object WatchedRepository {
+    private const val watchedItemsPageSize = 900
+
     private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val log = Logger.withTag("WatchedRepository")
     private val json = Json {
@@ -55,13 +57,25 @@ object WatchedRepository {
     val uiState: StateFlow<WatchedUiState> = _uiState.asStateFlow()
 
     private var hasLoaded = false
+    private var currentProfileId: Int = 1
     private var itemsByKey: MutableMap<String, WatchedItem> = mutableMapOf()
 
     fun ensureLoaded() {
         if (hasLoaded) return
-        hasLoaded = true
+        loadFromDisk(ProfileRepository.activeProfileId)
+    }
 
-        val payload = WatchedStorage.loadPayload().orEmpty().trim()
+    fun onProfileChanged(profileId: Int) {
+        if (profileId == currentProfileId && hasLoaded) return
+        loadFromDisk(profileId)
+    }
+
+    private fun loadFromDisk(profileId: Int) {
+        currentProfileId = profileId
+        hasLoaded = true
+        itemsByKey.clear()
+
+        val payload = WatchedStorage.loadPayload(profileId).orEmpty().trim()
         if (payload.isNotEmpty()) {
             val items = runCatching {
                 json.decodeFromString<StoredWatchedPayload>(payload).items
@@ -73,10 +87,25 @@ object WatchedRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
+        currentProfileId = profileId
         runCatching {
-            val params = buildJsonObject { put("p_profile_id", profileId) }
-            val result = SupabaseProvider.client.postgrest.rpc("sync_pull_watched_items", params)
-            val serverItems = result.decodeList<WatchedSyncItem>()
+            val serverItems = mutableListOf<WatchedSyncItem>()
+            var page = 1
+
+            while (true) {
+                val params = buildJsonObject {
+                    put("p_profile_id", profileId)
+                    put("p_page", page)
+                    put("p_page_size", watchedItemsPageSize)
+                }
+                val result = SupabaseProvider.client.postgrest.rpc("sync_pull_watched_items", params)
+                val pageItems = result.decodeList<WatchedSyncItem>()
+                serverItems += pageItems
+
+                if (pageItems.size < watchedItemsPageSize) break
+                page += 1
+            }
+
             itemsByKey = serverItems.map { syncItem ->
                 WatchedItem(
                     id = syncItem.contentId,
@@ -176,6 +205,7 @@ object WatchedRepository {
 
     private fun persist() {
         WatchedStorage.savePayload(
+            currentProfileId,
             json.encodeToString(
                 StoredWatchedPayload(
                     items = itemsByKey.values.sortedByDescending { it.markedAtEpochMs },

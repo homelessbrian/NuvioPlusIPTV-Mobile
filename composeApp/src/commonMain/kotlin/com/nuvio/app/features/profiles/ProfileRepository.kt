@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.SupabaseProvider
+import com.nuvio.app.features.watched.WatchedRepository
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.CoroutineScope
@@ -106,6 +107,7 @@ object ProfileRepository {
             activeProfile = _state.value.profiles.find { it.profileIndex == profileIndex },
         )
         persist()
+        WatchedRepository.onProfileChanged(profileIndex)
     }
 
     suspend fun pushProfiles(profiles: List<ProfilePushPayload>) {
