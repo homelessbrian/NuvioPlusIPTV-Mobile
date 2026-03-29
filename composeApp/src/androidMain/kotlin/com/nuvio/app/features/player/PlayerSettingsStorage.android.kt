@@ -11,6 +11,8 @@ actual object PlayerSettingsStorage {
     private const val secondaryPreferredAudioLanguageKey = "secondary_preferred_audio_language"
     private const val preferredSubtitleLanguageKey = "preferred_subtitle_language"
     private const val secondaryPreferredSubtitleLanguageKey = "secondary_preferred_subtitle_language"
+    private const val streamReuseLastLinkEnabledKey = "stream_reuse_last_link_enabled"
+    private const val streamReuseLastLinkCacheHoursKey = "stream_reuse_last_link_cache_hours"
 
     private var preferences: SharedPreferences? = null
 
@@ -86,6 +88,40 @@ actual object PlayerSettingsStorage {
                     putString(key, language)
                 }
             }
+            ?.apply()
+    }
+
+    actual fun loadStreamReuseLastLinkEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(streamReuseLastLinkEnabledKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, false)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveStreamReuseLastLinkEnabled(enabled: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(streamReuseLastLinkEnabledKey), enabled)
+            ?.apply()
+    }
+
+    actual fun loadStreamReuseLastLinkCacheHours(): Int? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(streamReuseLastLinkCacheHoursKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getInt(key, 24)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveStreamReuseLastLinkCacheHours(hours: Int) {
+        preferences
+            ?.edit()
+            ?.putInt(ProfileScopedKey.of(streamReuseLastLinkCacheHoursKey), hours)
             ?.apply()
     }
 }

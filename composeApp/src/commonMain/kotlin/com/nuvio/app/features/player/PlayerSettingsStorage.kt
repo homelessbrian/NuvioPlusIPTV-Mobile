@@ -11,4 +11,8 @@ internal expect object PlayerSettingsStorage {
     fun savePreferredSubtitleLanguage(language: String)
     fun loadSecondaryPreferredSubtitleLanguage(): String?
     fun saveSecondaryPreferredSubtitleLanguage(language: String?)
+    fun loadStreamReuseLastLinkEnabled(): Boolean?
+    fun saveStreamReuseLastLinkEnabled(enabled: Boolean)
+    fun loadStreamReuseLastLinkCacheHours(): Int?
+    fun saveStreamReuseLastLinkCacheHours(hours: Int)
 }

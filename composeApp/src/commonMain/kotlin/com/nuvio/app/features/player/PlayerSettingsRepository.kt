@@ -10,6 +10,8 @@ data class PlayerSettingsUiState(
     val secondaryPreferredAudioLanguage: String? = null,
     val preferredSubtitleLanguage: String = SubtitleLanguageOption.NONE,
     val secondaryPreferredSubtitleLanguage: String? = null,
+    val streamReuseLastLinkEnabled: Boolean = false,
+    val streamReuseLastLinkCacheHours: Int = 24,
 )
 
 object PlayerSettingsRepository {
@@ -22,6 +24,8 @@ object PlayerSettingsRepository {
     private var secondaryPreferredAudioLanguage: String? = null
     private var preferredSubtitleLanguage = SubtitleLanguageOption.NONE
     private var secondaryPreferredSubtitleLanguage: String? = null
+    private var streamReuseLastLinkEnabled = false
+    private var streamReuseLastLinkCacheHours = 24
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -45,6 +49,8 @@ object PlayerSettingsRepository {
                 ?: SubtitleLanguageOption.NONE
         secondaryPreferredSubtitleLanguage =
             normalizeLanguageCode(PlayerSettingsStorage.loadSecondaryPreferredSubtitleLanguage())
+        streamReuseLastLinkEnabled = PlayerSettingsStorage.loadStreamReuseLastLinkEnabled() ?: false
+        streamReuseLastLinkCacheHours = PlayerSettingsStorage.loadStreamReuseLastLinkCacheHours() ?: 24
         publish()
     }
 
@@ -92,6 +98,22 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveSecondaryPreferredSubtitleLanguage(normalized)
     }
 
+    fun setStreamReuseLastLinkEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (streamReuseLastLinkEnabled == enabled) return
+        streamReuseLastLinkEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveStreamReuseLastLinkEnabled(enabled)
+    }
+
+    fun setStreamReuseLastLinkCacheHours(hours: Int) {
+        ensureLoaded()
+        if (streamReuseLastLinkCacheHours == hours) return
+        streamReuseLastLinkCacheHours = hours
+        publish()
+        PlayerSettingsStorage.saveStreamReuseLastLinkCacheHours(hours)
+    }
+
     private fun publish() {
         _uiState.value = PlayerSettingsUiState(
             showLoadingOverlay = showLoadingOverlay,
@@ -99,6 +121,8 @@ object PlayerSettingsRepository {
             secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
             preferredSubtitleLanguage = preferredSubtitleLanguage,
             secondaryPreferredSubtitleLanguage = secondaryPreferredSubtitleLanguage,
+            streamReuseLastLinkEnabled = streamReuseLastLinkEnabled,
+            streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
         )
     }
 }

@@ -47,6 +47,8 @@ internal fun LazyListScope.playbackSettingsContent(
     secondaryPreferredAudioLanguage: String?,
     preferredSubtitleLanguage: String,
     secondaryPreferredSubtitleLanguage: String?,
+    streamReuseLastLinkEnabled: Boolean,
+    streamReuseLastLinkCacheHours: Int,
 ) {
     item {
         PlaybackSettingsSection(
@@ -56,6 +58,8 @@ internal fun LazyListScope.playbackSettingsContent(
             secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
             preferredSubtitleLanguage = preferredSubtitleLanguage,
             secondaryPreferredSubtitleLanguage = secondaryPreferredSubtitleLanguage,
+            streamReuseLastLinkEnabled = streamReuseLastLinkEnabled,
+            streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
         )
     }
 }
@@ -68,11 +72,14 @@ private fun PlaybackSettingsSection(
     secondaryPreferredAudioLanguage: String?,
     preferredSubtitleLanguage: String,
     secondaryPreferredSubtitleLanguage: String?,
+    streamReuseLastLinkEnabled: Boolean,
+    streamReuseLastLinkCacheHours: Int,
 ) {
     var showPreferredAudioDialog by remember { mutableStateOf(false) }
     var showSecondaryAudioDialog by remember { mutableStateOf(false) }
     var showPreferredSubtitleDialog by remember { mutableStateOf(false) }
     var showSecondarySubtitleDialog by remember { mutableStateOf(false) }
+    var showReuseCacheDurationDialog by remember { mutableStateOf(false) }
 
     SettingsSection(
         title = "PLAYER",
@@ -127,6 +134,31 @@ private fun PlaybackSettingsSection(
                 isTablet = isTablet,
                 onClick = { showSecondarySubtitleDialog = true },
             )
+        }
+    }
+
+    SettingsSection(
+        title = "STREAM SELECTION",
+        isTablet = isTablet,
+    ) {
+        SettingsGroup(isTablet = isTablet) {
+            SettingsSwitchRow(
+                title = "Reuse Last Link",
+                description = "Auto-play your last working stream for this same movie/episode when cache is still valid.",
+                checked = streamReuseLastLinkEnabled,
+                isTablet = isTablet,
+                onCheckedChange = PlayerSettingsRepository::setStreamReuseLastLinkEnabled,
+            )
+            if (streamReuseLastLinkEnabled) {
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Last Link Cache Duration",
+                    description = formatReuseCacheDuration(streamReuseLastLinkCacheHours),
+                    icon = Icons.Rounded.Language,
+                    isTablet = isTablet,
+                    onClick = { showReuseCacheDurationDialog = true },
+                )
+            }
         }
     }
 
@@ -201,6 +233,26 @@ private fun PlaybackSettingsSection(
             onDismiss = { showSecondarySubtitleDialog = false },
         )
     }
+
+    if (showReuseCacheDurationDialog) {
+        ReuseCacheDurationDialog(
+            selectedHours = streamReuseLastLinkCacheHours,
+            onDurationSelected = { hours ->
+                PlayerSettingsRepository.setStreamReuseLastLinkCacheHours(hours)
+                showReuseCacheDurationDialog = false
+            },
+            onDismiss = { showReuseCacheDurationDialog = false },
+        )
+    }
+}
+
+private fun formatReuseCacheDuration(hours: Int): String = when {
+    hours < 24 -> "$hours hour${if (hours != 1) "s" else ""}"
+    hours % 24 == 0 -> {
+        val days = hours / 24
+        "$days day${if (days != 1) "s" else ""}"
+    }
+    else -> "$hours hours"
 }
 
 private data class LanguageSelectionOption(
@@ -266,6 +318,93 @@ private fun LanguageSelectionDialog(
                             ) {
                                 Text(
                                     text = option.label,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Box(
+                                    modifier = Modifier.size(24.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Tap outside to close",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ReuseCacheDurationDialog(
+    selectedHours: Int,
+    onDurationSelected: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val options = listOf(1, 6, 12, 24, 48, 72, 168)
+
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "Last Link Cache Duration",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    options.forEach { hours ->
+                        val isSelected = hours == selectedHours
+                        val containerColor = if (isSelected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onDurationSelected(hours) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = containerColor,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = formatReuseCacheDuration(hours),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.weight(1f),

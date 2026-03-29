@@ -23,13 +23,7 @@ object StreamsRepository {
     private var activeJob: Job? = null
     private var activeRequestKey: String? = null
 
-    /**
-     * Loads streams for a given type + videoId from all installed addons that declare
-     * the "stream" resource for the given type (and matching idPrefixes if set).
-     *
-     * For movies: videoId == meta id (e.g. "tt1234567")
-     * For series: videoId == "{metaId}:{season}:{episode}" (e.g. "tt0898266:9:17")
-     */
+  
     fun load(type: String, videoId: String) {
         load(type = type, videoId = videoId, forceRefresh = false)
     }

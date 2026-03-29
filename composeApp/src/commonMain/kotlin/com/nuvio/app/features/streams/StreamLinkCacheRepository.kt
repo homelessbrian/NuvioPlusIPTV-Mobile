@@ -1,0 +1,72 @@
+package com.nuvio.app.features.streams
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+@Serializable
+data class CachedStreamLink(
+    val url: String,
+    val streamName: String,
+    val addonName: String,
+    val addonId: String,
+    val cachedAtMs: Long,
+    val filename: String? = null,
+    val videoSize: Long? = null,
+)
+
+internal expect fun epochMs(): Long
+
+object StreamLinkCacheRepository {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    fun contentKey(type: String, videoId: String): String =
+        "${type.lowercase()}|$videoId"
+
+    fun save(
+        contentKey: String,
+        url: String,
+        streamName: String,
+        addonName: String,
+        addonId: String,
+        filename: String? = null,
+        videoSize: Long? = null,
+    ) {
+        val entry = CachedStreamLink(
+            url = url,
+            streamName = streamName,
+            addonName = addonName,
+            addonId = addonId,
+            cachedAtMs = epochMs(),
+            filename = filename,
+            videoSize = videoSize,
+        )
+        val payload = json.encodeToString(CachedStreamLink.serializer(), entry)
+        StreamLinkCacheStorage.saveEntry(hashedKey(contentKey), payload)
+    }
+
+    fun getValid(contentKey: String, maxAgeMs: Long): CachedStreamLink? {
+        if (maxAgeMs <= 0L) return null
+        val raw = StreamLinkCacheStorage.loadEntry(hashedKey(contentKey)) ?: return null
+        val entry = runCatching {
+            json.decodeFromString(CachedStreamLink.serializer(), raw)
+        }.getOrNull() ?: run {
+            StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
+            return null
+        }
+        val age = epochMs() - entry.cachedAtMs
+        if (entry.cachedAtMs <= 0L || age > maxAgeMs) {
+            StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
+            return null
+        }
+        if (entry.url.isBlank()) {
+            StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
+            return null
+        }
+        return entry
+    }
+
+    private fun hashedKey(contentKey: String): String {
+        val hash = contentKey.fold(0L) { acc, c -> acc * 31 + c.code }.toULong()
+        return "stream_link_$hash"
+    }
+}

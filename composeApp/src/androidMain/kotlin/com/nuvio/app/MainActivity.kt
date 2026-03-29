@@ -13,6 +13,7 @@ import com.nuvio.app.features.player.PlayerSettingsStorage
 import com.nuvio.app.features.profiles.ProfileStorage
 import com.nuvio.app.features.settings.ThemeSettingsStorage
 import com.nuvio.app.features.watched.WatchedStorage
+import com.nuvio.app.features.streams.StreamLinkCacheStorage
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesStorage
 import com.nuvio.app.features.watchprogress.WatchProgressStorage
 
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
         ThemeSettingsStorage.initialize(applicationContext)
         ContinueWatchingPreferencesStorage.initialize(applicationContext)
         WatchProgressStorage.initialize(applicationContext)
+        StreamLinkCacheStorage.initialize(applicationContext)
 
         setContent {
             App()

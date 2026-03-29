@@ -81,6 +81,8 @@ fun SettingsScreen(
                 secondaryPreferredAudioLanguage = playerSettingsUiState.secondaryPreferredAudioLanguage,
                 preferredSubtitleLanguage = playerSettingsUiState.preferredSubtitleLanguage,
                 secondaryPreferredSubtitleLanguage = playerSettingsUiState.secondaryPreferredSubtitleLanguage,
+                streamReuseLastLinkEnabled = playerSettingsUiState.streamReuseLastLinkEnabled,
+                streamReuseLastLinkCacheHours = playerSettingsUiState.streamReuseLastLinkCacheHours,
                 selectedTheme = selectedTheme,
                 onThemeSelected = ThemeSettingsRepository::setTheme,
                 amoledEnabled = amoledEnabled,
@@ -100,6 +102,8 @@ fun SettingsScreen(
                 secondaryPreferredAudioLanguage = playerSettingsUiState.secondaryPreferredAudioLanguage,
                 preferredSubtitleLanguage = playerSettingsUiState.preferredSubtitleLanguage,
                 secondaryPreferredSubtitleLanguage = playerSettingsUiState.secondaryPreferredSubtitleLanguage,
+                streamReuseLastLinkEnabled = playerSettingsUiState.streamReuseLastLinkEnabled,
+                streamReuseLastLinkCacheHours = playerSettingsUiState.streamReuseLastLinkCacheHours,
                 selectedTheme = selectedTheme,
                 onThemeSelected = ThemeSettingsRepository::setTheme,
                 amoledEnabled = amoledEnabled,
@@ -123,6 +127,8 @@ private fun MobileSettingsScreen(
     secondaryPreferredAudioLanguage: String?,
     preferredSubtitleLanguage: String,
     secondaryPreferredSubtitleLanguage: String?,
+    streamReuseLastLinkEnabled: Boolean,
+    streamReuseLastLinkCacheHours: Int,
     selectedTheme: AppTheme,
     onThemeSelected: (AppTheme) -> Unit,
     amoledEnabled: Boolean,
@@ -158,6 +164,8 @@ private fun MobileSettingsScreen(
                 secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
                 preferredSubtitleLanguage = preferredSubtitleLanguage,
                 secondaryPreferredSubtitleLanguage = secondaryPreferredSubtitleLanguage,
+                streamReuseLastLinkEnabled = streamReuseLastLinkEnabled,
+                streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
             )
             SettingsPage.Appearance -> appearanceSettingsContent(
                 isTablet = false,
@@ -185,6 +193,8 @@ private fun TabletSettingsScreen(
     secondaryPreferredAudioLanguage: String?,
     preferredSubtitleLanguage: String,
     secondaryPreferredSubtitleLanguage: String?,
+    streamReuseLastLinkEnabled: Boolean,
+    streamReuseLastLinkCacheHours: Int,
     selectedTheme: AppTheme,
     onThemeSelected: (AppTheme) -> Unit,
     amoledEnabled: Boolean,
@@ -269,6 +279,8 @@ private fun TabletSettingsScreen(
                     secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
                     preferredSubtitleLanguage = preferredSubtitleLanguage,
                     secondaryPreferredSubtitleLanguage = secondaryPreferredSubtitleLanguage,
+                    streamReuseLastLinkEnabled = streamReuseLastLinkEnabled,
+                    streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
                 )
                 SettingsPage.Appearance -> appearanceSettingsContent(
                     isTablet = true,

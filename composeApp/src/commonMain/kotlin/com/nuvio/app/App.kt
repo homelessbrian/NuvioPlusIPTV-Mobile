@@ -85,8 +85,10 @@ import com.nuvio.app.features.settings.AccountSettingsScreen
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.StreamContext
 import com.nuvio.app.features.streams.StreamContextStore
+import com.nuvio.app.features.streams.StreamLinkCacheRepository
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
+import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watched.toWatchedItem
 import com.nuvio.app.features.watched.watchedItemKey
@@ -454,6 +456,52 @@ private fun MainAppContent(
                             StreamContextStore.get(contextId)?.pauseDescription
                         }
                     }
+
+                    val playerSettings by remember {
+                        PlayerSettingsRepository.ensureLoaded()
+                        PlayerSettingsRepository.uiState
+                    }.collectAsStateWithLifecycle()
+
+                    // Reuse Last Link: auto-play from cache if enabled (only on first entry)
+                    var reuseHandled by remember(route.videoId) { mutableStateOf(false) }
+                    LaunchedEffect(route.videoId, playerSettings.streamReuseLastLinkEnabled) {
+                        if (reuseHandled) return@LaunchedEffect
+                        reuseHandled = true
+                        if (!playerSettings.streamReuseLastLinkEnabled) return@LaunchedEffect
+                        val cacheKey = StreamLinkCacheRepository.contentKey(route.type, route.videoId)
+                        val maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
+                        val cached = StreamLinkCacheRepository.getValid(cacheKey, maxAgeMs)
+                        if (cached != null) {
+                            val launchId = PlayerLaunchStore.put(
+                                PlayerLaunch(
+                                    title = route.title,
+                                    sourceUrl = cached.url,
+                                    logo = route.logo,
+                                    poster = route.poster,
+                                    background = route.background,
+                                    seasonNumber = route.seasonNumber,
+                                    episodeNumber = route.episodeNumber,
+                                    episodeTitle = route.episodeTitle,
+                                    episodeThumbnail = route.episodeThumbnail,
+                                    streamTitle = cached.streamName,
+                                    streamSubtitle = null,
+                                    pauseDescription = pauseDescription,
+                                    providerName = cached.addonName,
+                                    providerAddonId = cached.addonId,
+                                    contentType = route.type,
+                                    videoId = route.videoId,
+                                    parentMetaId = route.parentMetaId ?: route.videoId,
+                                    parentMetaType = route.parentMetaType ?: route.type,
+                                    initialPositionMs = route.resumePositionMs ?: 0L,
+                                )
+                            )
+                            route.streamContextId?.let(StreamContextStore::remove)
+                            navController.navigate(PlayerRoute(launchId = launchId)) {
+                                popUpTo<StreamRoute> { inclusive = true }
+                            }
+                        }
+                    }
+
                     StreamsScreen(
                         type = route.type,
                         videoId = route.videoId,
@@ -471,6 +519,19 @@ private fun MainAppContent(
                         onStreamSelected = { stream ->
                             val sourceUrl = stream.directPlaybackUrl
                             if (sourceUrl != null) {
+                                // Persist for Reuse Last Link
+                                if (playerSettings.streamReuseLastLinkEnabled) {
+                                    val cacheKey = StreamLinkCacheRepository.contentKey(route.type, route.videoId)
+                                    StreamLinkCacheRepository.save(
+                                        contentKey = cacheKey,
+                                        url = sourceUrl,
+                                        streamName = stream.streamLabel,
+                                        addonName = stream.addonName,
+                                        addonId = stream.addonId,
+                                        filename = stream.behaviorHints.filename,
+                                        videoSize = stream.behaviorHints.videoSize,
+                                    )
+                                }
                                 val launchId = PlayerLaunchStore.put(
                                     PlayerLaunch(
                                         title = route.title,
