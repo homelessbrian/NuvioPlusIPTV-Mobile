@@ -40,6 +40,7 @@ interface NuvioPlayerBridge {
     fun getPositionMs(): Long
     fun getBufferedMs(): Long
     fun getPlaybackSpeed(): Float
+    fun getErrorMessage(): String
     fun destroy()
 }
 

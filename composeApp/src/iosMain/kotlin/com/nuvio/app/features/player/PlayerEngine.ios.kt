@@ -174,6 +174,7 @@ actual fun PlatformPlayerSurface(
 
     // Polling for snapshots
     LaunchedEffect(bridge) {
+        var lastReportedError: String? = null
         while (isActive) {
             val snapshot = PlayerPlaybackSnapshot(
                 isLoading = bridge.getIsLoading(),
@@ -185,6 +186,11 @@ actual fun PlatformPlayerSurface(
                 playbackSpeed = bridge.getPlaybackSpeed(),
             )
             latestOnSnapshot.value(snapshot)
+            val errorMessage = bridge.getErrorMessage().ifBlank { null }
+            if (errorMessage != lastReportedError) {
+                lastReportedError = errorMessage
+                latestOnError.value(errorMessage)
+            }
             delay(250L)
         }
     }

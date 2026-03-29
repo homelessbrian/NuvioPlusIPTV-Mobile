@@ -84,6 +84,7 @@ final class MPVPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
     func getPositionMs() -> Int64 { return playerVC?.positionMs ?? 0 }
     func getBufferedMs() -> Int64 { return playerVC?.bufferedMs ?? 0 }
     func getPlaybackSpeed() -> Float { playerVC?.currentSpeed ?? 1.0 }
+    func getErrorMessage() -> String { playerVC?.currentErrorMessage ?? "" }
 
     func destroy() {
         playerVC?.destroyPlayer()
@@ -106,9 +107,11 @@ struct TrackInfo {
 
 final class MPVPlayerViewController: UIViewController {
 
+    private let errorStateLock = NSLock()
     private var metalLayer = MetalLayer()
     private var mpv: OpaquePointer?
     private lazy var eventQueue = DispatchQueue(label: "mpv-events", qos: .userInitiated)
+    private var recentPlaybackLogs: [String] = []
 
     // Cached track lists
     var audioTracks: [TrackInfo] = []
@@ -122,6 +125,12 @@ final class MPVPlayerViewController: UIViewController {
     var positionMs: Int64 = 0
     var bufferedMs: Int64 = 0
     var currentSpeed: Float = 1.0
+    var currentErrorMessage: String {
+        errorStateLock.lock()
+        defer { errorStateLock.unlock() }
+        return _currentErrorMessage ?? ""
+    }
+    private var _currentErrorMessage: String?
 
     // MARK: - Lifecycle
 
@@ -153,11 +162,7 @@ final class MPVPlayerViewController: UIViewController {
             return
         }
 
-#if DEBUG
         checkError(mpv_request_log_messages(mpv, "warn"))
-#else
-        checkError(mpv_request_log_messages(mpv, "no"))
-#endif
 
         checkError(mpv_set_option(mpv, "wid", MPV_FORMAT_INT64, &metalLayer))
         checkError(mpv_set_option_string(mpv, "vo", "gpu-next"))
@@ -209,6 +214,7 @@ final class MPVPlayerViewController: UIViewController {
 
     func loadFile(_ urlString: String) {
         guard mpv != nil else { return }
+        clearPlaybackError()
         isPlayerLoading = true
         isPlayerEnded = false
         command("loadfile", args: [urlString, "replace"])
@@ -239,6 +245,7 @@ final class MPVPlayerViewController: UIViewController {
     func retryPlayback() {
         guard mpv != nil else { return }
         if let path = getString("path") {
+            clearPlaybackError()
             let pos = getDouble("time-pos")
             command("loadfile", args: [path, "replace"])
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -325,6 +332,7 @@ final class MPVPlayerViewController: UIViewController {
 
     func destroyPlayer() {
         NotificationCenter.default.removeObserver(self)
+        clearPlaybackError()
         guard let ctx = mpv else { return }
         mpv = nil  // nil first so event loop stops reading
         mpv_terminate_destroy(ctx)
@@ -388,6 +396,38 @@ final class MPVPlayerViewController: UIViewController {
         subtitleTracks = subs
     }
 
+    private func clearPlaybackError() {
+        errorStateLock.lock()
+        recentPlaybackLogs.removeAll(keepingCapacity: true)
+        _currentErrorMessage = nil
+        errorStateLock.unlock()
+    }
+
+    private func appendPlaybackLog(prefix: String, level: String, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard level == "warn" || level == "error" || level == "fatal" else { return }
+
+        let formatted = "[\(prefix)] \(trimmed)"
+        errorStateLock.lock()
+        recentPlaybackLogs.append(formatted)
+        if recentPlaybackLogs.count > 4 {
+            recentPlaybackLogs.removeFirst(recentPlaybackLogs.count - 4)
+        }
+        errorStateLock.unlock()
+    }
+
+    private func setPlaybackError(_ fallback: String) {
+        let trimmedFallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        errorStateLock.lock()
+        var parts = recentPlaybackLogs.suffix(3)
+        if !trimmedFallback.isEmpty && !parts.contains(trimmedFallback) {
+            parts.append(trimmedFallback)
+        }
+        _currentErrorMessage = parts.isEmpty ? "Unable to play this stream." : parts.joined(separator: "\n")
+        errorStateLock.unlock()
+    }
+
     // MARK: - Event Loop
 
     private func readEvents() {
@@ -404,6 +444,7 @@ final class MPVPlayerViewController: UIViewController {
                     DispatchQueue.main.async { self.updateState() }
                 case MPV_EVENT_FILE_LOADED:
                     DispatchQueue.main.async {
+                        self.clearPlaybackError()
                         self.isPlayerLoading = false
                         self.updateState()
                     }
@@ -411,7 +452,9 @@ final class MPVPlayerViewController: UIViewController {
                     if let data = eventPtr.pointee.data {
                         let endFile = UnsafePointer<mpv_event_end_file>(OpaquePointer(data)).pointee
                         if endFile.reason == MPV_END_FILE_REASON_ERROR {
-                            print("[MPV] End file error: \(String(cString: mpv_error_string(endFile.error)))")
+                            let errorText = String(cString: mpv_error_string(endFile.error))
+                            self.setPlaybackError("[mpv] \(errorText)")
+                            print("[MPV] End file error: \(errorText)")
                         }
                     }
                 case MPV_EVENT_SHUTDOWN:
@@ -421,6 +464,7 @@ final class MPVPlayerViewController: UIViewController {
                         let prefix = String(cString: msg.pointee.prefix!)
                         let level = String(cString: msg.pointee.level!)
                         let text = String(cString: msg.pointee.text!)
+                        self.appendPlaybackLog(prefix: prefix, level: level, text: text)
                         print("[MPV][\(prefix)] \(level): \(text)", terminator: "")
                     }
                 default:

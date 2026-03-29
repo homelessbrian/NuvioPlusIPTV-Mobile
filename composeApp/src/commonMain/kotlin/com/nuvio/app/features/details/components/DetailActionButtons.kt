@@ -21,10 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.ic_player_play
-import nuvio.composeapp.generated.resources.library_add_plus
-import org.jetbrains.compose.resources.painterResource
+import com.nuvio.app.core.ui.AppIconResource
+import com.nuvio.app.core.ui.appIconPainter
 
 @Composable
 fun DetailActionButtons(
@@ -35,8 +33,8 @@ fun DetailActionButtons(
     onPlayClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
 ) {
-    val playPainter = painterResource(Res.drawable.ic_player_play)
-    val libraryAddPainter = painterResource(Res.drawable.library_add_plus)
+    val playPainter = appIconPainter(AppIconResource.PlayerPlay)
+    val libraryAddPainter = appIconPainter(AppIconResource.LibraryAddPlus)
 
     Row(
         modifier = modifier.fillMaxWidth(),

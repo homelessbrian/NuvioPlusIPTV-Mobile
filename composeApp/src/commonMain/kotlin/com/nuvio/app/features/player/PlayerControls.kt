@@ -42,15 +42,10 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.AppIconResource
 import com.nuvio.app.core.ui.NuvioBackButton
+import com.nuvio.app.core.ui.appIconPainter
 import com.nuvio.app.core.ui.nuvioTypeScale
-import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.ic_player_aspect_ratio
-import nuvio.composeapp.generated.resources.ic_player_audio_filled
-import nuvio.composeapp.generated.resources.ic_player_pause
-import nuvio.composeapp.generated.resources.ic_player_play
-import nuvio.composeapp.generated.resources.ic_player_subtitles
-import org.jetbrains.compose.resources.painterResource
 
 @Composable
 internal fun PlayerControlsShell(
@@ -321,8 +316,8 @@ private fun PlayPauseControlButton(
     metrics: PlayerLayoutMetrics,
     onClick: () -> Unit,
 ) {
-    val playPausePainter = painterResource(
-        if (isPlaying) Res.drawable.ic_player_pause else Res.drawable.ic_player_play,
+    val playPausePainter = appIconPainter(
+        if (isPlaying) AppIconResource.PlayerPause else AppIconResource.PlayerPlay,
     )
 
     Box(
@@ -364,9 +359,9 @@ private fun ProgressControls(
     modifier: Modifier = Modifier,
 ) {
     val durationMs = playbackSnapshot.durationMs.coerceAtLeast(1L)
-    val aspectRatioPainter = painterResource(Res.drawable.ic_player_aspect_ratio)
-    val subtitlesPainter = painterResource(Res.drawable.ic_player_subtitles)
-    val audioPainter = painterResource(Res.drawable.ic_player_audio_filled)
+    val aspectRatioPainter = appIconPainter(AppIconResource.PlayerAspectRatio)
+    val subtitlesPainter = appIconPainter(AppIconResource.PlayerSubtitles)
+    val audioPainter = appIconPainter(AppIconResource.PlayerAudioFilled)
 
     Column(modifier = modifier) {
         Slider(
