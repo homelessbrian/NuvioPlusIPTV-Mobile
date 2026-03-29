@@ -83,12 +83,20 @@ actual fun PlatformPlayerSurface(
                 override fun getSubtitleTracks(): List<SubtitleTrack> {
                     val count = bridge.getSubtitleTrackCount()
                     val tracks = (0 until count).map { i ->
+                        val trackId = bridge.getSubtitleTrackId(i)
+                        val trackLabel = bridge.getSubtitleTrackLabel(i)
+                        val trackLanguage = bridge.getSubtitleTrackLang(i)
                         SubtitleTrack(
                             index = bridge.getSubtitleTrackIndex(i),
-                            id = bridge.getSubtitleTrackId(i),
-                            label = bridge.getSubtitleTrackLabel(i),
-                            language = bridge.getSubtitleTrackLang(i),
+                            id = trackId,
+                            label = trackLabel,
+                            language = trackLanguage,
                             isSelected = bridge.isSubtitleTrackSelected(i),
+                            isForced = inferForcedSubtitleTrack(
+                                label = trackLabel,
+                                language = trackLanguage,
+                                trackId = trackId,
+                            ),
                         )
                     }
                     Logger.d(TAG) { "getSubtitleTracks: found ${tracks.size} tracks" }

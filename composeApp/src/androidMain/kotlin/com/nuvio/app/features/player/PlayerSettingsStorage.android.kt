@@ -7,6 +7,10 @@ import com.nuvio.app.core.storage.ProfileScopedKey
 actual object PlayerSettingsStorage {
     private const val preferencesName = "nuvio_player_settings"
     private const val showLoadingOverlayKey = "show_loading_overlay"
+    private const val preferredAudioLanguageKey = "preferred_audio_language"
+    private const val secondaryPreferredAudioLanguageKey = "secondary_preferred_audio_language"
+    private const val preferredSubtitleLanguageKey = "preferred_subtitle_language"
+    private const val secondaryPreferredSubtitleLanguageKey = "secondary_preferred_subtitle_language"
 
     private var preferences: SharedPreferences? = null
 
@@ -28,6 +32,60 @@ actual object PlayerSettingsStorage {
         preferences
             ?.edit()
             ?.putBoolean(ProfileScopedKey.of(showLoadingOverlayKey), enabled)
+            ?.apply()
+    }
+
+    actual fun loadPreferredAudioLanguage(): String? =
+        preferences?.getString(ProfileScopedKey.of(preferredAudioLanguageKey), null)
+
+    actual fun savePreferredAudioLanguage(language: String) {
+        preferences
+            ?.edit()
+            ?.putString(ProfileScopedKey.of(preferredAudioLanguageKey), language)
+            ?.apply()
+    }
+
+    actual fun loadSecondaryPreferredAudioLanguage(): String? =
+        preferences?.getString(ProfileScopedKey.of(secondaryPreferredAudioLanguageKey), null)
+
+    actual fun saveSecondaryPreferredAudioLanguage(language: String?) {
+        preferences
+            ?.edit()
+            ?.apply {
+                val key = ProfileScopedKey.of(secondaryPreferredAudioLanguageKey)
+                if (language.isNullOrBlank()) {
+                    remove(key)
+                } else {
+                    putString(key, language)
+                }
+            }
+            ?.apply()
+    }
+
+    actual fun loadPreferredSubtitleLanguage(): String? =
+        preferences?.getString(ProfileScopedKey.of(preferredSubtitleLanguageKey), null)
+
+    actual fun savePreferredSubtitleLanguage(language: String) {
+        preferences
+            ?.edit()
+            ?.putString(ProfileScopedKey.of(preferredSubtitleLanguageKey), language)
+            ?.apply()
+    }
+
+    actual fun loadSecondaryPreferredSubtitleLanguage(): String? =
+        preferences?.getString(ProfileScopedKey.of(secondaryPreferredSubtitleLanguageKey), null)
+
+    actual fun saveSecondaryPreferredSubtitleLanguage(language: String?) {
+        preferences
+            ?.edit()
+            ?.apply {
+                val key = ProfileScopedKey.of(secondaryPreferredSubtitleLanguageKey)
+                if (language.isNullOrBlank()) {
+                    remove(key)
+                } else {
+                    putString(key, language)
+                }
+            }
             ?.apply()
     }
 }

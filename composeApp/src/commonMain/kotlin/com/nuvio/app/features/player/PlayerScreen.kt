@@ -164,6 +164,8 @@ fun PlayerScreen(
         var selectedSubtitleIndex by remember { mutableStateOf(-1) }
         var selectedAddonSubtitleId by remember { mutableStateOf<String?>(null) }
         var useCustomSubtitles by remember { mutableStateOf(false) }
+        var preferredAudioSelectionApplied by rememberSaveable(sourceUrl) { mutableStateOf(false) }
+        var preferredSubtitleSelectionApplied by rememberSaveable(sourceUrl) { mutableStateOf(false) }
         var subtitleStyle by remember { mutableStateOf(SubtitleStyleState.DEFAULT) }
         var activeSubtitleTab by remember { mutableStateOf(SubtitleTab.BuiltIn) }
         val addonSubtitles by SubtitleRepository.addonSubtitles.collectAsStateWithLifecycle()
@@ -179,6 +181,69 @@ fun PlayerScreen(
             println("NuvioPlayer refreshTracks: useCustom=$useCustomSubtitles selectedAddonId=$selectedAddonSubtitleId selectedSubIdx=$selectedSubtitleIndex")
             println("NuvioPlayer refreshTracks: found ${subtitleTracks.size} subtitle tracks, selectedTrack=${selectedSub?.index}")
             if (selectedSub != null && !useCustomSubtitles) selectedSubtitleIndex = selectedSub.index
+
+            if (!preferredAudioSelectionApplied) {
+                val preferredAudioTargets = resolvePreferredAudioLanguageTargets(
+                    preferredAudioLanguage = playerSettingsUiState.preferredAudioLanguage,
+                    secondaryPreferredAudioLanguage = playerSettingsUiState.secondaryPreferredAudioLanguage,
+                    deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
+                )
+                if (preferredAudioTargets.isEmpty()) {
+                    preferredAudioSelectionApplied = true
+                } else if (audioTracks.isNotEmpty()) {
+                    val preferredAudioIndex = findPreferredTrackIndex(
+                        tracks = audioTracks,
+                        targets = preferredAudioTargets,
+                        language = { track -> track.language },
+                    )
+                    if (preferredAudioIndex >= 0 && preferredAudioIndex != selectedAudioIndex) {
+                        playerController?.selectAudioTrack(preferredAudioIndex)
+                        selectedAudioIndex = preferredAudioIndex
+                    }
+                    preferredAudioSelectionApplied = true
+                }
+            }
+
+            if (!preferredSubtitleSelectionApplied) {
+                val preferredSubtitleTargets = resolvePreferredSubtitleLanguageTargets(
+                    preferredSubtitleLanguage = playerSettingsUiState.preferredSubtitleLanguage,
+                    secondaryPreferredSubtitleLanguage = playerSettingsUiState.secondaryPreferredSubtitleLanguage,
+                    deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
+                )
+
+                if (preferredSubtitleTargets.isEmpty()) {
+                    if (selectedSubtitleIndex != -1 || subtitleTracks.any { it.isSelected }) {
+                        playerController?.selectSubtitleTrack(-1)
+                    }
+                    selectedSubtitleIndex = -1
+                    selectedAddonSubtitleId = null
+                    useCustomSubtitles = false
+                    preferredSubtitleSelectionApplied = true
+                } else if (subtitleTracks.isNotEmpty()) {
+                    val preferredSubtitleIndex = findPreferredSubtitleTrackIndex(
+                        tracks = subtitleTracks,
+                        targets = preferredSubtitleTargets,
+                    )
+                    if (preferredSubtitleIndex >= 0 && preferredSubtitleIndex != selectedSubtitleIndex) {
+                        playerController?.selectSubtitleTrack(preferredSubtitleIndex)
+                        selectedSubtitleIndex = preferredSubtitleIndex
+                        selectedAddonSubtitleId = null
+                        useCustomSubtitles = false
+                    } else if (
+                        preferredSubtitleIndex < 0 &&
+                        normalizeLanguageCode(playerSettingsUiState.preferredSubtitleLanguage) == SubtitleLanguageOption.FORCED
+                    ) {
+                        if (selectedSubtitleIndex != -1 || subtitleTracks.any { it.isSelected }) {
+                            playerController?.selectSubtitleTrack(-1)
+                        }
+                        selectedSubtitleIndex = -1
+                        selectedAddonSubtitleId = null
+                        useCustomSubtitles = false
+                    }
+                    preferredSubtitleSelectionApplied = true
+                }
+            }
+
             println("NuvioPlayer refreshTracks: final selectedSubtitleIndex=$selectedSubtitleIndex")
         }
 
@@ -235,6 +300,8 @@ fun PlayerScreen(
             initialLoadCompleted = false
             lastProgressPersistEpochMs = 0L
             previousIsPlaying = false
+            preferredAudioSelectionApplied = false
+            preferredSubtitleSelectionApplied = false
             SubtitleRepository.clear()
             WatchProgressRepository.ensureLoaded()
         }
@@ -508,4 +575,51 @@ fun PlayerScreen(
             )
         }
     }
+}
+
+private fun <T> findPreferredTrackIndex(
+    tracks: List<T>,
+    targets: List<String>,
+    language: (T) -> String?,
+): Int {
+    if (targets.isEmpty()) return -1
+    for (target in targets) {
+        val matchIndex = tracks.indexOfFirst { track ->
+            languageMatchesPreference(
+                trackLanguage = language(track),
+                targetLanguage = target,
+            )
+        }
+        if (matchIndex >= 0) {
+            return matchIndex
+        }
+    }
+    return -1
+}
+
+private fun findPreferredSubtitleTrackIndex(
+    tracks: List<SubtitleTrack>,
+    targets: List<String>,
+): Int {
+    if (targets.isEmpty()) return -1
+
+    for ((targetPosition, target) in targets.withIndex()) {
+        val normalizedTarget = normalizeLanguageCode(target) ?: continue
+        if (normalizedTarget == SubtitleLanguageOption.FORCED) {
+            val forcedIndex = tracks.indexOfFirst { it.isForced }
+            if (forcedIndex >= 0) return forcedIndex
+            if (targetPosition == 0) return -1
+            continue
+        }
+
+        val matchIndex = tracks.indexOfFirst { track ->
+            languageMatchesPreference(
+                trackLanguage = track.language,
+                targetLanguage = normalizedTarget,
+            )
+        }
+        if (matchIndex >= 0) return matchIndex
+    }
+
+    return -1
 }

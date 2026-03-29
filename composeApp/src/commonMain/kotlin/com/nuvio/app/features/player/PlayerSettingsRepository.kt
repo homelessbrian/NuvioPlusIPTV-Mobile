@@ -6,6 +6,10 @@ import kotlinx.coroutines.flow.asStateFlow
 
 data class PlayerSettingsUiState(
     val showLoadingOverlay: Boolean = true,
+    val preferredAudioLanguage: String = AudioLanguageOption.DEVICE,
+    val secondaryPreferredAudioLanguage: String? = null,
+    val preferredSubtitleLanguage: String = SubtitleLanguageOption.NONE,
+    val secondaryPreferredSubtitleLanguage: String? = null,
 )
 
 object PlayerSettingsRepository {
@@ -14,6 +18,10 @@ object PlayerSettingsRepository {
 
     private var hasLoaded = false
     private var showLoadingOverlay = true
+    private var preferredAudioLanguage = AudioLanguageOption.DEVICE
+    private var secondaryPreferredAudioLanguage: String? = null
+    private var preferredSubtitleLanguage = SubtitleLanguageOption.NONE
+    private var secondaryPreferredSubtitleLanguage: String? = null
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -27,6 +35,16 @@ object PlayerSettingsRepository {
     private fun loadFromDisk() {
         hasLoaded = true
         showLoadingOverlay = PlayerSettingsStorage.loadShowLoadingOverlay() ?: true
+        preferredAudioLanguage =
+            normalizeLanguageCode(PlayerSettingsStorage.loadPreferredAudioLanguage())
+                ?: AudioLanguageOption.DEVICE
+        secondaryPreferredAudioLanguage =
+            normalizeLanguageCode(PlayerSettingsStorage.loadSecondaryPreferredAudioLanguage())
+        preferredSubtitleLanguage =
+            normalizeLanguageCode(PlayerSettingsStorage.loadPreferredSubtitleLanguage())
+                ?: SubtitleLanguageOption.NONE
+        secondaryPreferredSubtitleLanguage =
+            normalizeLanguageCode(PlayerSettingsStorage.loadSecondaryPreferredSubtitleLanguage())
         publish()
     }
 
@@ -38,9 +56,49 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveShowLoadingOverlay(enabled)
     }
 
+    fun setPreferredAudioLanguage(language: String) {
+        ensureLoaded()
+        val normalized = normalizeLanguageCode(language) ?: AudioLanguageOption.DEVICE
+        if (preferredAudioLanguage == normalized) return
+        preferredAudioLanguage = normalized
+        publish()
+        PlayerSettingsStorage.savePreferredAudioLanguage(normalized)
+    }
+
+    fun setSecondaryPreferredAudioLanguage(language: String?) {
+        ensureLoaded()
+        val normalized = normalizeLanguageCode(language)
+        if (secondaryPreferredAudioLanguage == normalized) return
+        secondaryPreferredAudioLanguage = normalized
+        publish()
+        PlayerSettingsStorage.saveSecondaryPreferredAudioLanguage(normalized)
+    }
+
+    fun setPreferredSubtitleLanguage(language: String) {
+        ensureLoaded()
+        val normalized = normalizeLanguageCode(language) ?: SubtitleLanguageOption.NONE
+        if (preferredSubtitleLanguage == normalized) return
+        preferredSubtitleLanguage = normalized
+        publish()
+        PlayerSettingsStorage.savePreferredSubtitleLanguage(normalized)
+    }
+
+    fun setSecondaryPreferredSubtitleLanguage(language: String?) {
+        ensureLoaded()
+        val normalized = normalizeLanguageCode(language)
+        if (secondaryPreferredSubtitleLanguage == normalized) return
+        secondaryPreferredSubtitleLanguage = normalized
+        publish()
+        PlayerSettingsStorage.saveSecondaryPreferredSubtitleLanguage(normalized)
+    }
+
     private fun publish() {
         _uiState.value = PlayerSettingsUiState(
             showLoadingOverlay = showLoadingOverlay,
+            preferredAudioLanguage = preferredAudioLanguage,
+            secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
+            preferredSubtitleLanguage = preferredSubtitleLanguage,
+            secondaryPreferredSubtitleLanguage = secondaryPreferredSubtitleLanguage,
         )
     }
 }

@@ -327,6 +327,7 @@ private fun ExoPlayer.extractSubtitleTracks(): List<SubtitleTrack> {
     for (group in currentTracks.groups) {
         if (group.type != C.TRACK_TYPE_TEXT) continue
         val format = group.mediaTrackGroup.getFormat(0)
+        val hasForcedSelectionFlag = (format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0
         tracks.add(
             SubtitleTrack(
                 index = idx,
@@ -334,6 +335,12 @@ private fun ExoPlayer.extractSubtitleTracks(): List<SubtitleTrack> {
                 label = format.label ?: "",
                 language = format.language,
                 isSelected = group.isSelected,
+                isForced = inferForcedSubtitleTrack(
+                    label = format.label,
+                    language = format.language,
+                    trackId = format.id,
+                    hasForcedSelectionFlag = hasForcedSelectionFlag,
+                ),
             )
         )
         idx++
