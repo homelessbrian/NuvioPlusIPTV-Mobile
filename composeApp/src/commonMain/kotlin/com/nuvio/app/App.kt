@@ -36,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.tooling.preview.Preview
@@ -463,7 +464,7 @@ private fun MainAppContent(
                     }.collectAsStateWithLifecycle()
 
                     // Reuse Last Link: auto-play from cache if enabled (only on first entry)
-                    var reuseHandled by remember(route.videoId) { mutableStateOf(false) }
+                    var reuseHandled by rememberSaveable(route.videoId) { mutableStateOf(false) }
                     LaunchedEffect(route.videoId, playerSettings.streamReuseLastLinkEnabled) {
                         if (reuseHandled) return@LaunchedEffect
                         reuseHandled = true
