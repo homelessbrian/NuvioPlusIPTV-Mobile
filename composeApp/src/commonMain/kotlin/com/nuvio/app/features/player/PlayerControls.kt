@@ -301,7 +301,6 @@ private fun SideControlButton(
     Box(
         modifier = Modifier
             .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.28f))
             .clickable(onClick = onClick)
             .padding(metrics.sideButtonPadding),
         contentAlignment = Alignment.Center,
@@ -310,7 +309,7 @@ private fun SideControlButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = Color.White,
-            modifier = Modifier.size(metrics.sideIconSize),
+            modifier = Modifier.size(metrics.playIconSize),
         )
     }
 }
@@ -329,7 +328,6 @@ private fun PlayPauseControlButton(
     Box(
         modifier = Modifier
             .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.28f))
             .clickable(onClick = onClick)
             .padding(metrics.playButtonPadding),
         contentAlignment = Alignment.Center,
