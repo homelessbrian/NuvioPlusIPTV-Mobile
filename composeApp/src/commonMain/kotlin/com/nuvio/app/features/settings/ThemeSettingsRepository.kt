@@ -16,6 +16,14 @@ object ThemeSettingsRepository {
 
     fun ensureLoaded() {
         if (hasLoaded) return
+        loadFromDisk()
+    }
+
+    fun onProfileChanged() {
+        loadFromDisk()
+    }
+
+    private fun loadFromDisk() {
         hasLoaded = true
         val stored = ThemeSettingsStorage.loadSelectedTheme()
         val theme = if (stored != null) {

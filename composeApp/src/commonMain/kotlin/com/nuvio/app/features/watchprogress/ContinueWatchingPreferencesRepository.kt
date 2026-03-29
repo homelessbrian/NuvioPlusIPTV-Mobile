@@ -27,19 +27,34 @@ object ContinueWatchingPreferencesRepository {
 
     fun ensureLoaded() {
         if (hasLoaded) return
+        loadFromDisk()
+    }
+
+    fun onProfileChanged() {
+        loadFromDisk()
+    }
+
+    private fun loadFromDisk() {
         hasLoaded = true
 
         val payload = ContinueWatchingPreferencesStorage.loadPayload().orEmpty().trim()
-        if (payload.isEmpty()) return
+        if (payload.isEmpty()) {
+            _uiState.value = ContinueWatchingPreferencesUiState()
+            return
+        }
 
         val stored = runCatching {
             json.decodeFromString<StoredContinueWatchingPreferences>(payload)
-        }.getOrNull() ?: return
+        }.getOrNull()
 
-        _uiState.value = ContinueWatchingPreferencesUiState(
-            isVisible = stored.isVisible,
-            style = stored.style,
-        )
+        _uiState.value = if (stored != null) {
+            ContinueWatchingPreferencesUiState(
+                isVisible = stored.isVisible,
+                style = stored.style,
+            )
+        } else {
+            ContinueWatchingPreferencesUiState()
+        }
     }
 
     fun setVisible(isVisible: Boolean) {

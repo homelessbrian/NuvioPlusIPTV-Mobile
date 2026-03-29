@@ -2,6 +2,7 @@ package com.nuvio.app.features.player
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.nuvio.app.core.storage.ProfileScopedKey
 
 actual object PlayerSettingsStorage {
     private const val preferencesName = "nuvio_player_settings"
@@ -15,8 +16,9 @@ actual object PlayerSettingsStorage {
 
     actual fun loadShowLoadingOverlay(): Boolean? =
         preferences?.let { sharedPreferences ->
-            if (sharedPreferences.contains(showLoadingOverlayKey)) {
-                sharedPreferences.getBoolean(showLoadingOverlayKey, true)
+            val key = ProfileScopedKey.of(showLoadingOverlayKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, true)
             } else {
                 null
             }
@@ -25,7 +27,7 @@ actual object PlayerSettingsStorage {
     actual fun saveShowLoadingOverlay(enabled: Boolean) {
         preferences
             ?.edit()
-            ?.putBoolean(showLoadingOverlayKey, enabled)
+            ?.putBoolean(ProfileScopedKey.of(showLoadingOverlayKey), enabled)
             ?.apply()
     }
 }

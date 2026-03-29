@@ -79,6 +79,13 @@ object HomeCatalogSettingsRepository {
     private var preferences: MutableMap<String, StoredHomeCatalogPreference> = mutableMapOf()
     private var heroEnabled = true
 
+    fun onProfileChanged() {
+        hasLoaded = false
+        preferences.clear()
+        heroEnabled = true
+        _uiState.value = HomeCatalogSettingsUiState()
+    }
+
     fun syncCatalogs(addons: List<ManagedAddon>) {
         ensureLoaded()
         definitions = buildHomeCatalogDefinitions(addons)

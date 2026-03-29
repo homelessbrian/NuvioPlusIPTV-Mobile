@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.storage.ProfileScopedKey
 import platform.Foundation.NSUserDefaults
 
 actual object ThemeSettingsStorage {
@@ -7,22 +8,23 @@ actual object ThemeSettingsStorage {
     private const val amoledEnabledKey = "amoled_enabled"
 
     actual fun loadSelectedTheme(): String? =
-        NSUserDefaults.standardUserDefaults.stringForKey(selectedThemeKey)
+        NSUserDefaults.standardUserDefaults.stringForKey(ProfileScopedKey.of(selectedThemeKey))
 
     actual fun saveSelectedTheme(themeName: String) {
-        NSUserDefaults.standardUserDefaults.setObject(themeName, forKey = selectedThemeKey)
+        NSUserDefaults.standardUserDefaults.setObject(themeName, forKey = ProfileScopedKey.of(selectedThemeKey))
     }
 
     actual fun loadAmoledEnabled(): Boolean? {
         val defaults = NSUserDefaults.standardUserDefaults
-        return if (defaults.objectForKey(amoledEnabledKey) != null) {
-            defaults.boolForKey(amoledEnabledKey)
+        val key = ProfileScopedKey.of(amoledEnabledKey)
+        return if (defaults.objectForKey(key) != null) {
+            defaults.boolForKey(key)
         } else {
             null
         }
     }
 
     actual fun saveAmoledEnabled(enabled: Boolean) {
-        NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = amoledEnabledKey)
+        NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = ProfileScopedKey.of(amoledEnabledKey))
     }
 }

@@ -2,6 +2,7 @@ package com.nuvio.app.features.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.nuvio.app.core.storage.ProfileScopedKey
 
 actual object ThemeSettingsStorage {
     private const val preferencesName = "nuvio_theme_settings"
@@ -15,24 +16,25 @@ actual object ThemeSettingsStorage {
     }
 
     actual fun loadSelectedTheme(): String? =
-        preferences?.getString(selectedThemeKey, null)
+        preferences?.getString(ProfileScopedKey.of(selectedThemeKey), null)
 
     actual fun saveSelectedTheme(themeName: String) {
         preferences
             ?.edit()
-            ?.putString(selectedThemeKey, themeName)
+            ?.putString(ProfileScopedKey.of(selectedThemeKey), themeName)
             ?.apply()
     }
 
     actual fun loadAmoledEnabled(): Boolean? =
         preferences?.let { prefs ->
-            if (prefs.contains(amoledEnabledKey)) prefs.getBoolean(amoledEnabledKey, false) else null
+            val key = ProfileScopedKey.of(amoledEnabledKey)
+            if (prefs.contains(key)) prefs.getBoolean(key, false) else null
         }
 
     actual fun saveAmoledEnabled(enabled: Boolean) {
         preferences
             ?.edit()
-            ?.putBoolean(amoledEnabledKey, enabled)
+            ?.putBoolean(ProfileScopedKey.of(amoledEnabledKey), enabled)
             ?.apply()
     }
 }

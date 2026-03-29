@@ -5,8 +5,12 @@ import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.watched.WatchedRepository
+import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
@@ -114,6 +118,10 @@ object ProfileRepository {
         LibraryRepository.onProfileChanged(profileIndex)
         WatchProgressRepository.onProfileChanged(profileIndex)
         AddonRepository.onProfileChanged(profileIndex)
+        ThemeSettingsRepository.onProfileChanged()
+        PlayerSettingsRepository.onProfileChanged()
+        HomeCatalogSettingsRepository.onProfileChanged()
+        ContinueWatchingPreferencesRepository.onProfileChanged()
     }
 
     suspend fun pushProfiles(profiles: List<ProfilePushPayload>) {
