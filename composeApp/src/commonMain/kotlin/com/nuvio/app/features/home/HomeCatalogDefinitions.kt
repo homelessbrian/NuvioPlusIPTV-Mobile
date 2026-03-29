@@ -31,7 +31,7 @@ fun buildHomeCatalogDefinitions(addons: List<ManagedAddon>): List<HomeCatalogDef
                     supportsPagination = catalog.supportsPagination(),
                 )
             }
-    }
+    }.distinctBy(HomeCatalogDefinition::key)
 
 internal fun String.displayLabel(): String =
     replaceFirstChar { char ->

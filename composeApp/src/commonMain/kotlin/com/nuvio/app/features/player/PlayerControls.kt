@@ -23,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +69,8 @@ internal fun PlayerControlsShell(
     onSpeedClick: () -> Unit,
     onSubtitleClick: () -> Unit,
     onAudioClick: () -> Unit,
+    onSourcesClick: (() -> Unit)? = null,
+    onEpisodesClick: (() -> Unit)? = null,
     onScrubChange: (Long) -> Unit,
     onScrubFinished: (Long) -> Unit,
     horizontalSafePadding: androidx.compose.ui.unit.Dp,
@@ -147,6 +151,8 @@ internal fun PlayerControlsShell(
                 onSpeedClick = onSpeedClick,
                 onSubtitleClick = onSubtitleClick,
                 onAudioClick = onAudioClick,
+                onSourcesClick = onSourcesClick,
+                onEpisodesClick = onEpisodesClick,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -356,6 +362,8 @@ private fun ProgressControls(
     onSpeedClick: () -> Unit,
     onSubtitleClick: () -> Unit,
     onAudioClick: () -> Unit,
+    onSourcesClick: (() -> Unit)? = null,
+    onEpisodesClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val durationMs = playbackSnapshot.durationMs.coerceAtLeast(1L)
@@ -423,6 +431,20 @@ private fun ProgressControls(
                         painter = audioPainter,
                         onClick = onAudioClick,
                     )
+                    if (onSourcesClick != null) {
+                        PlayerActionPillButton(
+                            label = "Sources",
+                            icon = Icons.Rounded.SwapHoriz,
+                            onClick = onSourcesClick,
+                        )
+                    }
+                    if (onEpisodesClick != null) {
+                        PlayerActionPillButton(
+                            label = "Episodes",
+                            icon = Icons.Rounded.VideoLibrary,
+                            onClick = onEpisodesClick,
+                        )
+                    }
                 }
             }
         }

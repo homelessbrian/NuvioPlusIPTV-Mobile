@@ -36,6 +36,18 @@ object PlayerSettingsRepository {
         loadFromDisk()
     }
 
+    fun clearLocalState() {
+        hasLoaded = false
+        showLoadingOverlay = true
+        preferredAudioLanguage = AudioLanguageOption.DEVICE
+        secondaryPreferredAudioLanguage = null
+        preferredSubtitleLanguage = SubtitleLanguageOption.NONE
+        secondaryPreferredSubtitleLanguage = null
+        streamReuseLastLinkEnabled = false
+        streamReuseLastLinkCacheHours = 24
+        publish()
+    }
+
     private fun loadFromDisk() {
         hasLoaded = true
         showLoadingOverlay = PlayerSettingsStorage.loadShowLoadingOverlay() ?: true

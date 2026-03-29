@@ -56,7 +56,7 @@ object AddonRepository {
         currentProfileId = ProfileRepository.activeProfileId
         log.d { "initialize() — loading local addons for profile $currentProfileId" }
 
-        val storedUrls = AddonStorage.loadInstalledAddonUrls(currentProfileId)
+        val storedUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(currentProfileId))
         log.d { "initialize() — local addon count: ${storedUrls.size}" }
         if (storedUrls.isEmpty()) return
 
@@ -80,6 +80,13 @@ object AddonRepository {
         _uiState.value = AddonsUiState()
     }
 
+    fun clearLocalState() {
+        currentProfileId = 1
+        initialized = false
+        pulledFromServer = false
+        _uiState.value = AddonsUiState()
+    }
+
     suspend fun pullFromServer(profileId: Int) {
         currentProfileId = profileId
         log.i { "pullFromServer() — profileId=$profileId, initialized=$initialized, pulledFromServer=$pulledFromServer" }
@@ -92,7 +99,7 @@ object AddonRepository {
                 }
                 .decodeList<AddonRow>()
 
-            val urls = rows.map { ensureManifestSuffix(it.url) }
+            val urls = dedupeManifestUrls(rows.map { it.url })
             log.i { "pullFromServer() — server returned ${rows.size} addons" }
             urls.forEachIndexed { i, u -> log.d { "  server[$i]: $u" } }
 
@@ -195,7 +202,7 @@ object AddonRepository {
     }
 
     fun refreshAll() {
-        _uiState.value.addons.forEach { addon ->
+        _uiState.value.addons.distinctBy { it.manifestUrl }.forEach { addon ->
             refreshAddon(addon.manifestUrl)
         }
     }
@@ -243,7 +250,9 @@ object AddonRepository {
         scope.launch {
             runCatching {
                 val profileId = ProfileRepository.activeProfileId
-                val addons = _uiState.value.addons.mapIndexed { index, addon ->
+                val addons = _uiState.value.addons
+                    .distinctBy { it.manifestUrl }
+                    .mapIndexed { index, addon ->
                     AddonPushItem(
                         url = addon.manifestUrl,
                         name = addon.manifest?.name ?: "",
@@ -284,10 +293,13 @@ object AddonRepository {
     private fun persist() {
         AddonStorage.saveInstalledAddonUrls(
             currentProfileId,
-            _uiState.value.addons.map { it.manifestUrl },
+            dedupeManifestUrls(_uiState.value.addons.map { it.manifestUrl }),
         )
     }
 }
+
+private fun dedupeManifestUrls(urls: List<String>): List<String> =
+    urls.map(::ensureManifestSuffix).distinct()
 
 private fun ensureManifestSuffix(url: String): String {
     val path = url.substringBefore("?").trimEnd('/')

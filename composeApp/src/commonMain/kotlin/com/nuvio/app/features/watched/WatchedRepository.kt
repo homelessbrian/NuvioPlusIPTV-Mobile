@@ -70,6 +70,13 @@ object WatchedRepository {
         loadFromDisk(profileId)
     }
 
+    fun clearLocalState() {
+        hasLoaded = false
+        currentProfileId = 1
+        itemsByKey.clear()
+        _uiState.value = WatchedUiState()
+    }
+
     private fun loadFromDisk(profileId: Int) {
         currentProfileId = profileId
         hasLoaded = true
@@ -214,4 +221,3 @@ object WatchedRepository {
         )
     }
 }
-

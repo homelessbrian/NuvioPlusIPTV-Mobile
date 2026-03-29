@@ -107,6 +107,15 @@ object SearchRepository {
         _uiState.value = SearchUiState()
     }
 
+    fun reset() {
+        activeJob?.cancel()
+        activeDiscoverJob?.cancel()
+        lastRequestKey = null
+        discoverSources = emptyList()
+        _uiState.value = SearchUiState()
+        _discoverUiState.value = DiscoverUiState()
+    }
+
     fun refreshDiscover(addons: List<ManagedAddon>) {
         val activeAddons = addons.filter { it.manifest != null }
         if (activeAddons.isEmpty()) {

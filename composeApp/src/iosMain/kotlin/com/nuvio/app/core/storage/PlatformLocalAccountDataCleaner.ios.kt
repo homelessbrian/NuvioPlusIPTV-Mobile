@@ -1,0 +1,48 @@
+package com.nuvio.app.core.storage
+
+import platform.Foundation.NSUserDefaults
+
+internal actual object PlatformLocalAccountDataCleaner {
+    private val plainKeys = listOf("profile_payload")
+    private val profileIndexedPrefixes = listOf(
+        "installed_manifest_urls_",
+        "library_payload_",
+        "watched_payload_",
+        "watch_progress_payload_",
+    )
+    private val profileScopedBaseKeys = listOf(
+        "catalog_settings_payload",
+        "continue_watching_preferences_payload",
+        "selected_theme",
+        "amoled_enabled",
+        "show_loading_overlay",
+        "preferred_audio_language",
+        "secondary_preferred_audio_language",
+        "preferred_subtitle_language",
+        "secondary_preferred_subtitle_language",
+        "stream_reuse_last_link_enabled",
+        "stream_reuse_last_link_cache_hours",
+    )
+
+    actual fun wipe() {
+        val defaults = NSUserDefaults.standardUserDefaults
+
+        plainKeys.forEach(defaults::removeObjectForKey)
+
+        (1..4).forEach { profileId ->
+            profileIndexedPrefixes.forEach { prefix ->
+                defaults.removeObjectForKey("$prefix$profileId")
+            }
+            profileScopedBaseKeys.forEach { baseKey ->
+                defaults.removeObjectForKey("${baseKey}_$profileId")
+            }
+        }
+
+        for (key in defaults.dictionaryRepresentation().keys) {
+            val keyString = key as? String ?: continue
+            if (keyString.startsWith("stream_link_")) {
+                defaults.removeObjectForKey(keyString)
+            }
+        }
+    }
+}

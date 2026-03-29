@@ -84,6 +84,7 @@ object MetaDetailsRepository {
 
     fun clear() {
         activeRequestKey = null
+        cachedMetaByRequestKey.clear()
         _uiState.value = MetaDetailsUiState()
     }
 

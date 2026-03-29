@@ -23,6 +23,12 @@ object ThemeSettingsRepository {
         loadFromDisk()
     }
 
+    fun clearLocalState() {
+        hasLoaded = false
+        _selectedTheme.value = AppTheme.WHITE
+        _amoledEnabled.value = false
+    }
+
     private fun loadFromDisk() {
         hasLoaded = true
         val stored = ThemeSettingsStorage.loadSelectedTheme()

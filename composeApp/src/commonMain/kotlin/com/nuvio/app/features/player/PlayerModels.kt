@@ -44,6 +44,11 @@ object PlayerLaunchStore {
     fun remove(launchId: Long) {
         launches.remove(launchId)
     }
+
+    fun clear() {
+        nextLaunchId = 1L
+        launches.clear()
+    }
 }
 
 enum class PlayerResizeMode {

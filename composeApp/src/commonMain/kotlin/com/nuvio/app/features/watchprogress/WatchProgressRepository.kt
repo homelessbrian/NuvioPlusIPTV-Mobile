@@ -58,6 +58,13 @@ object WatchProgressRepository {
         loadFromDisk(profileId)
     }
 
+    fun clearLocalState() {
+        hasLoaded = false
+        currentProfileId = 1
+        entriesByVideoId.clear()
+        _uiState.value = WatchProgressUiState()
+    }
+
     private fun loadFromDisk(profileId: Int) {
         currentProfileId = profileId
         hasLoaded = true

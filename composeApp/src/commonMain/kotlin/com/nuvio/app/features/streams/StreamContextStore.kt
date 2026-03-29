@@ -19,4 +19,9 @@ object StreamContextStore {
     fun remove(contextId: Long) {
         contexts.remove(contextId)
     }
+
+    fun clear() {
+        nextContextId = 1L
+        contexts.clear()
+    }
 }

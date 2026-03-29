@@ -31,6 +31,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamLinkCacheRepository
+import com.nuvio.app.features.streams.StreamsUiState
 import com.nuvio.app.features.watchprogress.WatchProgressClock
 import com.nuvio.app.features.watchprogress.WatchProgressPlaybackSession
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
@@ -79,7 +84,19 @@ fun PlayerScreen(
         val metrics = remember(maxWidth) { PlayerLayoutMetrics.fromWidth(maxWidth) }
         val scope = rememberCoroutineScope()
         var controlsVisible by rememberSaveable { mutableStateOf(true) }
-        var shouldPlay by rememberSaveable(sourceUrl) { mutableStateOf(true) }
+        // Active playback state (mutable to support source/episode switching)
+        var activeSourceUrl by rememberSaveable { mutableStateOf(sourceUrl) }
+        var activeStreamTitle by rememberSaveable { mutableStateOf(streamTitle) }
+        var activeStreamSubtitle by rememberSaveable { mutableStateOf(streamSubtitle) }
+        var activeProviderName by rememberSaveable { mutableStateOf(providerName) }
+        var activeProviderAddonId by rememberSaveable { mutableStateOf(providerAddonId) }
+        var activeSeasonNumber by rememberSaveable { mutableStateOf(seasonNumber) }
+        var activeEpisodeNumber by rememberSaveable { mutableStateOf(episodeNumber) }
+        var activeEpisodeTitle by rememberSaveable { mutableStateOf(episodeTitle) }
+        var activeEpisodeThumbnail by rememberSaveable { mutableStateOf(episodeThumbnail) }
+        var activeVideoId by rememberSaveable { mutableStateOf(videoId) }
+        var activeInitialPositionMs by rememberSaveable { mutableStateOf(initialPositionMs) }
+        var shouldPlay by rememberSaveable(activeSourceUrl) { mutableStateOf(true) }
         var resizeMode by rememberSaveable { mutableStateOf(PlayerResizeMode.Fit) }
         var layoutSize by remember { mutableStateOf(IntSize.Zero) }
         var playbackSnapshot by remember { mutableStateOf(PlayerPlaybackSnapshot()) }
@@ -89,34 +106,46 @@ fun PlayerScreen(
         var pausedOverlayVisible by remember { mutableStateOf(false) }
         var gestureMessage by remember { mutableStateOf<String?>(null) }
         var gestureMessageJob by remember { mutableStateOf<Job?>(null) }
-        var initialLoadCompleted by remember(sourceUrl) { mutableStateOf(false) }
-        var initialSeekApplied by remember(sourceUrl, initialPositionMs) {
-            mutableStateOf(initialPositionMs <= 0L)
+        var initialLoadCompleted by remember(activeSourceUrl) { mutableStateOf(false) }
+        var initialSeekApplied by remember(activeSourceUrl, activeInitialPositionMs) {
+            mutableStateOf(activeInitialPositionMs <= 0L)
         }
-        var lastProgressPersistEpochMs by remember(sourceUrl) { mutableStateOf(0L) }
-        var previousIsPlaying by remember(sourceUrl) { mutableStateOf(false) }
+        var lastProgressPersistEpochMs by remember(activeSourceUrl) { mutableStateOf(0L) }
+        var previousIsPlaying by remember(activeSourceUrl) { mutableStateOf(false) }
         val backdropArtwork = background ?: poster
         val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
-        val isEpisode = seasonNumber != null && episodeNumber != null
+        val isEpisode = activeSeasonNumber != null && activeEpisodeNumber != null
+
+        // Sources & Episodes Panel state
+        var showSourcesPanel by remember { mutableStateOf(false) }
+        var showEpisodesPanel by remember { mutableStateOf(false) }
+        var episodeStreamsPanelState by remember { mutableStateOf(EpisodeStreamsPanelState()) }
+        val sourceStreamsState by PlayerStreamsRepository.sourceState.collectAsStateWithLifecycle()
+        val episodeStreamsRepoState by PlayerStreamsRepository.episodeStreamsState.collectAsStateWithLifecycle()
+        val metaUiState by MetaDetailsRepository.uiState.collectAsStateWithLifecycle()
+        val allEpisodes = remember(metaUiState.meta?.videos) {
+            metaUiState.meta?.videos ?: emptyList()
+        }
+        val isSeries = parentMetaType == "series"
         val playbackSession = remember(
             contentType,
             parentMetaId,
             parentMetaType,
-            videoId,
+            activeVideoId,
             title,
             logo,
             poster,
             background,
-            seasonNumber,
-            episodeNumber,
-            episodeTitle,
-            episodeThumbnail,
-            providerName,
-            providerAddonId,
-            streamTitle,
-            streamSubtitle,
+            activeSeasonNumber,
+            activeEpisodeNumber,
+            activeEpisodeTitle,
+            activeEpisodeThumbnail,
+            activeProviderName,
+            activeProviderAddonId,
+            activeStreamTitle,
+            activeStreamSubtitle,
             pauseDescription,
-            sourceUrl,
+            activeSourceUrl,
         ) {
             WatchProgressPlaybackSession(
                 contentType = contentType ?: parentMetaType,
@@ -124,24 +153,24 @@ fun PlayerScreen(
                 parentMetaType = parentMetaType,
                 videoId = buildPlaybackVideoId(
                     parentMetaId = parentMetaId,
-                    seasonNumber = seasonNumber,
-                    episodeNumber = episodeNumber,
-                    fallbackVideoId = videoId,
+                    seasonNumber = activeSeasonNumber,
+                    episodeNumber = activeEpisodeNumber,
+                    fallbackVideoId = activeVideoId,
                 ),
                 title = title,
                 logo = logo,
                 poster = poster,
                 background = background,
-                seasonNumber = seasonNumber,
-                episodeNumber = episodeNumber,
-                episodeTitle = episodeTitle,
-                episodeThumbnail = episodeThumbnail,
-                providerName = providerName,
-                providerAddonId = providerAddonId,
-                lastStreamTitle = streamTitle,
-                lastStreamSubtitle = streamSubtitle,
+                seasonNumber = activeSeasonNumber,
+                episodeNumber = activeEpisodeNumber,
+                episodeTitle = activeEpisodeTitle,
+                episodeThumbnail = activeEpisodeThumbnail,
+                providerName = activeProviderName,
+                providerAddonId = activeProviderAddonId,
+                lastStreamTitle = activeStreamTitle,
+                lastStreamSubtitle = activeStreamSubtitle,
                 pauseDescription = pauseDescription,
-                lastSourceUrl = sourceUrl,
+                lastSourceUrl = activeSourceUrl,
             )
         }
 
@@ -297,7 +326,93 @@ fun PlayerScreen(
             controlsVisible = true
         }
 
-        LaunchedEffect(sourceUrl) {
+        fun switchToSource(stream: StreamItem) {
+            val url = stream.directPlaybackUrl ?: return
+            if (url == activeSourceUrl) return
+            flushWatchProgress()
+            // Cache for reuse-last-link
+            if (playerSettingsUiState.streamReuseLastLinkEnabled && activeVideoId != null) {
+                val cacheKey = StreamLinkCacheRepository.contentKey(
+                    contentType ?: parentMetaType,
+                    activeVideoId!!,
+                )
+                StreamLinkCacheRepository.save(
+                    contentKey = cacheKey,
+                    url = url,
+                    streamName = stream.streamLabel,
+                    addonName = stream.addonName,
+                    addonId = stream.addonId,
+                    filename = stream.behaviorHints.filename,
+                    videoSize = stream.behaviorHints.videoSize,
+                )
+            }
+            activeSourceUrl = url
+            activeStreamTitle = stream.streamLabel
+            activeStreamSubtitle = stream.streamSubtitle
+            activeProviderName = stream.addonName
+            activeProviderAddonId = stream.addonId
+            activeInitialPositionMs = 0L
+            showSourcesPanel = false
+            controlsVisible = true
+        }
+
+        fun switchToEpisodeStream(stream: StreamItem, episode: MetaVideo) {
+            val url = stream.directPlaybackUrl ?: return
+            flushWatchProgress()
+            // Cache for reuse-last-link
+            if (playerSettingsUiState.streamReuseLastLinkEnabled) {
+                val epVideoId = episode.id
+                val cacheKey = StreamLinkCacheRepository.contentKey(
+                    contentType ?: parentMetaType,
+                    epVideoId,
+                )
+                StreamLinkCacheRepository.save(
+                    contentKey = cacheKey,
+                    url = url,
+                    streamName = stream.streamLabel,
+                    addonName = stream.addonName,
+                    addonId = stream.addonId,
+                    filename = stream.behaviorHints.filename,
+                    videoSize = stream.behaviorHints.videoSize,
+                )
+            }
+            activeSourceUrl = url
+            activeStreamTitle = stream.streamLabel
+            activeStreamSubtitle = stream.streamSubtitle
+            activeProviderName = stream.addonName
+            activeProviderAddonId = stream.addonId
+            activeSeasonNumber = episode.season
+            activeEpisodeNumber = episode.episode
+            activeEpisodeTitle = episode.title
+            activeEpisodeThumbnail = episode.thumbnail
+            activeVideoId = episode.id
+            activeInitialPositionMs = 0L
+            showEpisodesPanel = false
+            episodeStreamsPanelState = EpisodeStreamsPanelState()
+            PlayerStreamsRepository.clearEpisodeStreams()
+            controlsVisible = true
+        }
+
+        fun openSourcesPanel() {
+            val type = contentType ?: parentMetaType
+            val vid = activeVideoId ?: return
+            PlayerStreamsRepository.loadSources(type, vid)
+            showSourcesPanel = true
+            showEpisodesPanel = false
+            controlsVisible = false
+        }
+
+        fun openEpisodesPanel() {
+            // Ensure meta is loaded for episodes
+            if (allEpisodes.isEmpty()) {
+                MetaDetailsRepository.load(parentMetaType, parentMetaId)
+            }
+            showEpisodesPanel = true
+            showSourcesPanel = false
+            controlsVisible = false
+        }
+
+        LaunchedEffect(activeSourceUrl) {
             errorMessage = null
             scrubbingPositionMs = null
             initialLoadCompleted = false
@@ -337,12 +452,12 @@ fun PlayerScreen(
             }
         }
 
-        LaunchedEffect(playerController, playbackSnapshot.isLoading, initialPositionMs, initialSeekApplied) {
+        LaunchedEffect(playerController, playbackSnapshot.isLoading, activeInitialPositionMs, initialSeekApplied) {
             val controller = playerController ?: return@LaunchedEffect
-            if (initialSeekApplied || playbackSnapshot.isLoading || initialPositionMs <= 0L) {
+            if (initialSeekApplied || playbackSnapshot.isLoading || activeInitialPositionMs <= 0L) {
                 return@LaunchedEffect
             }
-            controller.seekTo(initialPositionMs)
+            controller.seekTo(activeInitialPositionMs)
             initialSeekApplied = true
         }
 
@@ -391,9 +506,15 @@ fun PlayerScreen(
             )
         }
 
-        DisposableEffect(playbackSession.videoId, sourceUrl) {
+        DisposableEffect(playbackSession.videoId, activeSourceUrl) {
             onDispose {
                 flushWatchProgress()
+            }
+        }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                PlayerStreamsRepository.clearAll()
             }
         }
 
@@ -423,7 +544,7 @@ fun PlayerScreen(
                 },
         ) {
             PlatformPlayerSurface(
-                sourceUrl = sourceUrl,
+                sourceUrl = activeSourceUrl,
                 modifier = Modifier.fillMaxSize(),
                 playWhenReady = shouldPlay,
                 resizeMode = resizeMode,
@@ -453,11 +574,11 @@ fun PlayerScreen(
                     title = title,
                     logo = logo,
                     isEpisode = isEpisode,
-                    seasonNumber = seasonNumber,
-                    episodeNumber = episodeNumber,
-                    episodeTitle = episodeTitle,
-                    pauseDescription = pauseDescription ?: streamSubtitle,
-                    providerName = providerName,
+                    seasonNumber = activeSeasonNumber,
+                    episodeNumber = activeEpisodeNumber,
+                    episodeTitle = activeEpisodeTitle,
+                    pauseDescription = pauseDescription ?: activeStreamSubtitle,
+                    providerName = activeProviderName,
                     metrics = metrics,
                     horizontalSafePadding = horizontalSafePadding,
                     modifier = Modifier.fillMaxSize(),
@@ -471,11 +592,11 @@ fun PlayerScreen(
             ) {
                 PlayerControlsShell(
                     title = title,
-                    streamTitle = streamTitle,
-                    providerName = providerName,
-                    seasonNumber = seasonNumber,
-                    episodeNumber = episodeNumber,
-                    episodeTitle = episodeTitle,
+                    streamTitle = activeStreamTitle,
+                    providerName = activeProviderName,
+                    seasonNumber = activeSeasonNumber,
+                    episodeNumber = activeEpisodeNumber,
+                    episodeTitle = activeEpisodeTitle,
                     playbackSnapshot = playbackSnapshot,
                     displayedPositionMs = displayedPositionMs,
                     metrics = metrics,
@@ -494,6 +615,8 @@ fun PlayerScreen(
                         refreshTracks()
                         showAudioModal = true
                     },
+                    onSourcesClick = if (activeVideoId != null) {{ openSourcesPanel() }} else null,
+                    onEpisodesClick = if (isSeries) {{ openEpisodesPanel() }} else null,
                     onScrubChange = { positionMs -> scrubbingPositionMs = positionMs },
                     onScrubFinished = { positionMs ->
                         scrubbingPositionMs = null
@@ -593,13 +716,73 @@ fun PlayerScreen(
                     playerController?.setSubtitleUri(addon.url)
                 },
                 onFetchAddonSubtitles = {
-                    if (contentType != null && videoId != null) {
-                        SubtitleRepository.fetchAddonSubtitles(contentType, videoId)
+                    if (contentType != null && activeVideoId != null) {
+                        SubtitleRepository.fetchAddonSubtitles(contentType, activeVideoId!!)
                     }
                 },
                 onStyleChanged = { subtitleStyle = it },
                 onDismiss = { showSubtitleModal = false },
             )
+
+            // Sources Panel
+            PlayerSourcesPanel(
+                visible = showSourcesPanel,
+                streamsUiState = sourceStreamsState,
+                currentStreamUrl = activeSourceUrl,
+                currentStreamName = activeStreamTitle,
+                onFilterSelected = { PlayerStreamsRepository.selectSourceFilter(it) },
+                onStreamSelected = ::switchToSource,
+                onReload = {
+                    val type = contentType ?: parentMetaType
+                    val vid = activeVideoId ?: return@PlayerSourcesPanel
+                    PlayerStreamsRepository.loadSources(type, vid, forceRefresh = true)
+                },
+                onDismiss = {
+                    showSourcesPanel = false
+                    controlsVisible = true
+                },
+            )
+
+            // Episodes Panel
+            if (isSeries) {
+                PlayerEpisodesPanel(
+                    visible = showEpisodesPanel,
+                    episodes = allEpisodes,
+                    currentSeason = activeSeasonNumber,
+                    currentEpisode = activeEpisodeNumber,
+                    episodeStreamsState = episodeStreamsPanelState.copy(
+                        streamsUiState = episodeStreamsRepoState,
+                    ),
+                    onSeasonSelected = { /* season tab change handled internally */ },
+                    onEpisodeSelected = { episode ->
+                        val type = contentType ?: parentMetaType
+                        PlayerStreamsRepository.loadEpisodeStreams(type, episode.id)
+                        episodeStreamsPanelState = EpisodeStreamsPanelState(
+                            showStreams = true,
+                            selectedEpisode = episode,
+                        )
+                    },
+                    onEpisodeStreamFilterSelected = {
+                        PlayerStreamsRepository.selectEpisodeStreamsFilter(it)
+                    },
+                    onEpisodeStreamSelected = ::switchToEpisodeStream,
+                    onBackToEpisodes = {
+                        episodeStreamsPanelState = EpisodeStreamsPanelState()
+                        PlayerStreamsRepository.clearEpisodeStreams()
+                    },
+                    onReloadEpisodeStreams = {
+                        val episode = episodeStreamsPanelState.selectedEpisode ?: return@PlayerEpisodesPanel
+                        val type = contentType ?: parentMetaType
+                        PlayerStreamsRepository.loadEpisodeStreams(type, episode.id, forceRefresh = true)
+                    },
+                    onDismiss = {
+                        showEpisodesPanel = false
+                        episodeStreamsPanelState = EpisodeStreamsPanelState()
+                        PlayerStreamsRepository.clearEpisodeStreams()
+                        controlsVisible = true
+                    },
+                )
+            }
         }
     }
 }

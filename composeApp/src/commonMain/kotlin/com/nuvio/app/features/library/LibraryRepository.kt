@@ -66,6 +66,13 @@ object LibraryRepository {
         loadFromDisk(profileId)
     }
 
+    fun clearLocalState() {
+        hasLoaded = false
+        currentProfileId = 1
+        itemsById.clear()
+        _uiState.value = LibraryUiState()
+    }
+
     private fun loadFromDisk(profileId: Int) {
         currentProfileId = profileId
         hasLoaded = true

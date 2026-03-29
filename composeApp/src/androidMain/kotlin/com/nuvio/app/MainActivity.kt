@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.SystemBarStyle
 import androidx.core.view.WindowCompat
+import com.nuvio.app.core.storage.PlatformLocalAccountDataCleaner
 import com.nuvio.app.features.addons.AddonStorage
 import com.nuvio.app.features.library.LibraryStorage
 import com.nuvio.app.features.home.HomeCatalogSettingsStorage
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
         ContinueWatchingPreferencesStorage.initialize(applicationContext)
         WatchProgressStorage.initialize(applicationContext)
         StreamLinkCacheStorage.initialize(applicationContext)
+        PlatformLocalAccountDataCleaner.initialize(applicationContext)
 
         setContent {
             App()

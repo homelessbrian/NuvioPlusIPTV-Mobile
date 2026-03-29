@@ -2,6 +2,7 @@ package com.nuvio.app.core.auth
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.network.SupabaseProvider
+import com.nuvio.app.core.storage.LocalAccountDataCleaner
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
@@ -89,6 +90,7 @@ object AuthRepository {
     suspend fun signOut(): Result<Unit> = runCatching {
         _error.value = null
         SupabaseProvider.client.auth.signOut()
+        LocalAccountDataCleaner.wipe()
     }.onFailure { e ->
         log.e(e) { "Sign-out failed" }
         _error.value = e.message ?: "Sign-out failed"
@@ -98,6 +100,7 @@ object AuthRepository {
         _error.value = null
         SupabaseProvider.client.functions.invoke("delete-account")
         SupabaseProvider.client.auth.signOut()
+        LocalAccountDataCleaner.wipe()
     }.onFailure { e ->
         log.e(e) { "Account deletion failed" }
         _error.value = e.message ?: "Account deletion failed"

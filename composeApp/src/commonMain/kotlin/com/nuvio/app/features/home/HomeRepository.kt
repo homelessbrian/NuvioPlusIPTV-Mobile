@@ -114,6 +114,17 @@ object HomeRepository {
         )
     }
 
+    fun clear() {
+        activeJob?.cancel()
+        activeJob = null
+        activeRequestKey = null
+        lastRequestKey = null
+        currentDefinitions = emptyList()
+        cachedSections = emptyMap()
+        lastErrorMessage = null
+        _uiState.value = HomeUiState()
+    }
+
     private fun publishCurrentState(
         isLoading: Boolean,
         requestKey: String?,

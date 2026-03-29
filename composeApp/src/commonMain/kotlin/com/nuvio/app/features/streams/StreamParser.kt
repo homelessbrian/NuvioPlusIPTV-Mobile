@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
-internal object StreamParser {
+object StreamParser {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun parse(

@@ -1,0 +1,47 @@
+package com.nuvio.app.core.storage
+
+import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.catalog.CatalogRepository
+import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.home.HomeRepository
+import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.player.PlayerLaunchStore
+import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.player.SubtitleRepository
+import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.search.SearchRepository
+import com.nuvio.app.features.settings.ThemeSettingsRepository
+import com.nuvio.app.features.streams.StreamContextStore
+import com.nuvio.app.features.streams.StreamsRepository
+import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
+import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import com.nuvio.app.features.watched.WatchedRepository
+
+internal object LocalAccountDataCleaner {
+    fun wipe() {
+        PlatformLocalAccountDataCleaner.wipe()
+
+        ProfileRepository.clearInMemory()
+        AddonRepository.clearLocalState()
+        HomeRepository.clear()
+        HomeCatalogSettingsRepository.clearLocalState()
+        LibraryRepository.clearLocalState()
+        WatchProgressRepository.clearLocalState()
+        WatchedRepository.clearLocalState()
+        ContinueWatchingPreferencesRepository.clearLocalState()
+        ThemeSettingsRepository.clearLocalState()
+        PlayerSettingsRepository.clearLocalState()
+        CatalogRepository.clear()
+        StreamsRepository.clear()
+        MetaDetailsRepository.clear()
+        SearchRepository.reset()
+        SubtitleRepository.clear()
+        PlayerLaunchStore.clear()
+        StreamContextStore.clear()
+    }
+}
+
+internal expect object PlatformLocalAccountDataCleaner {
+    fun wipe()
+}

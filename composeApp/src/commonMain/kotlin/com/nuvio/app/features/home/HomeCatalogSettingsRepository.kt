@@ -83,6 +83,15 @@ object HomeCatalogSettingsRepository {
         hasLoaded = false
         preferences.clear()
         heroEnabled = true
+        definitions = emptyList()
+        _uiState.value = HomeCatalogSettingsUiState()
+    }
+
+    fun clearLocalState() {
+        hasLoaded = false
+        definitions = emptyList()
+        preferences.clear()
+        heroEnabled = true
         _uiState.value = HomeCatalogSettingsUiState()
     }
 

@@ -34,6 +34,11 @@ object ContinueWatchingPreferencesRepository {
         loadFromDisk()
     }
 
+    fun clearLocalState() {
+        hasLoaded = false
+        _uiState.value = ContinueWatchingPreferencesUiState()
+    }
+
     private fun loadFromDisk() {
         hasLoaded = true
 
