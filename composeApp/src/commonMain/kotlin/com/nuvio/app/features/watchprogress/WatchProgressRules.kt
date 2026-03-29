@@ -4,11 +4,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlin.math.max
 
 internal const val ContinueWatchingLimit = 20
-private const val MinResumePositionMs = 30_000L
-private const val CompletionThresholdMs = 180_000L
+private const val InProgressStartThresholdFraction = 0.02f
+private const val CompletionThresholdFraction = 0.85
 
 @Serializable
 private data class StoredWatchProgressPayload(
@@ -39,9 +38,9 @@ internal fun shouldStoreWatchProgress(
     durationMs: Long,
 ): Boolean {
     val thresholdMs = if (durationMs > 0L) {
-        max(MinResumePositionMs, (durationMs * 0.02f).toLong())
+        (durationMs * InProgressStartThresholdFraction).toLong()
     } else {
-        MinResumePositionMs
+        1L
     }
     return positionMs >= thresholdMs
 }
@@ -54,9 +53,8 @@ internal fun isWatchProgressComplete(
     if (isEnded) return true
     if (durationMs <= 0L) return false
 
-    val remainingMs = (durationMs - positionMs).coerceAtLeast(0L)
     val watchedFraction = positionMs.toDouble() / durationMs.toDouble()
-    return watchedFraction >= 0.92 || remainingMs <= CompletionThresholdMs
+    return watchedFraction >= CompletionThresholdFraction
 }
 
 internal fun List<WatchProgressEntry>.resumeEntryForSeries(metaId: String): WatchProgressEntry? =

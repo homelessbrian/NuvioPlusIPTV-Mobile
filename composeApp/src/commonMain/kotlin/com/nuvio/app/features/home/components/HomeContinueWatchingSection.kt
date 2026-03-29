@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -434,10 +435,13 @@ private fun UpNextBadge(
     compact: Boolean,
     textSize: androidx.compose.ui.unit.TextUnit,
 ) {
+    val chipColor = MaterialTheme.colorScheme.primary
+    val chipTextColor = contentColorFor(chipColor)
+
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(if (compact) 4.dp else 12.dp))
-            .background(MaterialTheme.colorScheme.primary)
+            .background(chipColor)
             .padding(
                 horizontal = if (compact) 6.dp else 8.dp,
                 vertical = if (compact) 3.dp else 4.dp,
@@ -449,7 +453,7 @@ private fun UpNextBadge(
                 fontSize = textSize,
                 fontWeight = FontWeight.Bold,
             ),
-            color = Color.White,
+            color = chipTextColor,
             maxLines = 1,
         )
     }
