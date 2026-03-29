@@ -216,6 +216,13 @@ private fun ContinueWatchingWideCard(
                 .padding(layout.wideContentPadding),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
+            val isEpisodeCard = item.seasonNumber != null && item.episodeNumber != null
+            val hasEpisodeTitle = !item.episodeTitle.isNullOrBlank()
+            val wideMetaLine = when {
+                item.progressFraction <= 0f && isEpisodeCard -> "Up Next • S${item.seasonNumber}E${item.episodeNumber}"
+                isEpisodeCard -> "S${item.seasonNumber}E${item.episodeNumber}"
+                else -> item.subtitle
+            }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -238,7 +245,7 @@ private fun ContinueWatchingWideCard(
                     }
                 }
                 Text(
-                    text = item.subtitle,
+                    text = wideMetaLine,
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = layout.wideMetaSize,
                         fontWeight = FontWeight.Medium,
@@ -247,6 +254,18 @@ private fun ContinueWatchingWideCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (hasEpisodeTitle) {
+                    Text(
+                        text = item.episodeTitle.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = layout.wideMetaSize,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
             if (item.progressFraction > 0f) {
