@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -44,7 +45,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamsUiState
 
@@ -60,6 +60,8 @@ fun PlayerSourcesPanel(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(200)),
@@ -73,7 +75,7 @@ fun PlayerSourcesPanel(
                     interactionSource = remember { MutableInteractionSource() },
                     onClick = onDismiss,
                 )
-                .background(Color(0x66000000)),
+                .background(colorScheme.scrim.copy(alpha = 0.52f)),
             contentAlignment = Alignment.Center,
         ) {
             AnimatedVisibility(
@@ -87,8 +89,8 @@ fun PlayerSourcesPanel(
                         .fillMaxWidth(0.92f)
                         .heightIn(max = 600.dp)
                         .clip(RoundedCornerShape(24.dp))
-                        .background(Color(0xFA0F0F0F))
-                        .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp))
+                        .background(colorScheme.surface)
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(24.dp))
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
@@ -106,7 +108,7 @@ fun PlayerSourcesPanel(
                         ) {
                             Text(
                                 text = "Sources",
-                                color = Color.White,
+                                color = colorScheme.onSurface,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -164,7 +166,7 @@ fun PlayerSourcesPanel(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     CircularProgressIndicator(
-                                        color = Color.White,
+                                        color = colorScheme.primary,
                                         strokeWidth = 2.dp,
                                         modifier = Modifier.size(28.dp),
                                     )
@@ -180,7 +182,7 @@ fun PlayerSourcesPanel(
                                 ) {
                                     Text(
                                         text = "No streams found",
-                                        color = Color.White.copy(alpha = 0.6f),
+                                        color = colorScheme.onSurfaceVariant,
                                         fontSize = 14.sp,
                                     )
                                 }
@@ -221,16 +223,18 @@ private fun SourceStreamRow(
     isCurrent: Boolean,
     onClick: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(
-                if (isCurrent) Color.White.copy(alpha = 0.08f) else Color.Transparent,
+                if (isCurrent) colorScheme.primaryContainer.copy(alpha = 0.55f) else Color.Transparent,
             )
             .then(
                 if (isCurrent) {
-                    Modifier.border(1.dp, Color(0xFF6366F1).copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    Modifier.border(1.dp, colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                 } else {
                     Modifier
                 },
@@ -247,7 +251,7 @@ private fun SourceStreamRow(
             ) {
                 Text(
                     text = stream.streamLabel,
-                    color = Color.White,
+                    color = colorScheme.onSurface,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -258,12 +262,12 @@ private fun SourceStreamRow(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(999.dp))
-                            .background(Color(0xFF6366F1).copy(alpha = 0.2f))
+                            .background(colorScheme.primaryContainer)
                             .padding(horizontal = 8.dp, vertical = 3.dp),
                     ) {
                         Text(
                             text = "Playing",
-                            color = Color(0xFF6366F1),
+                            color = colorScheme.onPrimaryContainer,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -274,7 +278,7 @@ private fun SourceStreamRow(
                 if (subtitle != stream.streamLabel) {
                     Text(
                         text = subtitle,
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -283,7 +287,7 @@ private fun SourceStreamRow(
             }
             Text(
                 text = stream.addonName,
-                color = Color.White.copy(alpha = 0.4f),
+                color = colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
                 fontStyle = FontStyle.Italic,
                 maxLines = 1,
@@ -294,7 +298,7 @@ private fun SourceStreamRow(
             Icon(
                 imageVector = Icons.Rounded.Check,
                 contentDescription = "Currently playing",
-                tint = Color(0xFF6366F1),
+                tint = colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -309,20 +313,22 @@ internal fun AddonFilterChip(
     hasError: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .background(
                 when {
-                    isSelected -> Color.White.copy(alpha = 0.15f)
-                    else -> Color.White.copy(alpha = 0.06f)
+                    isSelected -> colorScheme.primaryContainer
+                    else -> colorScheme.surfaceVariant.copy(alpha = 0.92f)
                 },
             )
             .then(
                 if (isSelected) {
-                    Modifier.border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+                    Modifier.border(1.dp, colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
                 } else {
-                    Modifier
+                    Modifier.border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.7f), RoundedCornerShape(20.dp))
                 },
             )
             .clickable(onClick = onClick)
@@ -334,7 +340,7 @@ internal fun AddonFilterChip(
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = colorScheme.primary,
                     strokeWidth = 1.5.dp,
                     modifier = Modifier.size(12.dp),
                 )
@@ -342,9 +348,9 @@ internal fun AddonFilterChip(
             Text(
                 text = label,
                 color = when {
-                    hasError -> Color(0xFFEF4444)
-                    isSelected -> Color.White
-                    else -> Color.White.copy(alpha = 0.7f)
+                    hasError -> colorScheme.error
+                    isSelected -> colorScheme.onPrimaryContainer
+                    else -> colorScheme.onSurfaceVariant
                 },
                 fontSize = 12.sp,
                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
@@ -359,10 +365,13 @@ internal fun PanelChipButton(
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.08f))
+            .background(colorScheme.surfaceVariant.copy(alpha = 0.9f))
+            .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
@@ -374,13 +383,13 @@ internal fun PanelChipButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.7f),
+                    tint = colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(14.dp),
                 )
             }
             Text(
                 text = label,
-                color = Color.White.copy(alpha = 0.7f),
+                color = colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
             )
         }

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -60,6 +61,7 @@ fun SubtitleStylePanel(
     isCompact: Boolean,
     onStyleChanged: (SubtitleStyleState) -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
     val sectionPadding = if (isCompact) 12.dp else 16.dp
     val gap = if (isCompact) 12.dp else 16.dp
 
@@ -71,6 +73,7 @@ fun SubtitleStylePanel(
             useCustomSubtitles = useCustomSubtitles,
             isCompact = isCompact,
             sectionPadding = sectionPadding,
+            colorScheme = colorScheme,
         )
 
         if (useCustomSubtitles) {
@@ -78,6 +81,7 @@ fun SubtitleStylePanel(
                 style = style,
                 isCompact = isCompact,
                 sectionPadding = sectionPadding,
+                colorScheme = colorScheme,
                 onStyleChanged = onStyleChanged,
             )
         }
@@ -87,6 +91,7 @@ fun SubtitleStylePanel(
             useCustomSubtitles = useCustomSubtitles,
             isCompact = isCompact,
             sectionPadding = sectionPadding,
+            colorScheme = colorScheme,
             onStyleChanged = onStyleChanged,
         )
 
@@ -95,6 +100,7 @@ fun SubtitleStylePanel(
             useCustomSubtitles = useCustomSubtitles,
             isCompact = isCompact,
             sectionPadding = sectionPadding,
+            colorScheme = colorScheme,
             onStyleChanged = onStyleChanged,
         )
 
@@ -103,6 +109,7 @@ fun SubtitleStylePanel(
             useCustomSubtitles = useCustomSubtitles,
             isCompact = isCompact,
             sectionPadding = sectionPadding,
+            colorScheme = colorScheme,
             onStyleChanged = onStyleChanged,
         )
     }
@@ -121,6 +128,7 @@ private fun LivePreviewCard(
     useCustomSubtitles: Boolean,
     isCompact: Boolean,
     sectionPadding: androidx.compose.ui.unit.Dp,
+    colorScheme: androidx.compose.material3.ColorScheme,
 ) {
     val previewHeight = if (isCompact) 90.dp else 120.dp
 
@@ -128,7 +136,7 @@ private fun LivePreviewCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .padding(sectionPadding),
     ) {
         SectionHeader(
@@ -181,13 +189,14 @@ private fun QuickPresetsCard(
     style: SubtitleStyleState,
     isCompact: Boolean,
     sectionPadding: androidx.compose.ui.unit.Dp,
+    colorScheme: androidx.compose.material3.ColorScheme,
     onStyleChanged: (SubtitleStyleState) -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .padding(sectionPadding),
     ) {
         SectionHeader(
@@ -207,13 +216,14 @@ private fun QuickPresetsCard(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                        .background(colorScheme.surface.copy(alpha = 0.55f))
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.7f), RoundedCornerShape(20.dp))
                         .clickable { onStyleChanged(SubtitleStyleState.fromPreset(preset)) }
                         .padding(horizontal = chipPadH, vertical = chipPadV),
                 ) {
                     Text(
                         text = preset.label,
-                        color = Color.White,
+                        color = colorScheme.onSurface,
                         fontSize = chipSize,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -229,6 +239,7 @@ private fun CoreControlsCard(
     useCustomSubtitles: Boolean,
     isCompact: Boolean,
     sectionPadding: androidx.compose.ui.unit.Dp,
+    colorScheme: androidx.compose.material3.ColorScheme,
     onStyleChanged: (SubtitleStyleState) -> Unit,
 ) {
     val btnSize = if (isCompact) 28.dp else 32.dp
@@ -238,7 +249,7 @@ private fun CoreControlsCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .padding(sectionPadding),
         verticalArrangement = Arrangement.spacedBy(if (isCompact) 12.dp else 16.dp),
     ) {
@@ -259,12 +270,12 @@ private fun CoreControlsCard(
                 Icon(
                     imageVector = Icons.Rounded.FormatSize,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.7f),
+                    tint = colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(16.dp),
                 )
                 Text(
                     text = "Font Size",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
@@ -286,7 +297,7 @@ private fun CoreControlsCard(
             ) {
                 Text(
                     text = "Background",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
@@ -294,10 +305,10 @@ private fun CoreControlsCard(
                     checked = style.backgroundEnabled,
                     onCheckedChange = { onStyleChanged(style.copy(backgroundEnabled = it)) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.Black,
-                        checkedTrackColor = Color.White,
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = Color.White.copy(alpha = 0.25f),
+                        checkedThumbColor = colorScheme.onPrimary,
+                        checkedTrackColor = colorScheme.primary,
+                        uncheckedThumbColor = colorScheme.onSurfaceVariant,
+                        uncheckedTrackColor = colorScheme.surface.copy(alpha = 0.9f),
                     ),
                 )
             }
@@ -312,6 +323,7 @@ private fun AdvancedControlsCard(
     useCustomSubtitles: Boolean,
     isCompact: Boolean,
     sectionPadding: androidx.compose.ui.unit.Dp,
+    colorScheme: androidx.compose.material3.ColorScheme,
     onStyleChanged: (SubtitleStyleState) -> Unit,
 ) {
     val btnSize = if (isCompact) 28.dp else 32.dp
@@ -322,7 +334,7 @@ private fun AdvancedControlsCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .padding(sectionPadding),
         verticalArrangement = Arrangement.spacedBy(if (isCompact) 12.dp else 16.dp),
     ) {
@@ -344,7 +356,7 @@ private fun AdvancedControlsCard(
                         .background(color)
                         .border(
                             2.dp,
-                            if (isSelected) Color.White else Color.White.copy(alpha = 0.3f),
+                            if (isSelected) colorScheme.primary else colorScheme.outlineVariant,
                             CircleShape,
                         )
                         .clickable { onStyleChanged(style.copy(textColor = color)) },
@@ -381,7 +393,7 @@ private fun AdvancedControlsCard(
         ) {
             Text(
                 text = "Bottom Offset",
-                color = Color.White.copy(alpha = 0.7f),
+                color = colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
             )
@@ -405,7 +417,7 @@ private fun AdvancedControlsCard(
             ) {
                 Text(
                     text = "Bg Opacity",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
@@ -426,7 +438,7 @@ private fun AdvancedControlsCard(
             ) {
                 Text(
                     text = "Text Shadow",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
@@ -434,16 +446,16 @@ private fun AdvancedControlsCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
                         .background(
-                            if (style.textShadowEnabled) Color.White.copy(alpha = 0.18f)
-                            else Color.White.copy(alpha = 0.08f)
+                            if (style.textShadowEnabled) colorScheme.primaryContainer
+                            else colorScheme.surface.copy(alpha = 0.8f)
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(10.dp))
                         .clickable { onStyleChanged(style.copy(textShadowEnabled = !style.textShadowEnabled)) }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                 ) {
                     Text(
                         text = if (style.textShadowEnabled) "On" else "Off",
-                        color = Color.White,
+                        color = if (style.textShadowEnabled) colorScheme.onPrimaryContainer else colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                     )
@@ -457,7 +469,7 @@ private fun AdvancedControlsCard(
             ) {
                 Text(
                     text = "Outline",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
@@ -465,16 +477,16 @@ private fun AdvancedControlsCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
                         .background(
-                            if (style.outlineEnabled) Color.White.copy(alpha = 0.18f)
-                            else Color.White.copy(alpha = 0.08f)
+                            if (style.outlineEnabled) colorScheme.primaryContainer
+                            else colorScheme.surface.copy(alpha = 0.8f)
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(10.dp))
                         .clickable { onStyleChanged(style.copy(outlineEnabled = !style.outlineEnabled)) }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                 ) {
                     Text(
                         text = if (style.outlineEnabled) "On" else "Off",
-                        color = Color.White,
+                        color = if (style.outlineEnabled) colorScheme.onPrimaryContainer else colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                     )
@@ -495,7 +507,7 @@ private fun AdvancedControlsCard(
                                 .background(color)
                                 .border(
                                     2.dp,
-                                    if (isSelected) Color.White else Color.White.copy(alpha = 0.3f),
+                                    if (isSelected) colorScheme.primary else colorScheme.outlineVariant,
                                     CircleShape,
                                 )
                                 .clickable { onStyleChanged(style.copy(outlineColor = color)) },
@@ -510,7 +522,7 @@ private fun AdvancedControlsCard(
                 ) {
                     Text(
                         text = "Outline Width",
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                     )
@@ -531,7 +543,7 @@ private fun AdvancedControlsCard(
             ) {
                 Text(
                     text = "Letter Spacing",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
@@ -551,7 +563,7 @@ private fun AdvancedControlsCard(
             ) {
                 Text(
                     text = "Line Height",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
@@ -571,7 +583,7 @@ private fun AdvancedControlsCard(
             ) {
                 Text(
                     text = "Outline",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
@@ -579,16 +591,16 @@ private fun AdvancedControlsCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
                         .background(
-                            if (style.outlineEnabled) Color.White.copy(alpha = 0.18f)
-                            else Color.White.copy(alpha = 0.08f)
+                            if (style.outlineEnabled) colorScheme.primaryContainer
+                            else colorScheme.surface.copy(alpha = 0.8f)
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(10.dp))
                         .clickable { onStyleChanged(style.copy(outlineEnabled = !style.outlineEnabled)) }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                 ) {
                     Text(
                         text = if (style.outlineEnabled) "On" else "Off",
-                        color = Color.White,
+                        color = if (style.outlineEnabled) colorScheme.onPrimaryContainer else colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                     )
@@ -603,14 +615,14 @@ private fun AdvancedControlsCard(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color.White.copy(alpha = 0.1f))
-                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                    .background(colorScheme.surface.copy(alpha = 0.82f))
+                    .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
                     .clickable { onStyleChanged(SubtitleStyleState.DEFAULT) }
                     .padding(horizontal = if (isCompact) 8.dp else 12.dp, vertical = if (isCompact) 6.dp else 8.dp),
             ) {
                 Text(
                     text = "Reset Defaults",
-                    color = Color.White,
+                    color = colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = if (isCompact) 12.sp else 14.sp,
                 )
@@ -625,6 +637,7 @@ private fun TimingOffsetSection(
     useCustomSubtitles: Boolean,
     isCompact: Boolean,
     sectionPadding: androidx.compose.ui.unit.Dp,
+    colorScheme: androidx.compose.material3.ColorScheme,
     onStyleChanged: (SubtitleStyleState) -> Unit,
 ) {
     if (!useCustomSubtitles) return
@@ -636,7 +649,7 @@ private fun TimingOffsetSection(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .padding(sectionPadding),
         verticalArrangement = Arrangement.spacedBy(if (isCompact) 8.dp else 12.dp),
     ) {
@@ -647,7 +660,7 @@ private fun TimingOffsetSection(
         ) {
             Text(
                 text = "Timing Offset",
-                color = Color.White.copy(alpha = 0.7f),
+                color = colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
             )
@@ -663,7 +676,7 @@ private fun TimingOffsetSection(
 
         Text(
             text = "Adjust if subtitles are out of sync with audio",
-            color = Color.White.copy(alpha = 0.6f),
+            color = colorScheme.onSurfaceVariant,
             fontSize = 11.sp,
         )
     }
@@ -680,6 +693,8 @@ private fun StepperControl(
     minusIcon: ImageVector = Icons.Rounded.Remove,
     plusIcon: ImageVector = Icons.Rounded.Add,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -688,14 +703,14 @@ private fun StepperControl(
             modifier = Modifier
                 .size(buttonSize)
                 .clip(RoundedCornerShape(buttonRadius))
-                .background(Color.White.copy(alpha = 0.18f))
+                .background(colorScheme.primaryContainer)
                 .clickable(onClick = onMinus),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = minusIcon,
                 contentDescription = null,
-                tint = Color.White,
+                tint = colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(16.dp),
             )
         }
@@ -704,13 +719,14 @@ private fun StepperControl(
             modifier = Modifier
                 .widthIn(min = minWidth)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color.White.copy(alpha = 0.12f))
+                .background(colorScheme.surface.copy(alpha = 0.82f))
+                .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(10.dp))
                 .padding(horizontal = 6.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = value,
-                color = Color.White,
+                color = colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
             )
@@ -720,14 +736,14 @@ private fun StepperControl(
             modifier = Modifier
                 .size(buttonSize)
                 .clip(RoundedCornerShape(buttonRadius))
-                .background(Color.White.copy(alpha = 0.18f))
+                .background(colorScheme.primaryContainer)
                 .clickable(onClick = onPlus),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = plusIcon,
                 contentDescription = null,
-                tint = Color.White,
+                tint = colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(16.dp),
             )
         }
@@ -739,6 +755,8 @@ private fun SectionHeader(
     icon: ImageVector,
     label: String,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Row(
         modifier = Modifier.padding(bottom = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -747,12 +765,12 @@ private fun SectionHeader(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = Color.White.copy(alpha = 0.7f),
+            tint = colorScheme.onSurfaceVariant,
             modifier = Modifier.size(16.dp),
         )
         Text(
             text = label,
-            color = Color.White.copy(alpha = 0.7f),
+            color = colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -765,14 +783,16 @@ private fun AlignmentButton(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (isSelected) Color.White.copy(alpha = 0.18f)
-                else Color.White.copy(alpha = 0.08f)
+                if (isSelected) colorScheme.primaryContainer
+                else colorScheme.surface.copy(alpha = 0.82f)
             )
-            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+            .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
@@ -780,7 +800,7 @@ private fun AlignmentButton(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = Color.White,
+            tint = if (isSelected) colorScheme.onPrimaryContainer else colorScheme.onSurface,
             modifier = Modifier.size(18.dp),
         )
     }

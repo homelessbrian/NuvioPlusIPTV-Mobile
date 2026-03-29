@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -314,10 +315,12 @@ internal fun ErrorModal(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.7f)),
+            .background(colorScheme.scrim.copy(alpha = 0.56f)),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
@@ -325,7 +328,8 @@ internal fun ErrorModal(
                 .fillMaxWidth(0.8f)
                 .widthIn(max = 400.dp),
             shape = RoundedCornerShape(20.dp),
-            color = Color(0xFF1A1A1A),
+            color = colorScheme.surface,
+            border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f)),
         ) {
             Column(
                 modifier = Modifier
@@ -338,25 +342,25 @@ internal fun ErrorModal(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFEF4444).copy(alpha = 0.1f)),
+                        .background(colorScheme.errorContainer.copy(alpha = 0.55f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.ErrorOutline,
                         contentDescription = null,
-                        tint = Color(0xFFEF4444),
+                        tint = colorScheme.error,
                         modifier = Modifier.size(32.dp),
                     )
                 }
                 Text(
                     text = "Playback error",
                     style = MaterialTheme.nuvioTypeScale.titleMd.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White,
+                    color = colorScheme.onSurface,
                 )
                 Text(
                     text = message,
                     style = MaterialTheme.nuvioTypeScale.bodyLg.copy(lineHeight = 22.sp),
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
@@ -365,14 +369,14 @@ internal fun ErrorModal(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(onClick = onDismiss),
-                    color = Color.White,
+                    color = colorScheme.primaryContainer,
                     shape = RoundedCornerShape(12.dp),
                 ) {
                     Text(
                         text = "Dismiss",
                         modifier = Modifier.padding(vertical = 12.dp),
                         style = MaterialTheme.nuvioTypeScale.bodyLg.copy(fontWeight = FontWeight.Bold),
-                        color = Color.Black,
+                        color = colorScheme.onPrimaryContainer,
                         textAlign = TextAlign.Center,
                     )
                 }

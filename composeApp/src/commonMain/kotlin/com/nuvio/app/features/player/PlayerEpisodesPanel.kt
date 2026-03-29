@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -78,6 +79,8 @@ fun PlayerEpisodesPanel(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(200)),
@@ -91,7 +94,7 @@ fun PlayerEpisodesPanel(
                     interactionSource = remember { MutableInteractionSource() },
                     onClick = onDismiss,
                 )
-                .background(Color(0x66000000)),
+                .background(colorScheme.scrim.copy(alpha = 0.52f)),
             contentAlignment = Alignment.Center,
         ) {
             AnimatedVisibility(
@@ -105,8 +108,8 @@ fun PlayerEpisodesPanel(
                         .fillMaxWidth(0.92f)
                         .heightIn(max = 620.dp)
                         .clip(RoundedCornerShape(24.dp))
-                        .background(Color(0xFA0F0F0F))
-                        .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp))
+                        .background(colorScheme.surface)
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(24.dp))
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
@@ -155,6 +158,8 @@ private fun EpisodesListSubView(
     onEpisodeSelected: (MetaVideo) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     val groupedEpisodes = remember(episodes) {
         episodes
             .filter { it.season != null || it.episode != null }
@@ -190,7 +195,7 @@ private fun EpisodesListSubView(
         ) {
             Text(
                 text = "Episodes",
-                color = Color.White,
+                color = colorScheme.onSurface,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
             )
@@ -231,7 +236,7 @@ private fun EpisodesListSubView(
             ) {
                 Text(
                     text = "No episodes available",
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                 )
             }
@@ -260,16 +265,18 @@ private fun EpisodeRow(
     isCurrent: Boolean,
     onClick: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(
-                if (isCurrent) Color.White.copy(alpha = 0.08f) else Color.Transparent,
+                if (isCurrent) colorScheme.primaryContainer.copy(alpha = 0.55f) else Color.Transparent,
             )
             .then(
                 if (isCurrent) {
-                    Modifier.border(1.dp, Color(0xFF6366F1).copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    Modifier.border(1.dp, colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                 } else {
                     Modifier
                 },
@@ -307,7 +314,7 @@ private fun EpisodeRow(
                 if (episodeLabel.isNotBlank()) {
                     Text(
                         text = episodeLabel,
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -316,12 +323,12 @@ private fun EpisodeRow(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(999.dp))
-                            .background(Color(0xFF6366F1).copy(alpha = 0.2f))
+                            .background(colorScheme.primaryContainer)
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     ) {
                         Text(
                             text = "Playing",
-                            color = Color(0xFF6366F1),
+                            color = colorScheme.onPrimaryContainer,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -330,7 +337,7 @@ private fun EpisodeRow(
             }
             Text(
                 text = episode.title,
-                color = Color.White,
+                color = colorScheme.onSurface,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
@@ -339,7 +346,7 @@ private fun EpisodeRow(
             episode.overview?.let { overview ->
                 Text(
                     text = overview,
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -360,6 +367,8 @@ private fun EpisodeStreamsSubView(
     onReload: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     val episode = state.selectedEpisode ?: return
     val streamsUiState = state.streamsUiState
 
@@ -374,7 +383,7 @@ private fun EpisodeStreamsSubView(
         ) {
             Text(
                 text = "Streams",
-                color = Color.White,
+                color = colorScheme.onSurface,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
             )
@@ -410,7 +419,7 @@ private fun EpisodeStreamsSubView(
                         append(episode.title)
                     }
                 },
-                color = Color.White.copy(alpha = 0.6f),
+                color = colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -459,7 +468,7 @@ private fun EpisodeStreamsSubView(
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(
-                        color = Color.White,
+                        color = colorScheme.primary,
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(28.dp),
                     )
@@ -475,7 +484,7 @@ private fun EpisodeStreamsSubView(
                 ) {
                     Text(
                         text = "No streams found",
-                        color = Color.White.copy(alpha = 0.6f),
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                     )
                 }
@@ -505,10 +514,13 @@ private fun EpisodeSourceStreamRow(
     stream: StreamItem,
     onClick: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .background(colorScheme.surfaceVariant.copy(alpha = 0.35f))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -517,7 +529,7 @@ private fun EpisodeSourceStreamRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stream.streamLabel,
-                color = Color.White,
+                color = colorScheme.onSurface,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
@@ -527,7 +539,7 @@ private fun EpisodeSourceStreamRow(
                 if (subtitle != stream.streamLabel) {
                     Text(
                         text = subtitle,
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -536,7 +548,7 @@ private fun EpisodeSourceStreamRow(
             }
             Text(
                 text = stream.addonName,
-                color = Color.White.copy(alpha = 0.4f),
+                color = colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
                 fontStyle = FontStyle.Italic,
                 maxLines = 1,

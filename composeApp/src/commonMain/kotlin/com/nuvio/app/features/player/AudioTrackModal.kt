@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -34,7 +35,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,6 +48,8 @@ fun AudioTrackModal(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(200)),
@@ -61,7 +63,7 @@ fun AudioTrackModal(
                     interactionSource = remember { MutableInteractionSource() },
                     onClick = onDismiss,
                 )
-                .background(Color(0x66000000)),
+                .background(colorScheme.scrim.copy(alpha = 0.52f)),
             contentAlignment = Alignment.Center,
         ) {
             AnimatedVisibility(
@@ -75,8 +77,8 @@ fun AudioTrackModal(
                         .fillMaxWidth(0.9f)
                         .heightIn(max = 600.dp)
                         .clip(RoundedCornerShape(24.dp))
-                        .background(Color(0xFA0F0F0F))
-                        .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp))
+                        .background(colorScheme.surface)
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(24.dp))
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
@@ -92,7 +94,7 @@ fun AudioTrackModal(
                         ) {
                             Text(
                                 text = "Audio Tracks",
-                                color = Color.White,
+                                color = colorScheme.onSurface,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -130,8 +132,9 @@ private fun AudioTrackRow(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val bgColor = if (isSelected) Color.White else Color.White.copy(alpha = 0.05f)
-    val textColor = if (isSelected) Color.Black else Color.White
+    val colorScheme = MaterialTheme.colorScheme
+    val bgColor = if (isSelected) colorScheme.primaryContainer else colorScheme.surfaceVariant.copy(alpha = 0.6f)
+    val textColor = if (isSelected) colorScheme.onPrimaryContainer else colorScheme.onSurface
     val weight = if (isSelected) FontWeight.Bold else FontWeight.Normal
 
     Row(
@@ -154,7 +157,7 @@ private fun AudioTrackRow(
             Icon(
                 imageVector = Icons.Rounded.Check,
                 contentDescription = null,
-                tint = Color.Black,
+                tint = colorScheme.primary,
                 modifier = Modifier.size(18.dp),
             )
         }
@@ -163,6 +166,8 @@ private fun AudioTrackRow(
 
 @Composable
 private fun AudioEmptyState() {
+    val colorScheme = MaterialTheme.colorScheme
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -173,14 +178,14 @@ private fun AudioEmptyState() {
         Icon(
             imageVector = Icons.AutoMirrored.Rounded.VolumeOff,
             contentDescription = null,
-            tint = Color.White,
+            tint = colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .size(32.dp)
                 .then(Modifier),
         )
         Text(
             text = "No audio tracks available",
-            color = Color.White,
+            color = colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 10.dp),
         )
     }

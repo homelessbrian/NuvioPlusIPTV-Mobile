@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -62,6 +63,8 @@ fun SubtitleModal(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(200)),
@@ -75,7 +78,7 @@ fun SubtitleModal(
                     interactionSource = remember { MutableInteractionSource() },
                     onClick = onDismiss,
                 )
-                .background(Color(0x80000000)),
+                .background(colorScheme.scrim.copy(alpha = 0.56f)),
             contentAlignment = Alignment.Center,
         ) {
             val maxH = maxHeight
@@ -92,8 +95,8 @@ fun SubtitleModal(
                         .fillMaxWidth(0.9f)
                         .heightIn(max = maxH * 0.95f)
                         .clip(RoundedCornerShape(24.dp))
-                        .background(Color(0xFF0F0F0F))
-                        .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp))
+                        .background(colorScheme.surface)
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f), RoundedCornerShape(24.dp))
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
@@ -109,7 +112,7 @@ fun SubtitleModal(
                         ) {
                             Text(
                                 text = "Subtitles",
-                                color = Color.White,
+                                color = colorScheme.onSurface,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -159,6 +162,8 @@ private fun SubtitleTabBar(
     activeTab: SubtitleTab,
     onTabSelected: (SubtitleTab) -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -169,7 +174,7 @@ private fun SubtitleTabBar(
         SubtitleTab.entries.forEach { tab ->
             val isSelected = tab == activeTab
             val bgColor by animateColorAsState(
-                targetValue = if (isSelected) Color.White else Color.White.copy(alpha = 0.06f),
+                targetValue = if (isSelected) colorScheme.primaryContainer else colorScheme.surfaceVariant.copy(alpha = 0.92f),
                 animationSpec = tween(250),
             )
             val radius by animateDpAsState(
@@ -192,7 +197,7 @@ private fun SubtitleTabBar(
                         SubtitleTab.Addons -> "Addons"
                         SubtitleTab.Style -> "Style"
                     },
-                    color = if (isSelected) Color.Black else Color.White,
+                    color = if (isSelected) colorScheme.onPrimaryContainer else colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                 )
@@ -207,6 +212,8 @@ private fun BuiltInSubtitleList(
     selectedIndex: Int,
     onTrackSelected: (Int) -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -216,8 +223,8 @@ private fun BuiltInSubtitleList(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .background(
-                    if (isNoneSelected) Color.White
-                    else Color(0xFFF2B8B5)
+                    if (isNoneSelected) colorScheme.primaryContainer
+                    else colorScheme.surfaceVariant.copy(alpha = 0.6f)
                 )
                 .clickable { onTrackSelected(-1) }
                 .padding(vertical = 10.dp, horizontal = 12.dp),
@@ -226,7 +233,7 @@ private fun BuiltInSubtitleList(
         ) {
             Text(
                 text = "None",
-                color = if (isNoneSelected) Color.Black else Color(0xFF601410),
+                color = if (isNoneSelected) colorScheme.onPrimaryContainer else colorScheme.onSurface,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -234,7 +241,7 @@ private fun BuiltInSubtitleList(
                 Icon(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = null,
-                    tint = Color.Black,
+                    tint = colorScheme.primary,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -246,7 +253,7 @@ private fun BuiltInSubtitleList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (isSelected) Color.White else Color.White.copy(alpha = 0.05f))
+                    .background(if (isSelected) colorScheme.primaryContainer else colorScheme.surfaceVariant.copy(alpha = 0.6f))
                     .clickable { onTrackSelected(track.index) }
                     .padding(vertical = 10.dp, horizontal = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -254,7 +261,7 @@ private fun BuiltInSubtitleList(
             ) {
                 Text(
                     text = getTrackDisplayName(track.label, track.language, track.index),
-                    color = if (isSelected) Color.Black else Color.White,
+                    color = if (isSelected) colorScheme.onPrimaryContainer else colorScheme.onSurface,
                     fontSize = 15.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                 )
@@ -262,7 +269,7 @@ private fun BuiltInSubtitleList(
                     Icon(
                         imageVector = Icons.Rounded.Check,
                         contentDescription = null,
-                        tint = Color.Black,
+                        tint = colorScheme.primary,
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -279,6 +286,8 @@ private fun AddonSubtitleList(
     onSubtitleSelected: (AddonSubtitle) -> Unit,
     onFetch: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
     if (isLoading) {
         Box(
             modifier = Modifier
@@ -287,7 +296,7 @@ private fun AddonSubtitleList(
             contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator(
-                color = Color.White,
+                color = colorScheme.primary,
                 strokeWidth = 2.dp,
                 modifier = Modifier.size(32.dp),
             )
@@ -313,12 +322,12 @@ private fun AddonSubtitleList(
                 Icon(
                     imageVector = Icons.Rounded.CloudDownload,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.5f),
+                    tint = colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(32.dp),
                 )
                 Text(
                     text = "Tap to fetch subtitles",
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp),
                 )
             }
@@ -335,7 +344,7 @@ private fun AddonSubtitleList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (isSelected) Color.White else Color.White.copy(alpha = 0.05f))
+                    .background(if (isSelected) colorScheme.primaryContainer else colorScheme.surfaceVariant.copy(alpha = 0.6f))
                     .clickable { onSubtitleSelected(sub) }
                     .padding(vertical = 5.dp, horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -348,13 +357,13 @@ private fun AddonSubtitleList(
                 ) {
                     Text(
                         text = sub.display,
-                        color = if (isSelected) Color.Black else Color.White,
+                        color = if (isSelected) colorScheme.onPrimaryContainer else colorScheme.onSurface,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = formatLanguage(sub.language),
-                        color = if (isSelected) Color.Black.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.5f),
+                        color = if (isSelected) colorScheme.onPrimaryContainer.copy(alpha = 0.72f) else colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(bottom = 3.dp),
                     )
@@ -363,7 +372,7 @@ private fun AddonSubtitleList(
                     Icon(
                         imageVector = Icons.Rounded.Check,
                         contentDescription = null,
-                        tint = Color.Black,
+                        tint = colorScheme.primary,
                         modifier = Modifier
                             .size(18.dp)
                             .padding(end = 2.dp),
