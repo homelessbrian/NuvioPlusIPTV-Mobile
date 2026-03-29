@@ -321,82 +321,80 @@ private fun MainAppContent(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
         ) {
-            Scaffold(
-                modifier = Modifier.fillMaxSize(),
-                containerColor = MaterialTheme.colorScheme.background,
-                contentWindowInsets = WindowInsets(0),
-                bottomBar = {
-                    val navigationItemColors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        windowInsets = nuvioBottomNavigationBarInsets(),
-                    ) {
-                        NavigationBarItem(
-                            selected = selectedTab == AppScreenTab.Home,
-                            onClick = { selectedTab = AppScreenTab.Home },
-                            icon = { Icon(Icons.Rounded.Home, contentDescription = null) },
-                            label = { Text("Home") },
-                            colors = navigationItemColors,
-                        )
-                        NavigationBarItem(
-                            selected = selectedTab == AppScreenTab.Search,
-                            onClick = { selectedTab = AppScreenTab.Search },
-                            icon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                            label = { Text("Search") },
-                            colors = navigationItemColors,
-                        )
-                        NavigationBarItem(
-                            selected = selectedTab == AppScreenTab.Library,
-                            onClick = { selectedTab = AppScreenTab.Library },
-                            icon = { Icon(Icons.Rounded.VideoLibrary, contentDescription = null) },
-                            label = { Text("Library") },
-                            colors = navigationItemColors,
-                        )
-                        NavigationBarItem(
-                            selected = selectedTab == AppScreenTab.Settings,
-                            onClick = { selectedTab = AppScreenTab.Settings },
-                            icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
-                            label = { Text("Settings") },
-                            colors = navigationItemColors,
-                        )
-                    }
-                },
-            ) { innerPadding ->
-                AppTabHost(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    selectedTab = selectedTab,
-                    onCatalogClick = onCatalogClick,
-                    onPosterClick = { meta ->
-                        navController.navigate(DetailRoute(type = meta.type, id = meta.id))
-                    },
-                    onPosterLongClick = { meta ->
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        selectedPosterForActions = meta
-                    },
-                    onLibraryPosterClick = { item ->
-                        navController.navigate(DetailRoute(type = item.type, id = item.id))
-                    },
-                    onContinueWatchingClick = onContinueWatchingClick,
-                    onContinueWatchingLongPress = onContinueWatchingLongPress,
-                    onSwitchProfile = onSwitchProfile,
-                )
-            }
-
             NavHost(
                 navController = navController,
                 startDestination = TabsRoute,
                 modifier = Modifier.fillMaxSize(),
             ) {
                 composable<TabsRoute> {
-                    Unit
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        containerColor = MaterialTheme.colorScheme.background,
+                        contentWindowInsets = WindowInsets(0),
+                        bottomBar = {
+                            val navigationItemColors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            NavigationBar(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                windowInsets = nuvioBottomNavigationBarInsets(),
+                            ) {
+                                NavigationBarItem(
+                                    selected = selectedTab == AppScreenTab.Home,
+                                    onClick = { selectedTab = AppScreenTab.Home },
+                                    icon = { Icon(Icons.Rounded.Home, contentDescription = null) },
+                                    label = { Text("Home") },
+                                    colors = navigationItemColors,
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == AppScreenTab.Search,
+                                    onClick = { selectedTab = AppScreenTab.Search },
+                                    icon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                                    label = { Text("Search") },
+                                    colors = navigationItemColors,
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == AppScreenTab.Library,
+                                    onClick = { selectedTab = AppScreenTab.Library },
+                                    icon = { Icon(Icons.Rounded.VideoLibrary, contentDescription = null) },
+                                    label = { Text("Library") },
+                                    colors = navigationItemColors,
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == AppScreenTab.Settings,
+                                    onClick = { selectedTab = AppScreenTab.Settings },
+                                    icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                                    label = { Text("Settings") },
+                                    colors = navigationItemColors,
+                                )
+                            }
+                        },
+                    ) { innerPadding ->
+                        AppTabHost(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding),
+                            selectedTab = selectedTab,
+                            onCatalogClick = onCatalogClick,
+                            onPosterClick = { meta ->
+                                navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                            },
+                            onPosterLongClick = { meta ->
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                selectedPosterForActions = meta
+                            },
+                            onLibraryPosterClick = { item ->
+                                navController.navigate(DetailRoute(type = item.type, id = item.id))
+                            },
+                            onContinueWatchingClick = onContinueWatchingClick,
+                            onContinueWatchingLongPress = onContinueWatchingLongPress,
+                            onSwitchProfile = onSwitchProfile,
+                        )
+                    }
                 }
                 composable<DetailRoute> { backStackEntry ->
                     val route = backStackEntry.toRoute<DetailRoute>()
