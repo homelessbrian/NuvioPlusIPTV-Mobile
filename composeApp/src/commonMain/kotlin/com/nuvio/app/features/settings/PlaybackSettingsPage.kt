@@ -80,84 +80,89 @@ private fun PlaybackSettingsSection(
     var showPreferredSubtitleDialog by remember { mutableStateOf(false) }
     var showSecondarySubtitleDialog by remember { mutableStateOf(false) }
     var showReuseCacheDurationDialog by remember { mutableStateOf(false) }
+    val sectionSpacing = if (isTablet) 18.dp else 12.dp
 
-    SettingsSection(
-        title = "PLAYER",
-        isTablet = isTablet,
+    Column(
+        verticalArrangement = Arrangement.spacedBy(sectionSpacing),
     ) {
-        SettingsGroup(isTablet = isTablet) {
-            SettingsSwitchRow(
-                title = "Show Loading Overlay",
-                description = "Show the opening loading overlay while a stream starts playing.",
-                checked = showLoadingOverlay,
-                isTablet = isTablet,
-                onCheckedChange = PlayerSettingsRepository::setShowLoadingOverlay,
-            )
-            SettingsGroupDivider(isTablet = isTablet)
-            SettingsNavigationRow(
-                title = "Preferred Audio Language",
-                description = when (preferredAudioLanguage) {
-                    AudioLanguageOption.DEFAULT -> "Default"
-                    AudioLanguageOption.DEVICE -> "Device Language"
-                    else -> languageLabelForCode(preferredAudioLanguage)
-                },
-                icon = Icons.Rounded.Language,
-                isTablet = isTablet,
-                onClick = { showPreferredAudioDialog = true },
-            )
-            SettingsGroupDivider(isTablet = isTablet)
-            SettingsNavigationRow(
-                title = "Secondary Audio Language",
-                description = languageLabelForCode(secondaryPreferredAudioLanguage),
-                icon = Icons.Rounded.Language,
-                isTablet = isTablet,
-                onClick = { showSecondaryAudioDialog = true },
-            )
-            SettingsGroupDivider(isTablet = isTablet)
-            SettingsNavigationRow(
-                title = "Preferred Subtitle Language",
-                description = when (preferredSubtitleLanguage) {
-                    SubtitleLanguageOption.NONE -> "None"
-                    SubtitleLanguageOption.DEVICE -> "Device Language"
-                    SubtitleLanguageOption.FORCED -> "Forced"
-                    else -> languageLabelForCode(preferredSubtitleLanguage)
-                },
-                icon = Icons.Rounded.Subtitles,
-                isTablet = isTablet,
-                onClick = { showPreferredSubtitleDialog = true },
-            )
-            SettingsGroupDivider(isTablet = isTablet)
-            SettingsNavigationRow(
-                title = "Secondary Subtitle Language",
-                description = languageLabelForCode(secondaryPreferredSubtitleLanguage),
-                icon = Icons.Rounded.Subtitles,
-                isTablet = isTablet,
-                onClick = { showSecondarySubtitleDialog = true },
-            )
-        }
-    }
-
-    SettingsSection(
-        title = "STREAM SELECTION",
-        isTablet = isTablet,
-    ) {
-        SettingsGroup(isTablet = isTablet) {
-            SettingsSwitchRow(
-                title = "Reuse Last Link",
-                description = "Auto-play your last working stream for this same movie/episode when cache is still valid.",
-                checked = streamReuseLastLinkEnabled,
-                isTablet = isTablet,
-                onCheckedChange = PlayerSettingsRepository::setStreamReuseLastLinkEnabled,
-            )
-            if (streamReuseLastLinkEnabled) {
+        SettingsSection(
+            title = "PLAYER",
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Show Loading Overlay",
+                    description = "Show the opening loading overlay while a stream starts playing.",
+                    checked = showLoadingOverlay,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setShowLoadingOverlay,
+                )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
-                    title = "Last Link Cache Duration",
-                    description = formatReuseCacheDuration(streamReuseLastLinkCacheHours),
+                    title = "Preferred Audio Language",
+                    description = when (preferredAudioLanguage) {
+                        AudioLanguageOption.DEFAULT -> "Default"
+                        AudioLanguageOption.DEVICE -> "Device Language"
+                        else -> languageLabelForCode(preferredAudioLanguage)
+                    },
                     icon = Icons.Rounded.Language,
                     isTablet = isTablet,
-                    onClick = { showReuseCacheDurationDialog = true },
+                    onClick = { showPreferredAudioDialog = true },
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Secondary Audio Language",
+                    description = languageLabelForCode(secondaryPreferredAudioLanguage),
+                    icon = Icons.Rounded.Language,
+                    isTablet = isTablet,
+                    onClick = { showSecondaryAudioDialog = true },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Preferred Subtitle Language",
+                    description = when (preferredSubtitleLanguage) {
+                        SubtitleLanguageOption.NONE -> "None"
+                        SubtitleLanguageOption.DEVICE -> "Device Language"
+                        SubtitleLanguageOption.FORCED -> "Forced"
+                        else -> languageLabelForCode(preferredSubtitleLanguage)
+                    },
+                    icon = Icons.Rounded.Subtitles,
+                    isTablet = isTablet,
+                    onClick = { showPreferredSubtitleDialog = true },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Secondary Subtitle Language",
+                    description = languageLabelForCode(secondaryPreferredSubtitleLanguage),
+                    icon = Icons.Rounded.Subtitles,
+                    isTablet = isTablet,
+                    onClick = { showSecondarySubtitleDialog = true },
+                )
+            }
+        }
+
+        SettingsSection(
+            title = "STREAM SELECTION",
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Reuse Last Link",
+                    description = "Auto-play your last working stream for this same movie/episode when cache is still valid.",
+                    checked = streamReuseLastLinkEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setStreamReuseLastLinkEnabled,
+                )
+                if (streamReuseLastLinkEnabled) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = "Last Link Cache Duration",
+                        description = formatReuseCacheDuration(streamReuseLastLinkCacheHours),
+                        icon = Icons.Rounded.Language,
+                        isTablet = isTablet,
+                        onClick = { showReuseCacheDurationDialog = true },
+                    )
+                }
             }
         }
     }
