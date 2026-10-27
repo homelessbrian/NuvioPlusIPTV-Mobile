@@ -57,6 +57,7 @@ data class PlayerSettingsUiState(
     val androidLibmpvVideoOutput: AndroidLibmpvVideoOutput = AndroidLibmpvVideoOutput.GpuNext,
     val androidLibmpvHardwareDecodingEnabled: Boolean = true,
     val androidLibmpvYuv420pEnabled: Boolean = false,
+    val androidExoChaptersEnabled: Boolean = false,
     val decoderPriority: Int = 1,
     val mapDV7ToHevc: Boolean = false,
     val tunnelingEnabled: Boolean = false,
@@ -91,8 +92,9 @@ data class PlayerSettingsUiState(
     val nextEpisodeThresholdPercent: Float = 99f,
     val nextEpisodeThresholdMinutesBeforeEnd: Float = 2f,
     val preloadNextEpisodeSources: Boolean = false,
-    val useLibass: Boolean = false,
+    val useLibass: Boolean = true,
     val libassRenderType: String = "CUES",
+    val libassRenderScale: String = "FULL",
     val iosVideoOutputPreset: IosVideoOutputPreset = IosVideoOutputPreset.NativeEdr,
     val iosToneMappingMode: IosToneMappingMode = IosToneMappingMode.Auto,
     val iosTargetPrimaries: IosTargetPrimaries = IosTargetPrimaries.Auto,
@@ -139,6 +141,7 @@ object PlayerSettingsRepository {
     private var androidLibmpvVideoOutput = AndroidLibmpvVideoOutput.GpuNext
     private var androidLibmpvHardwareDecodingEnabled = true
     private var androidLibmpvYuv420pEnabled = false
+    private var androidExoChaptersEnabled = false
     private var decoderPriority = 1
     private var mapDV7ToHevc = false
     private var tunnelingEnabled = false
@@ -173,8 +176,9 @@ object PlayerSettingsRepository {
     private var nextEpisodeThresholdPercent = 99f
     private var nextEpisodeThresholdMinutesBeforeEnd = 2f
     private var preloadNextEpisodeSources = false
-    private var useLibass = false
-    private var libassRenderType = "CUES"
+    private var useLibass = true
+    private var libassRenderType = "OVERLAY_OPEN_GL"
+    private var libassRenderScale = "FULL"
     private var iosVideoOutputPreset = IosVideoOutputPreset.NativeEdr
     private var iosToneMappingMode = IosToneMappingMode.Auto
     private var iosTargetPrimaries = IosTargetPrimaries.Auto
@@ -226,6 +230,7 @@ object PlayerSettingsRepository {
         androidLibmpvVideoOutput = AndroidLibmpvVideoOutput.GpuNext
         androidLibmpvHardwareDecodingEnabled = true
         androidLibmpvYuv420pEnabled = false
+        androidExoChaptersEnabled = false
         decoderPriority = 1
         mapDV7ToHevc = false
         tunnelingEnabled = false
@@ -261,8 +266,9 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = 99f
         nextEpisodeThresholdMinutesBeforeEnd = 2f
         preloadNextEpisodeSources = false
-        useLibass = false
-        libassRenderType = "CUES"
+        useLibass = true
+        libassRenderType = "OVERLAY_OPEN_GL"
+        libassRenderScale = "FULL"
         iosVideoOutputPreset = IosVideoOutputPreset.NativeEdr
         iosToneMappingMode = IosToneMappingMode.Auto
         iosTargetPrimaries = IosTargetPrimaries.Auto
@@ -343,6 +349,7 @@ object PlayerSettingsRepository {
             ?: AndroidLibmpvVideoOutput.GpuNext
         androidLibmpvHardwareDecodingEnabled = PlayerSettingsStorage.loadAndroidLibmpvHardwareDecodingEnabled() ?: true
         androidLibmpvYuv420pEnabled = PlayerSettingsStorage.loadAndroidLibmpvYuv420pEnabled() ?: false
+        androidExoChaptersEnabled = PlayerSettingsStorage.loadAndroidExoChaptersEnabled() ?: false
         decoderPriority = PlayerSettingsStorage.loadDecoderPriority() ?: 1
         mapDV7ToHevc = PlayerSettingsStorage.loadMapDV7ToHevc() ?: false
         tunnelingEnabled = PlayerSettingsStorage.loadTunnelingEnabled() ?: false
@@ -415,8 +422,9 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = PlayerSettingsStorage.loadNextEpisodeThresholdPercent() ?: 99f
         nextEpisodeThresholdMinutesBeforeEnd = PlayerSettingsStorage.loadNextEpisodeThresholdMinutesBeforeEnd() ?: 2f
         preloadNextEpisodeSources = PlayerSettingsStorage.loadPreloadNextEpisodeSources() ?: false
-        useLibass = PlayerSettingsStorage.loadUseLibass() ?: false
+        useLibass = PlayerSettingsStorage.loadUseLibass() ?: true
         libassRenderType = PlayerSettingsStorage.loadLibassRenderType() ?: "CUES"
+        libassRenderScale = PlayerSettingsStorage.loadLibassRenderScale() ?: "FULL"
         iosVideoOutputPreset = PlayerSettingsStorage.loadIosVideoOutputPreset()
             ?.let { runCatching { IosVideoOutputPreset.valueOf(it) }.getOrNull() }
             ?: IosVideoOutputPreset.NativeEdr
@@ -660,6 +668,14 @@ object PlayerSettingsRepository {
         androidLibmpvYuv420pEnabled = enabled
         publish()
         PlayerSettingsStorage.saveAndroidLibmpvYuv420pEnabled(enabled)
+    }
+
+    fun setAndroidExoChaptersEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (androidExoChaptersEnabled == enabled) return
+        androidExoChaptersEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveAndroidExoChaptersEnabled(enabled)
     }
 
     fun setDecoderPriority(priority: Int) {
@@ -988,6 +1004,14 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveLibassRenderType(renderType)
     }
 
+    fun setLibassRenderScale(scale: String) {
+        ensureLoaded()
+        if (libassRenderScale == scale) return
+        libassRenderScale = scale
+        publish()
+        PlayerSettingsStorage.saveLibassRenderScale(scale)
+    }
+
     fun setIosVideoOutputPreset(preset: IosVideoOutputPreset) {
         ensureLoaded()
         iosVideoOutputPreset = preset
@@ -1179,6 +1203,7 @@ object PlayerSettingsRepository {
             androidLibmpvVideoOutput = androidLibmpvVideoOutput,
             androidLibmpvHardwareDecodingEnabled = androidLibmpvHardwareDecodingEnabled,
             androidLibmpvYuv420pEnabled = androidLibmpvYuv420pEnabled,
+            androidExoChaptersEnabled = androidExoChaptersEnabled,
             decoderPriority = decoderPriority,
             mapDV7ToHevc = mapDV7ToHevc,
             tunnelingEnabled = tunnelingEnabled,
@@ -1215,6 +1240,7 @@ object PlayerSettingsRepository {
             preloadNextEpisodeSources = preloadNextEpisodeSources,
             useLibass = useLibass,
             libassRenderType = libassRenderType,
+            libassRenderScale = libassRenderScale,
             iosVideoOutputPreset = iosVideoOutputPreset,
             iosToneMappingMode = iosToneMappingMode,
             iosTargetPrimaries = iosTargetPrimaries,
