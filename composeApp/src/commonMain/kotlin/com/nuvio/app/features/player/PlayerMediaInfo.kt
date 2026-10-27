@@ -50,5 +50,11 @@ private fun mpvCodecLabel(codec: String): String? =
         "truehd" -> "TrueHD"
         "opus" -> "Opus"
         "vorbis" -> "Vorbis"
+        "aac" -> "AAC"
+        "mp3" -> "MP3"
+        "flac" -> "FLAC"
+        "alac" -> "ALAC"
+        "pcm" -> "PCM"
+        "dts" -> "DTS"
         else -> codec.trim().uppercase()
     }
