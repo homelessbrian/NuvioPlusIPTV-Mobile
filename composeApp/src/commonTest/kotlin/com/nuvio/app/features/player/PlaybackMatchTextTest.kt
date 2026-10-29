@@ -59,7 +59,7 @@ class PlaybackMatchTextTest {
 
     @Test
     fun readsAtmosFromMpvAudioProfile() {
-        val info = PlayerMediaInfo(audioCodec = "TrueHD", audioProfile = "Dolby TrueHD + Dolby Atmos")
+        val info = PlayerMediaInfo(audioCodec = "TrueHD", audioProfiles = listOf("Dolby TrueHD + Dolby Atmos"))
         assertEquals(listOf("Atmos"), matchedNames(info))
     }
 
@@ -86,5 +86,39 @@ class PlaybackMatchTextTest {
     @Test
     fun showsNothingBeforePlaybackInfoLoads() {
         assertEquals(emptyList(), matchedNames(PlayerMediaInfo()))
+    }
+
+    @Test
+    fun dtsHdMaNotTriggeredByGermanLabel() {
+        // "German DTS-HD HRA 7.1" must NOT produce DTS-HD MA; "ma" appears in "German" but
+        // that is not a word-boundary match.
+        val info = PlayerMediaInfo(
+            audioCodec = "DTS-HD",
+            audioProfiles = listOf("DTS-HD"),
+            audioChannels = 8,
+        )
+        val text = playbackMatchText(info, listOf("ger", "German"))
+        assertEquals(false, text.contains("DTS-HD MA"), "DTS-HD MA should not appear for German DTS-HD HRA")
+        assertEquals(true, text.contains("DTS-HD"), "DTS-HD should still appear")
+    }
+
+    @Test
+    fun dtsHdMaAndDtsXBothAppear() {
+        // A label with both DTS-HD MA and DTS:X should yield both tokens.
+        val info = PlayerMediaInfo(
+            audioCodec = "DTS",
+            audioProfiles = listOf("DTS-HD MA", "DTS:X"),
+            audioChannels = 8,
+        )
+        val text = playbackMatchText(info, emptyList())
+        assertEquals(true, text.contains("DTS-HD MA"), "DTS-HD MA should appear")
+        assertEquals(true, text.contains("DTS:X"), "DTS:X should appear")
+    }
+
+    @Test
+    fun pcmVariantsMapToPcm() {
+        val info = PlayerMediaInfo(audioCodec = "PCM")
+        val text = playbackMatchText(info, emptyList())
+        assertEquals(true, text.contains("PCM"))
     }
 }

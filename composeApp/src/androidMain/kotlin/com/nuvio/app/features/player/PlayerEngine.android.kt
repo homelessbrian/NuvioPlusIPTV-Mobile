@@ -864,7 +864,7 @@ private fun ExoPlayerSurface(
                     val audio = exoPlayer.audioFormat
                     return PlayerMediaInfo(
                         videoCodec = CustomDefaultTrackNameProvider.formatNameFromMime(video?.sampleMimeType)
-                            ?: CustomDefaultTrackNameProvider.formatNameFromMime(video?.codecs),
+                            ?: video?.codecs?.let { MimeTypes.getVideoMediaMimeType(it) }?.let(CustomDefaultTrackNameProvider::formatNameFromMime),
                         videoWidth = video?.width?.takeIf { it > 0 },
                         videoHeight = video?.height?.takeIf { it > 0 },
                         videoFrameRate = video?.frameRate?.takeIf { it > 0f },
@@ -872,7 +872,7 @@ private fun ExoPlayerSurface(
                         audioCodec = CustomDefaultTrackNameProvider.formatNameFromMime(audio?.sampleMimeType),
                         audioChannels = audio?.channelCount?.takeIf { it > 0 },
                         audioSampleRate = audio?.sampleRate?.takeIf { it > 0 },
-                        audioProfile = exoAudioProfile(audio),
+                        audioProfiles = exoAudioProfiles(audio),
                         hdr = video?.hdrFormats().orEmpty(),
                         bitDepth = video?.exoBitDepth(),
                     )
@@ -2638,6 +2638,7 @@ private fun Format.hdrFormats(): List<String> = buildList {
     val lowerCodecs = codecs.orEmpty().lowercase()
     if (sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION
         || lowerCodecs.contains("dvhe") || lowerCodecs.contains("dvh1")
+        || lowerCodecs.contains("dvav")
         || lowerCodecs.contains("dav1") || lowerCodecs.contains("dva1")
     ) {
         add("DV")
@@ -2648,17 +2649,19 @@ private fun Format.hdrFormats(): List<String> = buildList {
     }
 }
 
-private fun exoAudioProfile(audio: Format?): String? {
-    if (audio == null) return null
+private fun exoAudioProfiles(audio: Format?): List<String> {
+    if (audio == null) return emptyList()
+    val mime = audio.sampleMimeType.orEmpty().lowercase()
     val codecs = audio.codecs.orEmpty().lowercase()
     val label = audio.label.orEmpty().lowercase()
     val combined = "$codecs $label"
-    return when {
-        combined.contains("atmos") || codecs.contains("joc") -> "Atmos"
-        combined.contains("dts:x") || combined.contains("dtsx") -> "DTS:X"
-        combined.contains("dts-hd") && combined.contains("ma") -> "DTS-HD MA"
-        combined.contains("dts-hd") || combined.contains("dtshd") -> "DTS-HD"
-        else -> null
+    return buildList {
+        if (combined.contains("atmos") || mime == MimeTypes.AUDIO_E_AC3_JOC.lowercase()) add("Atmos")
+        if (combined.contains("dts:x") || combined.contains("dtsx")
+            || mime == MimeTypes.AUDIO_DTS_UHD_P2) add("DTS:X")
+        if ((combined.contains("dts-hd") || codecs.startsWith("dtsh") || codecs.startsWith("dtsl"))
+            && Regex("\\bma\\b", RegexOption.IGNORE_CASE).containsMatchIn(combined)) add("DTS-HD MA")
+        else if (combined.contains("dts-hd") || codecs.startsWith("dtsh") || codecs.startsWith("dtsl")) add("DTS-HD")
     }
 }
 
@@ -2667,7 +2670,8 @@ private fun Format.exoBitDepth(): Int? {
     val c = codecs.orEmpty().lowercase()
     return when {
         c.startsWith("hev1.2.") || c.startsWith("hvc1.2.") -> 10
-        c.contains("dvhe") || c.contains("dvh1") -> 10
+        c.contains("dvhe") || c.contains("dvh1") || c.contains("dvav")
+            || c.contains("dav1") || c.contains("dva1") -> 10 // DV is always 10-bit
         else -> null
     }
 }

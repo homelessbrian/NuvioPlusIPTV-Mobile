@@ -206,6 +206,7 @@ object StreamBadgeMatcher {
                         borderColor = filter.borderColor,
                     ),
                     regex = regex,
+                    groupId = filter.groupId,
                 )
             }
         }
@@ -279,6 +280,7 @@ data class CompiledStreamBadgeFilter(
     val name: String,
     val badge: StreamBadge,
     val regex: Regex,
+    val groupId: String = "",
 )
 
 private fun StreamBadge.dedupeKey(): String =

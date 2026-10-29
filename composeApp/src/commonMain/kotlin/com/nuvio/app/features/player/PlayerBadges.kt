@@ -32,18 +32,52 @@ internal fun PlayerScreenRuntime.rememberPlayerBadges(): List<StreamBadge> {
     val track = audioTracks.firstOrNull { it.index == selectedAudioIndex }
     val languageName = track?.language?.let(::languageLabelResForCode)?.let { stringResource(it) }
     val text = playbackMatchText(streamMediaInfo, listOfNotNull(track?.language, languageName))
-    val candidates = buildList {
-        if (text.isNotBlank()) add(text)
-        activeSourceFilename?.takeIf { it.isNotBlank() }?.let(::add)
-        activeStreamTitle.takeIf { it.isNotBlank() }?.let(::add)
-    }
-    val mergedCandidate = candidates.joinToString(" ")
-    return remember(mergedCandidate, settings.rules, settings.playerBadgeSource) {
+    // Keep candidates separate so regex lookaheads in one don't bleed into another.
+    // Collapse whitespace so \n in stream names doesn't break single-line regex patterns.
+    val playbackCandidate = text.takeIf { it.isNotBlank() }
+    val metaCandidates = listOfNotNull(
+        activeSourceFilename?.collapseWhitespace(),
+        activeStreamTitle.collapseWhitespace()
+    )
+    return remember(playbackCandidate, metaCandidates, settings.rules, settings.playerBadgeSource) {
         val rules = settings.rules.forPlayer(settings.playerBadgeSource)
-        StreamBadgeMatcher.matchedBadges(listOfNotNull(mergedCandidate.takeIf { it.isNotBlank() }), StreamBadgeMatcher.compile(rules))
-            .filter { it.imageURL.isNotBlank() }
+        val filters = StreamBadgeMatcher.compile(rules)
+        val matched = linkedMapOf<String, StreamBadge>()
+        fun collect(badge: StreamBadge) {
+            val key = (badge.imageURL.takeIf { it.isNotBlank() } ?: badge.name).lowercase()
+            if (key !in matched) matched[key] = badge
+        }
+        // Phase 1: match all filters against playback candidate (decoder truth)
+        // and track which groups got a hit.
+        val groupsMatchedByPlayback = mutableSetOf<String>()
+        if (playbackCandidate != null) {
+            for (filter in filters) {
+                if (filter.regex.containsMatchIn(playbackCandidate)) {
+                    collect(filter.badge)
+                    if (filter.groupId.isNotBlank()) groupsMatchedByPlayback += filter.groupId
+                }
+            }
+        }
+        // Phase 2: match remaining filters against filename/streamName, but skip groups
+        // that already matched from the decoder.
+        if (metaCandidates.isNotEmpty()) {
+            val metaFilters = if (groupsMatchedByPlayback.isEmpty()) {
+                filters
+            } else {
+                filters.filter { it.groupId.isBlank() || it.groupId !in groupsMatchedByPlayback }
+            }
+            if (metaFilters.isNotEmpty()) {
+                for (badge in StreamBadgeMatcher.matchedBadges(metaCandidates, metaFilters)) {
+                    collect(badge)
+                }
+            }
+        }
+        matched.values.filter { it.imageURL.isNotBlank() }
     }
 }
+
+private fun String.collapseWhitespace(): String? =
+    replace(Regex("\\s+"), " ").trim().takeIf { it.isNotBlank() }
 
 @Composable
 internal fun PlayerBadges(
