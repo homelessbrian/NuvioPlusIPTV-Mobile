@@ -1151,6 +1151,13 @@
     <string name="settings_playback_regex_preset_quality_4k_remux">4K / Remux</string>
     <string name="settings_playback_regex_preset_quality_720p_smaller">720p / Menor</string>
     <string name="settings_playback_regex_preset_web_sources">Fontes WEB</string>
+    <string name="settings_playback_render_mode">Modo de renderização ASS</string>
+    <string name="settings_playback_render_mode_description">Como as legendas ASS/SSA são desenhadas sobre o vídeo</string>
+    <string name="settings_playback_render_mode_tunneled">A reprodução em túnel ignora o pipeline de efeitos de vídeo. O modo Sobreposição é usado automaticamente.</string>
+    <string name="settings_playback_render_mode_video_effect">Efeito de vídeo</string>
+    <string name="settings_playback_render_mode_video_effect_description">Desenha as legendas diretamente em cada quadro do vídeo. Sincronia precisa em qualquer hardware. Conteúdo HDR é convertido para SDR.</string>
+    <string name="settings_playback_render_mode_overlay">Sobreposição</string>
+    <string name="settings_playback_render_mode_overlay_description">Renderiza as legendas em uma camada separada. Preserva a saída HDR. A sincronia das legendas pode não ser perfeita em alguns aparelhos.</string>
     <string name="settings_playback_render_type">Modo de Renderização Libass</string>
     <string name="settings_playback_render_scale">Resolução de renderização das legendas</string>
     <string name="settings_playback_render_scale_description">Resolução menor melhora o desempenho em legendas com formatação pesada, ao custo de nitidez</string>
@@ -1160,7 +1167,7 @@
     <string name="settings_playback_secondary_subtitle_language">Segundo Idioma Preferido</string>
     <string name="settings_playback_section_decoder">DECODIFICADOR</string>
     <string name="settings_playback_engine">Mecanismo de reprodução</string>
-    <string name="settings_playback_engine_auto_description">Usa o ExoPlayer primeiro e recorre ao libmpv se a reprodução falhar.</string>
+    <string name="settings_playback_engine_auto_description">ExoPlayer para filmes e séries · MPV para animes</string>
     <string name="settings_playback_engine_exoplayer_description">Usa o ExoPlayer e os decodificadores do Android Media3.</string>
     <string name="settings_playback_engine_libmpv_description">Usa o libmpv para reprodução no Android.</string>
     <string name="settings_playback_libmpv_video_output">Renderizador do libmpv</string>
@@ -2383,6 +2390,8 @@
         <item quantity="one">%d título</item>
         <item quantity="other">%d títulos</item>
     </plurals>
+    <string name="settings_playback_auto_switch_engine_on_error">Trocar de motor automaticamente em erro de reprodução</string>
+    <string name="settings_playback_auto_switch_engine_on_error_description">Troca para o outro motor de reprodução quando a reprodução falha, independentemente do motor selecionado.</string>
     <string name="settings_playback_auto_skip_segments">Pular Automaticamente</string>
     <string name="settings_playback_auto_skip_none">Nenhum</string>
     <string name="settings_playback_auto_skip_intro">Intro / Abertura</string>
@@ -2455,6 +2464,7 @@
     <string name="movie_status_post_production">Pós-Produção</string>
     <string name="cd_switch_player_engine">Alternar mecanismo do player</string>
     <string name="cd_stream_info">Informações da fonte</string>
+    <string name="player_engine_switching_automatic_message">Falha na reprodução — trocando para %1$s…</string>
     <string name="player_engine_switching_manual_message">Mudando para %1$s…</string>
     <string name="player_engine_switch_title">Mudar para %1$s?</string>
     <string name="player_engine_switch_message">O vídeo será recarregado a partir do ponto atual.</string>
