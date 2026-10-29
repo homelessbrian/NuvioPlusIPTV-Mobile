@@ -92,11 +92,16 @@ class PlaybackMatchTextTest {
 
     @Test
     fun dtsHdMaNotTriggeredByGermanLabel() {
-        val info = PlayerMediaInfo(
-            audioCodec = "DTS-HD",
-            audioProfiles = listOf("DTS-HD"),
-            audioChannels = 8,
-        )
+        // mpvMediaInfo maps the codec-profile; audioTokens checks for \b(ma|master audio)\b.
+        // "German" should not false-positive to MA.
+        val info = mpvMediaInfo { name ->
+            when (name) {
+                "current-tracks/audio/codec" -> "dts"
+                "current-tracks/audio/codec-profile" -> "DTS-HD HRA"
+                "audio-params/channel-count" -> "8"
+                else -> null
+            }
+        }
         val text = playbackMatchText(info, listOf("ger", "German"))
         assertFalse(text.contains("DTS-HD MA"), "DTS-HD MA should not appear for German DTS-HD HRA")
         assertTrue(text.contains("DTS-HD"), "DTS-HD should still appear")
@@ -115,9 +120,39 @@ class PlaybackMatchTextTest {
     }
 
     @Test
-    fun pcmVariantsMapToPcm() {
-        val info = PlayerMediaInfo(audioCodec = "PCM")
-        val text = playbackMatchText(info, emptyList())
-        assertTrue(text.contains("PCM"))
+    fun pcmVariantsMapToPcmViaMpv() {
+        val info = mpvMediaInfo { name ->
+            when (name) {
+                "current-tracks/audio/codec" -> "pcm_s24le"
+                else -> null
+            }
+        }
+        assertEquals("PCM", info.audioCodec)
+    }
+
+    @Test
+    fun groupExclusionSkipsFilenameLangWhenDecoderMatches() {
+        val langGroup = "Language"
+        val sourceGroup = "Source"
+        val playerFilters = StreamBadgeMatcher.compile(
+            StreamBadgeRules(
+                imports = listOf(
+                    StreamBadgeImport(
+                        sourceUrl = "https://example.com/badges.json",
+                        filters = listOf(
+                            StreamBadgeFilter(name = "English", pattern = "(?i)\\benglish\\b", imageURL = "eng.png", groupId = langGroup),
+                            StreamBadgeFilter(name = "Polish", pattern = "(?i)\\bpol\\b", imageURL = "pol.png", groupId = langGroup),
+                            StreamBadgeFilter(name = "WebDL", pattern = "(?i)\\bweb[-.]?dl\\b", imageURL = "webdl.png", groupId = sourceGroup),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val playback = "DD+ 5.1 English"
+        val filename = listOf("Movie.POL.ENG.WebDL.mkv")
+        val badges = StreamBadgeMatcher.matchedPlayerBadges(playback, filename, playerFilters).map { it.name }
+        assertTrue("English" in badges, "English should appear (decoder match)")
+        assertFalse("Polish" in badges, "Polish should NOT appear (group covered by decoder)")
+        assertTrue("WebDL" in badges, "WebDL should appear (different group)")
     }
 }

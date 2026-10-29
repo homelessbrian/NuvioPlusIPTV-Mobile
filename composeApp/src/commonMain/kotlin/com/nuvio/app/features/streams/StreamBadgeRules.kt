@@ -187,6 +187,8 @@ internal object StreamBadgeRulesParser {
 }
 
 object StreamBadgeMatcher {
+    private val WHITESPACE_PATTERN = Regex("\\s+")
+
     fun compile(rules: StreamBadgeRules): List<CompiledStreamBadgeFilter> {
         if (!rules.hasImport) return emptyList()
         return rules.normalized().imports.filter { it.isActive }.flatMap { import ->
@@ -227,14 +229,58 @@ object StreamBadgeMatcher {
     fun matchedBadges(candidates: List<String>, filters: List<CompiledStreamBadgeFilter>): List<StreamBadge> {
         if (filters.isEmpty() || candidates.isEmpty()) return emptyList()
 
+        val normalized = candidates.map { it.replace(WHITESPACE_PATTERN, " ") }
         val matched = linkedMapOf<String, StreamBadge>()
         filters.forEach { filter ->
-            if (candidates.any { candidate -> filter.regex.containsMatchIn(candidate) }) {
+            if (normalized.any { candidate -> filter.regex.containsMatchIn(candidate) }) {
                 val key = filter.badge.dedupeKey()
                 if (key !in matched) matched[key] = filter.badge
             }
         }
         return matched.values.toList()
+    }
+
+    /**
+     * Two-phase badge matching for the player.
+     * @see [matchedBadges] for the single-phase stream list variant.
+     */
+    fun matchedPlayerBadges(
+        playbackCandidate: String?,
+        metaCandidates: List<String>,
+        filters: List<CompiledStreamBadgeFilter>
+    ): List<StreamBadge> {
+        if (filters.isEmpty()) return emptyList()
+        val matched = linkedMapOf<String, StreamBadge>()
+        fun collect(badge: StreamBadge) {
+            val key = badge.dedupeKey()
+            if (key !in matched) matched[key] = badge
+        }
+        val groupsMatchedByPlayback = mutableSetOf<String>()
+        if (playbackCandidate != null) {
+            val normalized = playbackCandidate.replace(WHITESPACE_PATTERN, " ")
+            for (filter in filters) {
+                if (filter.regex.containsMatchIn(normalized)) {
+                    collect(filter.badge)
+                    if (filter.groupId.isNotBlank()) groupsMatchedByPlayback += filter.groupId
+                }
+            }
+        }
+        if (metaCandidates.isNotEmpty()) {
+            val metaFilters = if (groupsMatchedByPlayback.isEmpty()) {
+                filters
+            } else {
+                filters.filter { it.groupId.isBlank() || it.groupId !in groupsMatchedByPlayback }
+            }
+            if (metaFilters.isNotEmpty()) {
+                for (badge in matchedBadges(metaCandidates, metaFilters)) {
+                    collect(badge)
+                }
+            }
+        }
+        // Restore the pack's filter order so PlayerBadges (which truncates from the right)
+        // does not push a high-priority badge to the end just because it matched in phase 2.
+        val filterOrder = filters.withIndex().associate { (i, f) -> f.badge.dedupeKey() to i }
+        return matched.values.sortedBy { filterOrder[it.dedupeKey()] ?: Int.MAX_VALUE }
     }
 
     fun badgeMatchCandidates(stream: StreamItem): List<String> {
@@ -264,7 +310,7 @@ object StreamBadgeMatcher {
             stream.sourceName,
             stream.addonName,
         )
-            .map { it.trim() }
+            .map { it.replace(WHITESPACE_PATTERN, " ").trim() }
             .filter { it.isNotBlank() }
             .distinct()
 
