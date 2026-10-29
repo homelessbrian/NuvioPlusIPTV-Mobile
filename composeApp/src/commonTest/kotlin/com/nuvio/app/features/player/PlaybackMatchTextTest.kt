@@ -6,6 +6,8 @@ import com.nuvio.app.features.streams.StreamBadgeMatcher
 import com.nuvio.app.features.streams.StreamBadgeRules
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class PlaybackMatchTextTest {
     private val filters = StreamBadgeMatcher.compile(
@@ -90,35 +92,32 @@ class PlaybackMatchTextTest {
 
     @Test
     fun dtsHdMaNotTriggeredByGermanLabel() {
-        // "German DTS-HD HRA 7.1" must NOT produce DTS-HD MA; "ma" appears in "German" but
-        // that is not a word-boundary match.
         val info = PlayerMediaInfo(
             audioCodec = "DTS-HD",
             audioProfiles = listOf("DTS-HD"),
             audioChannels = 8,
         )
         val text = playbackMatchText(info, listOf("ger", "German"))
-        assertEquals(false, text.contains("DTS-HD MA"), "DTS-HD MA should not appear for German DTS-HD HRA")
-        assertEquals(true, text.contains("DTS-HD"), "DTS-HD should still appear")
+        assertFalse(text.contains("DTS-HD MA"), "DTS-HD MA should not appear for German DTS-HD HRA")
+        assertTrue(text.contains("DTS-HD"), "DTS-HD should still appear")
     }
 
     @Test
     fun dtsHdMaAndDtsXBothAppear() {
-        // A label with both DTS-HD MA and DTS:X should yield both tokens.
         val info = PlayerMediaInfo(
             audioCodec = "DTS",
             audioProfiles = listOf("DTS-HD MA", "DTS:X"),
             audioChannels = 8,
         )
         val text = playbackMatchText(info, emptyList())
-        assertEquals(true, text.contains("DTS-HD MA"), "DTS-HD MA should appear")
-        assertEquals(true, text.contains("DTS:X"), "DTS:X should appear")
+        assertTrue(text.contains("DTS-HD MA"), "DTS-HD MA should appear")
+        assertTrue(text.contains("DTS:X"), "DTS:X should appear")
     }
 
     @Test
     fun pcmVariantsMapToPcm() {
         val info = PlayerMediaInfo(audioCodec = "PCM")
         val text = playbackMatchText(info, emptyList())
-        assertEquals(true, text.contains("PCM"))
+        assertTrue(text.contains("PCM"))
     }
 }
