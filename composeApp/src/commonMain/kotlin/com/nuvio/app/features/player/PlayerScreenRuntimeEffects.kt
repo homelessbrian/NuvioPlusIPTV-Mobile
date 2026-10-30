@@ -665,7 +665,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                     )
                 }
             }
-            apiSkipIntervals = intervals
+            apiSkipIntervals = intervals ?: return@launch
             recomputeMergedSkipIntervals()
         }
     }

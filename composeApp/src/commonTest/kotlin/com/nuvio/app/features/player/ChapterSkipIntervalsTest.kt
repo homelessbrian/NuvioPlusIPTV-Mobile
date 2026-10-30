@@ -127,4 +127,13 @@ class ChapterSkipIntervalsTest {
         val chapters = chapters(0L to "Introduction", 300_000L to "Chapter 2")
         assertTrue(ChapterSkipIntervals.fromChapters(chapters, durationMs).isEmpty())
     }
+
+    @Test
+    fun lastChapterUsesDurationAsEndTime() {
+        val chapters = chapters(0L to "Episode", 1_200_000L to "ED")
+        val intervals = ChapterSkipIntervals.fromChapters(chapters, durationMs)
+        val ending = intervals.find { it.type == "outro" }
+        // (1440 - 1200) = 240s = exactly at MAX_DURATION limit
+        assertEquals(durationMs / 1000.0, ending!!.endTime)
+    }
 }

@@ -211,7 +211,7 @@ object SkipIntroRepository {
         if (this == null) return null
         val start = startSec ?: startMs?.let { it / 1000.0 }
         val end = endSec ?: endMs?.let { it / 1000.0 }
-        if (start == null || end == null || end <= start) return null
+        if (start == null || end == null || !start.isFinite() || !end.isFinite() || start < 0 || end <= start) return null
         return SkipInterval(startTime = start, endTime = end, type = type, provider = "introdb")
     }
 
@@ -258,7 +258,9 @@ object SkipIntroRepository {
                     val endTime = sorted.getOrNull(i + 1)?.at ?: Double.MAX_VALUE
                     val type = when (ts.type.name.lowercase()) {
                         "intro", "new intro" -> "op"
-                        "credits" -> "ed"
+                        "credits", "new credits" -> "ed"
+                        "mixed intro" -> "mixed-op"
+                        "mixed credits" -> "mixed-ed"
                         "recap" -> "recap"
                         else -> return@mapIndexedNotNull null
                     }
