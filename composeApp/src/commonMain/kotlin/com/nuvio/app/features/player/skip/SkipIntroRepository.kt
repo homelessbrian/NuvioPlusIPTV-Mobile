@@ -193,13 +193,6 @@ object SkipIntroRepository {
         return chosen.values.toList()
     }
 
-    private fun segmentCategory(type: String): String? = when (type.lowercase()) {
-        "intro", "op", "mixed-op" -> "opening"
-        "outro", "ed", "mixed-ed", "credits", "ending" -> "ending"
-        "recap" -> "recap"
-        else -> null
-    }
-
     private suspend fun fetchFromIntroDb(imdbId: String, season: Int, episode: Int): List<SkipInterval> {
         return try {
             val data = SkipIntroApi.getIntroDbSegments(imdbId, season, episode)
@@ -350,4 +343,11 @@ internal suspend fun resolveMovieSkipImdbId(
             else -> null
         }?.trim()?.takeIf { imdbPattern.matches(it) }
     }
+}
+
+internal fun segmentCategory(type: String): String? = when (type.lowercase()) {
+    "intro", "op", "mixed-op" -> "opening"
+    "outro", "ed", "mixed-ed", "credits", "ending" -> "ending"
+    "recap" -> "recap"
+    else -> null
 }
