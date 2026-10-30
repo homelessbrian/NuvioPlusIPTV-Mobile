@@ -155,4 +155,46 @@ class PlaybackMatchTextTest {
         assertFalse("Polish" in badges, "Polish should NOT appear (group covered by decoder)")
         assertTrue("WebDL" in badges, "WebDL should appear (different group)")
     }
+
+    @Test
+    fun refineAddsAtmosFromFilenameWhenDecoderHasEac3() {
+        val decoder = "DD+ DDP EAC3 5.1"
+        val refined = refinePlaybackText(decoder, listOf("Movie.2160p.DDP5.1.Atmos.mkv"))
+        assertTrue(refined.contains("Atmos"), "Atmos should be added")
+    }
+
+    @Test
+    fun refineAddsDtsXFromFilenameWhenDecoderHasDtsHd() {
+        val decoder = "DTS DTS-HD 7.1"
+        val refined = refinePlaybackText(decoder, listOf("Movie.2160p.DTS-X.mkv"))
+        assertTrue(refined.contains("DTS:X"), "DTS:X should be added")
+    }
+
+    @Test
+    fun refineDoesNotAddAtmosWithoutMatchingBaseCodec() {
+        val decoder = "AAC 2.0"
+        val refined = refinePlaybackText(decoder, listOf("Movie.Atmos.mkv"))
+        assertFalse(refined.contains("Atmos"), "Atmos should NOT be added without EAC3/TrueHD")
+    }
+
+    @Test
+    fun orderRestoredToPackFilterOrderWithSharedImageUrl() {
+        val filters = StreamBadgeMatcher.compile(
+            StreamBadgeRules(
+                imports = listOf(
+                    StreamBadgeImport(
+                        sourceUrl = "https://example.com/badges.json",
+                        filters = listOf(
+                            StreamBadgeFilter(name = "Remux", pattern = "(?i)\\bremux\\b", imageURL = "remux.png"),
+                            StreamBadgeFilter(name = "HEVC", pattern = "(?i)\\bhevc\\b", imageURL = "hevc.png"),
+                            StreamBadgeFilter(name = "HEVC-alt", pattern = "(?i)\\bh\\.?265\\b", imageURL = "hevc.png"),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val badges = StreamBadgeMatcher.matchedPlayerBadges("HEVC 2160p", listOf("Movie.Remux.mkv"), filters)
+        assertEquals("Remux", badges[0].name)
+        assertEquals("HEVC", badges[1].name)
+    }
 }

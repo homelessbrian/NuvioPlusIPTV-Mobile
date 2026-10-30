@@ -3013,7 +3013,7 @@ private fun exoAudioProfiles(audio: Format?): List<String> {
     return buildList {
         if (combined.contains("atmos")) add("Atmos")
         if (combined.contains("dts:x") || combined.contains("dtsx")
-            || mime == "audio/vnd.dts.uhd;profile=p2") add("DTS:X")
+            || mime == MimeTypes.AUDIO_DTS_X) add("DTS:X")
         val isDtsHd = combined.contains("dts-hd") || combined.contains("dtshd")
             || codecs.startsWith("dtsh") || codecs.startsWith("dtsl")
         if (codecs.startsWith("dtsl") || (isDtsHd && DTS_HD_MA_LABEL.containsMatchIn(combined))) add("DTS-HD MA")

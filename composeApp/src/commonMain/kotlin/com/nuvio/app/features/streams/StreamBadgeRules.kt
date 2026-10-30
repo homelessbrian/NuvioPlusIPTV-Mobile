@@ -250,37 +250,22 @@ object StreamBadgeMatcher {
         filters: List<CompiledStreamBadgeFilter>
     ): List<StreamBadge> {
         if (filters.isEmpty()) return emptyList()
+        val playback = playbackCandidate?.replace(WHITESPACE_PATTERN, " ")
+        val meta = metaCandidates.map { it.replace(WHITESPACE_PATTERN, " ") }
+        val playbackHits = filters.map { playback != null && it.regex.containsMatchIn(playback) }
+        val coveredGroups = filters.filterIndexed { i, f -> playbackHits[i] && f.groupId.isNotBlank() }
+            .mapTo(hashSetOf()) { it.groupId }
         val matched = linkedMapOf<String, StreamBadge>()
-        fun collect(badge: StreamBadge) {
-            val key = badge.dedupeKey()
-            if (key !in matched) matched[key] = badge
-        }
-        val groupsMatchedByPlayback = mutableSetOf<String>()
-        if (playbackCandidate != null) {
-            val normalized = playbackCandidate.replace(WHITESPACE_PATTERN, " ")
-            for (filter in filters) {
-                if (filter.regex.containsMatchIn(normalized)) {
-                    collect(filter.badge)
-                    if (filter.groupId.isNotBlank()) groupsMatchedByPlayback += filter.groupId
-                }
+        filters.forEachIndexed { i, filter ->
+            val hit = playbackHits[i] ||
+                (filter.groupId.isBlank() || filter.groupId !in coveredGroups) &&
+                meta.any { filter.regex.containsMatchIn(it) }
+            if (hit) {
+                val key = filter.badge.dedupeKey()
+                if (key !in matched) matched[key] = filter.badge
             }
         }
-        if (metaCandidates.isNotEmpty()) {
-            val metaFilters = if (groupsMatchedByPlayback.isEmpty()) {
-                filters
-            } else {
-                filters.filter { it.groupId.isBlank() || it.groupId !in groupsMatchedByPlayback }
-            }
-            if (metaFilters.isNotEmpty()) {
-                for (badge in matchedBadges(metaCandidates, metaFilters)) {
-                    collect(badge)
-                }
-            }
-        }
-        // Restore the pack's filter order so PlayerBadges (which truncates from the right)
-        // does not push a high-priority badge to the end just because it matched in phase 2.
-        val filterOrder = filters.withIndex().associate { (i, f) -> f.badge.dedupeKey() to i }
-        return matched.values.sortedBy { filterOrder[it.dedupeKey()] ?: Int.MAX_VALUE }
+        return matched.values.toList()
     }
 
     fun badgeMatchCandidates(stream: StreamItem): List<String> {
