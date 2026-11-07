@@ -420,7 +420,28 @@ internal object LiveTvRepository {
 
     // ---------------------------------------------------------------- channels
 
+    /**
+     * A channel renamed in the playlist (by the provider or a playlist editor) gets a new key.
+     * This moves favorites, hidden channels, groups you made, renames, guide choices and so on
+     * over to it (see [RenamedChannels]). [before]: each channel's stream link before the
+     * playlists were read again, null when there's no earlier list. Without one, any channel can
+     * be the match, so that's only done once per device (for channels renamed before this existed).
+     */
+    private fun carryOverRenamedChannels(before: Map<String, String>?, now: List<LiveChannel>) {
+        runCatching {
+            if (now.isEmpty()) return
+            val firstTime = !prefs.renamedChannelsChecked()
+            if (before == null && !firstTime) return
+            val current = now.mapTo(HashSet(now.size * 2)) { it.key }
+            val lost = prefs.channelKeysInUse().filter { it !in current }
+            val moves = RenamedChannels.match(lost, now, before.orEmpty(), onlyNew = !firstTime)
+            if (moves.isNotEmpty()) prefs.moveChannelKeys(moves)
+            if (firstTime) prefs.setRenamedChannelsChecked()
+        }
+    }
+
     private suspend fun buildChannels() = withContext(Dispatchers.Default) {
+        val before = _channels.value.takeIf { it.isNotEmpty() }?.associate { it.key to it.url }
         val playlists = prefs.currentPlaylists().filter { it.liveEnabled }
         val multi = playlists.size > 1
         val out = ArrayList<LiveChannel>()
@@ -471,6 +492,7 @@ internal object LiveTvRepository {
             }
         }
         _channels.value = out
+        carryOverRenamedChannels(before, out)
     }
 
     /** The chunks of a file as lines (a line may span two chunks). */

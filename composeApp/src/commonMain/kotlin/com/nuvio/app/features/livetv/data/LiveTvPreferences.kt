@@ -143,6 +143,8 @@ internal object LiveTvKeys {
     const val groupPlaylistHeadings = "group_playlist_headings"
     /** This device has had Group by Playlist turned on once (per device, never synced). */
     const val groupPlaylistTurnedOn = "group_playlist_turned_on_once"
+    /** This device has looked once for channels renamed before renames were followed (per device). */
+    const val renamedChannelsChecked = "renamed_channels_checked"
     /** This device only: ids of playlists and guides removed here, not yet passed on by sync. */
     const val removedSources = "removed_sources"
     const val nameRemovals = "name_removals"
@@ -237,7 +239,7 @@ internal object LiveTvKeys {
         "channel_quality", "developer_tools", "recording_storage",
         "phone_channel_logos", "phone_channel_names", "phone_channel_numbers"
     )
-    private val PROFILE_SUFFIX = Regex("""_p\d+$""")
+    internal val PROFILE_SUFFIX = Regex("""_p\d+$""")
 
     /** Also matches each profile's own copy ("recent_p2"). */
     val SYNC_EXCLUDED: Set<String> = object : AbstractSet<String>() {
@@ -1382,6 +1384,91 @@ internal open class LiveTvPreferencesStore {
     }
 
     fun clearFavorites() = edit { it[my(LiveTvKeys.favorites)] = LiveTvCodec.encodeStringList(emptyList()) }
+
+    // ---------- Channels renamed in the playlist ----------
+    // Everything kept per channel key, in every profile: favorites, recents, last channels,
+    // hidden channels, groups you made, channel order and copies, reminders, and the per-channel
+    // renames, logos, numbers, guide choices, picture shapes, audio and quality.
+
+    private val keyLists = setOf(LiveTvKeys.favorites, LiveTvKeys.recent)
+    private val keySingles = setOf(LiveTvKeys.lastChannel, LiveTvKeys.previousChannel)
+    private val keyListMaps = setOf(LiveTvKeys.channelOrder, LiveTvKeys.channelCopies)
+    private val keyMaps = setOf(
+        LiveTvKeys.channelNames, LiveTvKeys.channelLogos, LiveTvKeys.channelNumbers, LiveTvKeys.epgOverrides,
+        LiveTvKeys.pictureShapes, LiveTvKeys.channelAudio, LiveTvKeys.channelQuality
+    )
+
+    fun renamedChannelsChecked(): Boolean = _device.value.bool(LiveTvKeys.renamedChannelsChecked) == true
+
+    fun setRenamedChannelsChecked() = editDevice { it[LiveTvKeys.renamedChannelsChecked] = true }
+
+    /** Every channel key something is saved for (see above). */
+    fun channelKeysInUse(): Set<String> {
+        val out = HashSet<String>()
+        fun collect(p: Map<String, PrefValue>) = p.forEach { (k, v) ->
+            val base = k.replace(LiveTvKeys.PROFILE_SUFFIX, "")
+            if (v is PrefValue.StringSet) {
+                if (base == LiveTvKeys.hiddenChannels) out += v.value
+                return@forEach
+            }
+            val raw = (v as? PrefValue.Str)?.value ?: return@forEach
+            when (base) {
+                in keyLists -> out += LiveTvCodec.decodeStringList(raw)
+                in keySingles -> raw.takeIf { it.isNotEmpty() }?.let { out += it }
+                LiveTvKeys.customGroups -> LiveTvCodec.decodeCustomGroups(raw).forEach { out += it.channelKeys }
+                in keyListMaps -> LiveTvCodec.decodeListMap(raw).values.forEach { out += it }
+                LiveTvKeys.reminders -> LiveTvCodec.decodeReminders(raw).forEach { out += it.channelKey }
+                in keyMaps -> out += LiveTvCodec.decodeStringMap(raw).keys
+            }
+        }
+        collect(_data.value)
+        collect(_device.value)
+        return out
+    }
+
+    /**
+     * Moves everything saved for each old key ([moves]: old → new) to the new key, in every
+     * profile, in one save. Where the new key already has its own value, that one is kept.
+     */
+    fun moveChannelKeys(moves: Map<String, String>) {
+        if (moves.isEmpty()) return
+        fun m(k: String) = moves[k] ?: k
+        fun <V> moveMap(map: Map<String, V>): Map<String, V> {
+            val out = LinkedHashMap<String, V>()
+            map.forEach { (k, v) -> if (k !in moves) out[k] = v }
+            map.forEach { (k, v) -> moves[k]?.let { nk -> if (nk !in out) out[nk] = v } }
+            return out
+        }
+        fun moveIn(p: MutableMap<String, PrefValue>) {
+            p.entries.toList().forEach { (k, v) ->
+                val base = k.replace(LiveTvKeys.PROFILE_SUFFIX, "")
+                if (v is PrefValue.StringSet) {
+                    if (base != LiveTvKeys.hiddenChannels || v.value.none { it in moves }) return@forEach
+                    p[k] = v.value.mapTo(LinkedHashSet(), ::m)
+                    return@forEach
+                }
+                val raw = (v as? PrefValue.Str)?.value ?: return@forEach
+                // Only saved again when one of the moved keys is really in it.
+                val moved: String? = when (base) {
+                    in keyLists -> LiveTvCodec.decodeStringList(raw).takeIf { l -> l.any { it in moves } }
+                        ?.let { l -> LiveTvCodec.encodeStringList(l.map(::m).distinct()) }
+                    in keySingles -> moves[raw]
+                    LiveTvKeys.customGroups -> LiveTvCodec.decodeCustomGroups(raw).takeIf { l -> l.any { g -> g.channelKeys.any { it in moves } } }
+                        ?.let { l -> LiveTvCodec.encodeCustomGroups(l.map { g -> g.copy(channelKeys = g.channelKeys.map(::m).distinct()) }) }
+                    in keyListMaps -> LiveTvCodec.decodeListMap(raw).takeIf { mp -> mp.values.any { l -> l.any { it in moves } } }
+                        ?.let { mp -> LiveTvCodec.encodeListMap(mp.mapValues { (_, l) -> l.map(::m).distinct() }) }
+                    LiveTvKeys.reminders -> LiveTvCodec.decodeReminders(raw).takeIf { l -> l.any { it.channelKey in moves } }
+                        ?.let { l -> LiveTvCodec.encodeReminders(l.map { it.copy(channelKey = m(it.channelKey)) }) }
+                    in keyMaps -> LiveTvCodec.decodeStringMap(raw).takeIf { mp -> mp.keys.any { it in moves } }
+                        ?.let { mp -> LiveTvCodec.encodeStringMap(moveMap(mp)) }
+                    else -> null
+                }
+                if (moved != null) p[k] = moved
+            }
+        }
+        edit { moveIn(it) }
+        editDevice { moveIn(it) }
+    }
 
     fun clearRecent() = edit { it[my(LiveTvKeys.recent)] = LiveTvCodec.encodeStringList(emptyList()) }
 
