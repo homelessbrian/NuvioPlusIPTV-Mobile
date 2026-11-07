@@ -907,9 +907,9 @@ internal open class LiveTvPreferencesStore {
     // ---------- calendar (synced with the rest of Live TV's settings) ----------
 
     // Each Nuvio profile has its own followed and hidden shows, the same as on the TV: the first profile
-    // keeps the original keys; another profile sees the first profile's list until it changes its own.
+    // keeps the original keys; another profile starts with an empty list of its own.
     private fun mineOrShared(p: Map<String, PrefValue>, key: String, id: Int): String =
-        (if (id <= 1) p.str(key) else (p.str(my(key, id)) ?: p.str(key))) ?: ""
+        (if (id <= 1) p.str(key) else p.str(my(key, id))) ?: ""
 
     val calendarFollows: Flow<String> = combine(_data, _profile) { p, id -> mineOrShared(p, LiveTvKeys.calendarFollows, id) }.distinctUntilChanged()
     fun calendarFollowsNow(): String = mineOrShared(_data.value, LiveTvKeys.calendarFollows, currentProfile)
