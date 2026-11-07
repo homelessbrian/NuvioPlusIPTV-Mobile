@@ -548,6 +548,8 @@ internal open class LiveTvPreferencesStore {
             _data.value = load()?.toMap() ?: emptyMap()
             _device.value = loadDevice()?.toMap() ?: emptyMap()
         }
+        // A profile chosen before the saved data was loaded gets its first-time copy now.
+        runCatching { seedProfile(_profile.value) }
         runCatching { turnOnPlaylistGroupsOnce() }
     }
 
