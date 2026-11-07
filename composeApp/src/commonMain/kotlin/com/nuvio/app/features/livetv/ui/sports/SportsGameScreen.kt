@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +86,8 @@ import com.nuvio.app.features.livetv.sports.LeagueKind
 import com.nuvio.app.features.livetv.sports.ScoringPlay
 import com.nuvio.app.features.livetv.sports.Side
 import com.nuvio.app.features.livetv.sports.Sport
+import com.nuvio.app.features.livetv.sports.ChannelPickerSearchResult
+import com.nuvio.app.features.livetv.sports.channelPickerSearchResults
 import com.nuvio.app.features.livetv.sports.SportsCatalog
 import com.nuvio.app.features.livetv.sports.SportsEvent
 import com.nuvio.app.features.livetv.sports.SportsMatcher
@@ -93,6 +96,7 @@ import com.nuvio.app.features.livetv.sports.SportsRepository
 import com.nuvio.app.features.livetv.sports.Standings
 import com.nuvio.app.features.livetv.sports.TeamInfo
 import com.nuvio.app.features.livetv.ui.ChannelLogo
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
@@ -565,10 +569,11 @@ private fun FixChannelDialog(ev: SportsEvent, matches: List<ChannelMatch>, onDis
 internal fun ChannelPickerDialog(title: String, onPick: (LiveChannel) -> Unit, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
     val all = remember { SportsRepository.channelsForPicker() }
-    val shown = remember(query, all) {
-        val q = query.trim()
-        if (q.isEmpty()) all.take(60) else all.filter { it.name.contains(q, true) }.take(120)
+    var result by remember(all) { mutableStateOf<ChannelPickerSearchResult<LiveChannel>?>(null) }
+    LaunchedEffect(all) {
+        channelPickerSearchResults(all, snapshotFlow { query }) { it.name }.collect { result = it }
     }
+    val shown = result?.forQuery(query).orEmpty()
     DialogSurface(onDismissRequest = onDismiss, title = title) {
         NuvioInputField(value = query, onValueChange = { query = it }, placeholder = "Channel name")
         LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s4)) {
