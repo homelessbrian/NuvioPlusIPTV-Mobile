@@ -56,6 +56,7 @@ import com.nuvio.app.features.livetv.record.LiveTvRecorder
 import com.nuvio.app.features.livetv.record.RecordingPlatform
 import com.nuvio.app.features.livetv.record.RecordingRules
 import com.nuvio.app.features.livetv.sports.SportsRepository
+import com.nuvio.app.features.livetv.sports.SportsScoreDelay
 import com.nuvio.app.features.livetv.ui.sports.GameAlertsRow
 import com.nuvio.app.features.livetv.ui.sports.GameAlertsSheet
 import com.nuvio.app.features.livetv.parental.ParentalControls
@@ -247,6 +248,12 @@ import nuvio.composeapp.generated.resources.action_save
 import nuvio.composeapp.generated.resources.livetv_sports_show
 import nuvio.composeapp.generated.resources.livetv_sports_show_description
 import nuvio.composeapp.generated.resources.livetv_sports_hide_scores
+import nuvio.composeapp.generated.resources.livetv_sports_score_delay
+import nuvio.composeapp.generated.resources.livetv_sports_score_delay_description
+import nuvio.composeapp.generated.resources.livetv_sports_score_delay_off
+import nuvio.composeapp.generated.resources.livetv_sports_score_delay_seconds
+import nuvio.composeapp.generated.resources.livetv_sports_score_delay_one_minute
+import nuvio.composeapp.generated.resources.livetv_sports_score_delay_minutes
 import nuvio.composeapp.generated.resources.livetv_sports_hide_scores_description
 import nuvio.composeapp.generated.resources.livetv_sports_score_chip
 import nuvio.composeapp.generated.resources.livetv_sports_score_chip_description
@@ -327,6 +334,7 @@ private sealed interface LiveDialog {
     data object ParentalGroups : LiveDialog
     data object Reminders : LiveDialog
     data object ReminderLead : LiveDialog
+    data object ScoreDelay : LiveDialog
 }
 
 /** The Live TV page in Settings: playlists, guides, watching options, Google Drive backup. */
@@ -684,6 +692,16 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
                     isTablet = isTablet,
                     onCheckedChange = { on -> SportsRepository.updateSettings { it.copy(hideScores = on) } },
                 )
+                if (!sports.hideScores) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.livetv_sports_score_delay),
+                        description = stringResource(Res.string.livetv_sports_score_delay_description),
+                        isTablet = isTablet,
+                        trailingContent = { ValueLabel(scoreDelayLabel(sports.scoreDelaySeconds)) },
+                        onClick = { dialog = LiveDialog.ScoreDelay },
+                    )
+                }
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.livetv_sports_score_chip),
@@ -1189,6 +1207,12 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
             selected = reminderLead,
             onDismiss = close,
         ) { v -> LiveTvPreferences.setReminderLeadMinutes(v) }
+        LiveDialog.ScoreDelay -> ChoiceDialog(
+            title = stringResource(Res.string.livetv_sports_score_delay),
+            options = SportsScoreDelay.CHOICES.map { it to scoreDelayLabel(it) },
+            selected = sports.scoreDelaySeconds,
+            onDismiss = close,
+        ) { v -> SportsRepository.updateSettings { it.copy(scoreDelaySeconds = v) } }
     }
 }
 
@@ -1198,6 +1222,14 @@ private fun ValueLabel(text: String) {
 }
 
 private fun minutesLabel(m: Int) = if (m == 0) "None" else if (m == 1) "1 minute" else "$m minutes"
+
+@Composable
+private fun scoreDelayLabel(seconds: Int): String = when {
+    seconds <= 0 -> stringResource(Res.string.livetv_sports_score_delay_off)
+    seconds < 60 -> stringResource(Res.string.livetv_sports_score_delay_seconds, seconds)
+    seconds == 60 -> stringResource(Res.string.livetv_sports_score_delay_one_minute)
+    else -> stringResource(Res.string.livetv_sports_score_delay_minutes, seconds / 60)
+}
 
 @Composable
 private fun leadLabel(m: Int): String = if (m == 0) stringResource(Res.string.livetv_reminder_lead_at_start) else stringResource(Res.string.livetv_reminder_lead_minutes, m)

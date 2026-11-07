@@ -2866,6 +2866,12 @@
     <string name="livetv_sports_settings">Sports settings</string>
     <string name="livetv_sports_hide_scores">Hide scores</string>
     <string name="livetv_sports_hide_scores_description">No scores or results anywhere in Sports (for watching later)</string>
+    <string name="livetv_sports_score_delay">Score Delay</string>
+    <string name="livetv_sports_score_delay_description">IPTV runs behind the live game. Scores, game clocks, results and scoring alerts wait this long so they don't show before you see it</string>
+    <string name="livetv_sports_score_delay_off">Off</string>
+    <string name="livetv_sports_score_delay_seconds">%1$d seconds</string>
+    <string name="livetv_sports_score_delay_one_minute">1 minute</string>
+    <string name="livetv_sports_score_delay_minutes">%1$d minutes</string>
     <string name="livetv_sports_only_my_channels">Only games on my channels</string>
     <string name="livetv_sports_only_my_channels_description">Leave out games none of your channels show (your teams' games always show)</string>
     <string name="livetv_sports_region">Region</string>

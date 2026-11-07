@@ -172,6 +172,8 @@ data class SportsSettings(
     /** "" = from the TV's own country. */
     val region: String = "",
     val hideScores: Boolean = false,
+    /** Score Delay: scores, clocks and results show this many seconds late, to match an IPTV stream's delay (0 = off). */
+    val scoreDelaySeconds: Int = 30,
     val scoreOnInfoBar: Boolean = true,
     val bestChannelFirst: Boolean = true,
     val remindMyTeams: Boolean = true,
@@ -207,6 +209,7 @@ data class SportsSettings(
         .put("showInSidebar", showInSidebar)
         .put("region", region)
         .put("hideScores", hideScores)
+        .put("scoreDelaySeconds", scoreDelaySeconds)
         .put("scoreOnInfoBar", scoreOnInfoBar)
         .put("bestChannelFirst", bestChannelFirst)
         .put("remindMyTeams", remindMyTeams)
@@ -236,6 +239,7 @@ data class SportsSettings(
                     showInSidebar = o.optBoolean("showInSidebar", d.showInSidebar),
                     region = o.optString("region", ""),
                     hideScores = o.optBoolean("hideScores", d.hideScores),
+                    scoreDelaySeconds = o.optInt("scoreDelaySeconds", d.scoreDelaySeconds).coerceAtLeast(0),
                     scoreOnInfoBar = o.optBoolean("scoreOnInfoBar", d.scoreOnInfoBar),
                     bestChannelFirst = o.optBoolean("bestChannelFirst", d.bestChannelFirst),
                     remindMyTeams = o.optBoolean("remindMyTeams", d.remindMyTeams),
