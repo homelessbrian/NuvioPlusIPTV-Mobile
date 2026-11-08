@@ -96,6 +96,8 @@ internal object LiveTvRepository {
 
     private var initialized = false
     private var firstCheckDone = false
+    /** When the last automatic check finished (see [refreshIfStale]). */
+    private var lastAutoCheckAt = 0L
     private val embeddedEpgUrls = HashMap<String, List<String>>()
     private var refreshJob: Job? = null
 
@@ -108,12 +110,12 @@ internal object LiveTvRepository {
         scope.launch {
             runCatching { mutex.withLock { rebuildLocked() } }
             if (updateCheckDelayMs > 0) delay(updateCheckDelayMs)
-            runCatching { refreshInternal(forcePlaylists = false, forceEpg = false) }
+            autoCheck()
             firstCheckDone = true
             // Keep checking while the app stays open: the guide runs out after a day or two.
             while (true) {
                 delay(STALE_CHECK_MS)
-                runCatching { refreshInternal(forcePlaylists = false, forceEpg = false) }
+                autoCheck()
                 runCatching { withContext(Dispatchers.Default) { EpgStore.compact() } }
             }
         }
@@ -122,7 +124,15 @@ internal object LiveTvRepository {
     /** Opening Live TV: update anything past its update time. */
     fun refreshIfStale() {
         if (!firstCheckDone || mutex.isLocked) return
-        scope.launch { runCatching { refreshInternal(forcePlaylists = false, forceEpg = false) } }
+        // Just checked (the start-up check, or Live TV opened a moment ago): nothing can be due yet.
+        if (LiveTvClock.nowMs() - lastAutoCheckAt < RECHECK_GAP_MS) return
+        scope.launch { autoCheck() }
+    }
+
+    /** An automatic check for anything past its update time; remembers when it finished. */
+    private suspend fun autoCheck() {
+        try { runCatching { refreshInternal(forcePlaylists = false, forceEpg = false) } }
+        finally { lastAutoCheckAt = LiveTvClock.nowMs() }
     }
 
     fun refreshAll(force: Boolean = true) {
@@ -846,6 +856,8 @@ internal object LiveTvRepository {
 
     private const val HOUR = 60L * 60L * 1000L
     private const val STALE_CHECK_MS = 30L * 60L * 1000L
+    /** Opening Live TV doesn't check again this soon after the last automatic check. */
+    private const val RECHECK_GAP_MS = 5L * 60L * 1000L
     private const val GUIDE_VERSION = 1
 
     private val PLACEHOLDER_TITLES = Regex(
