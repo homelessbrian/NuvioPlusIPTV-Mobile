@@ -124,6 +124,8 @@ import nuvio.composeapp.generated.resources.livetv_drive_unavailable
 import nuvio.composeapp.generated.resources.livetv_enable
 import nuvio.composeapp.generated.resources.livetv_epg_refresh
 import nuvio.composeapp.generated.resources.livetv_epg_refresh_description
+import nuvio.composeapp.generated.resources.livetv_show_update_banners
+import nuvio.composeapp.generated.resources.livetv_show_update_banners_description
 import nuvio.composeapp.generated.resources.livetv_field_name
 import nuvio.composeapp.generated.resources.livetv_field_password
 import nuvio.composeapp.generated.resources.livetv_field_server
@@ -500,6 +502,14 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
                     isTablet = isTablet,
                     trailingContent = { ValueLabel(hoursLabel(settings.epgRefreshHours)) },
                     onClick = { dialog = LiveDialog.EpgRefresh },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.livetv_show_update_banners),
+                    description = stringResource(Res.string.livetv_show_update_banners_description),
+                    checked = settings.showImportProgress,
+                    isTablet = isTablet,
+                    onCheckedChange = { on -> update { it.copy(showImportProgress = on) } },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
