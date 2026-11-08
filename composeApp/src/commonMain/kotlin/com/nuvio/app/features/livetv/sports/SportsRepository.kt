@@ -366,7 +366,15 @@ internal object SportsRepository {
         LiveTvPlayback.gameFailover = { key, tried -> nextChannelForGame(key, tried) }
         watchDelayedScores()
         scope.launch {
-            runCatching { withContext(Dispatchers.Default) { loadCache() } }
+            // The Sports page's own leagues (yours and your region's) first, so the page has
+            // something to show sooner; everything else after.
+            val first = runCatching {
+                val f = SportsFollows.fromJson(prefs.sportsMineJson.first())
+                val st = SportsSettings.fromJson(prefs.sportsSettingsJson.first())
+                SportsCatalog.leagues.filter { it.espnPath != null && (isMine(it, f) || SportsCatalog.shown(it, st)) }.map { it.id }.toSet()
+            }.getOrDefault(emptySet())
+            runCatching { withContext(Dispatchers.Default) { leagueData.update { it + readSavedScores(first) } } }
+            runCatching { withContext(Dispatchers.Default) { loadCache(skip = first) } }
             cacheReady.value = true
             runCatching { updateLoop() }
         }
@@ -842,18 +850,34 @@ internal object SportsRepository {
         }
     }
 
-    private fun loadCache() {
+    /** The saved scores of [ids] (leagues read from their files; too old ones are left out). */
+    private fun readSavedScores(ids: Set<String>): Map<String, LeagueData> {
         val now = LiveTvClock.nowMs()
         val m = HashMap<String, LeagueData>()
         for (l in SportsCatalog.leagues) {
-            if (l.espnPath == null) continue
-            val text = LiveTvFiles.readSmall(DIR, "sb_${safe(l.id)}.json") ?: continue
-            runCatching {
-                val nl = text.indexOf('\n')
-                val at = text.substring(0, nl).toLong()
-                if (now - at > 2 * DAY) return@runCatching
-                m[l.id] = LeagueData(text.substring(nl + 1).split(RAW_SEP).flatMap { SportsFeeds.parseScoreboard(l, it) }.distinctBy { it.id }, at, null)
-            }
+            if (l.espnPath == null || l.id !in ids) continue
+            readSavedLeague(l, now)?.let { m[l.id] = it }
+        }
+        return m
+    }
+
+    private fun readSavedLeague(l: League, now: Long): LeagueData? {
+        val text = LiveTvFiles.readSmall(DIR, "sb_${safe(l.id)}.json") ?: return null
+        return runCatching {
+            val nl = text.indexOf('\n')
+            val at = text.substring(0, nl).toLong()
+            if (now - at > 2 * DAY) return@runCatching null
+            LeagueData(text.substring(nl + 1).split(RAW_SEP).flatMap { SportsFeeds.parseScoreboard(l, it) }.distinctBy { it.id }, at, null)
+        }.getOrNull()
+    }
+
+    /** Everything else saved last time ([skip]: leagues whose scores were already read). */
+    private fun loadCache(skip: Set<String> = emptySet()) {
+        val now = LiveTvClock.nowMs()
+        val m = HashMap<String, LeagueData>()
+        for (l in SportsCatalog.leagues) {
+            if (l.espnPath == null || l.id in skip) continue
+            readSavedLeague(l, now)?.let { m[l.id] = it }
         }
         runCatching { LiveTvFiles.readSmall(DIR, "tsdb_index.json")?.let { applyTsdbIndex(it) } }
         val fx = HashMap<String, LeagueData>()
@@ -865,7 +889,8 @@ internal object SportsRepository {
         runCatching {
             LiveTvFiles.readSmall(DIR, "fx_wrestling.json")?.let { text -> SportsFeeds.parseWrestling(text).forEach { (id, list) -> fx[id] = LeagueData(list, 0L, null) } }
         }
-        leagueData.value = m
+        // Added to the page's own leagues, read first (see start).
+        leagueData.update { it + m }
         fixtureData.value = fx
         val wk = HashMap<String, LeagueData>()
         for (l in SportsCatalog.leagues) {
@@ -970,6 +995,8 @@ internal object SportsRepository {
                 if (_matches.value.isEmpty()) runCatching { restoreMatches(saved, chans) }
             }
         }
+        // Not before the saved games are read: a search with no games found nothing, then ran again.
+        cacheReady.first { it }
         combine(trigger, matchKick) { t, k -> t to k }.debounce { if (_matches.value.isEmpty()) 0L else 1_500L }.collect {
             // Put off (not lost): it runs when the app is back in front / the update is done.
             if (!foreground.value && viewers.value == 0) { matchMissed = true; return@collect }
