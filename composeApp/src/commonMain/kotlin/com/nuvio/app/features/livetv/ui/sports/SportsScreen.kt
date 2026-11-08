@@ -38,6 +38,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,16 +63,25 @@ import com.nuvio.app.features.livetv.sports.ChannelMatch
 import com.nuvio.app.features.livetv.sports.GameState
 import com.nuvio.app.features.livetv.sports.League
 import com.nuvio.app.features.livetv.sports.Sport
-import com.nuvio.app.features.livetv.sports.SportsCatalog
 import com.nuvio.app.features.livetv.sports.SportsDates
 import com.nuvio.app.features.livetv.sports.SportsEvent
 import com.nuvio.app.features.livetv.sports.SportsFollows
 import com.nuvio.app.features.livetv.sports.SportsMatcher
 import com.nuvio.app.features.livetv.sports.SportsReminders
 import com.nuvio.app.features.livetv.sports.SportsRepository
-import com.nuvio.app.features.livetv.sports.SportsRows
+import com.nuvio.app.features.livetv.sports.MyTeamsPage
+import com.nuvio.app.features.livetv.sports.MySportsInputs
+import com.nuvio.app.features.livetv.sports.PreparedSportsPage
+import com.nuvio.app.features.livetv.sports.SportsDayInputs
+import com.nuvio.app.features.livetv.sports.SportsDayPage
+import com.nuvio.app.features.livetv.sports.SportsDayQuery
+import com.nuvio.app.features.livetv.sports.SportsDaySections
+import com.nuvio.app.features.livetv.sports.buildMySportsPage
+import com.nuvio.app.features.livetv.sports.buildSportsDayPage
+import com.nuvio.app.features.livetv.sports.prepareSportsPages
 import com.nuvio.app.features.livetv.sports.SportsSettings
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.livetv_sports
 import nuvio.composeapp.generated.resources.livetv_sports_all_events
@@ -175,6 +186,9 @@ fun SportsScreen(
 
 // ------------------------------------------------------------------ My Sports
 
+private val emptyMySportsPage = MyTeamsPage(emptyList(), emptyList())
+private val emptySportsDayPage = SportsDayPage(emptyList(), SportsDaySections())
+
 @Composable
 private fun MySportsTab(
     known: List<SportsEvent>,
@@ -190,7 +204,16 @@ private fun MySportsTab(
     val repo = SportsRepository
     val tables by repo.standings.collectAsStateWithLifecycle()
     LaunchedEffect(follows.teams) { runCatching { repo.loadTeamTables() } }
-    val page = remember(known, follows, now / 60_000L) { SportsRows.build(known, follows, now) { isMine(it, follows) } }
+    val inputs = remember(known, follows, now / 60_000L) { MySportsInputs(known, follows, now) }
+    val currentInputs by rememberUpdatedState(inputs)
+    var prepared by remember { mutableStateOf<PreparedSportsPage<SportsFollows, MyTeamsPage>?>(null) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { currentInputs }.prepareSportsPages({ it.follows }) { input ->
+            buildMySportsPage(input, ::isMine)
+        }.collect { prepared = it }
+    }
+    val ready = prepared?.forQuery(follows)
+    val page = ready ?: emptyMySportsPage
     if (follows.isEmpty) {
         EmptyNote(stringResource(Res.string.livetv_sports_nothing_followed), stringResource(Res.string.livetv_sports_pick_teams), onPick)
         return
@@ -201,7 +224,7 @@ private fun MySportsTab(
         verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
     ) {
         if (page.rows.isEmpty()) {
-            item { Text(stringResource(Res.string.livetv_sports_nothing_today), style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textMuted, modifier = Modifier.padding(NuvioTokens.Space.s16)) }
+            item { Text(if (ready == null) "Getting today's games…" else stringResource(Res.string.livetv_sports_nothing_today), style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textMuted, modifier = Modifier.padding(NuvioTokens.Space.s16)) }
         }
         items(page.rows, key = { it.key }) { row ->
             val place = row.team?.let { t -> tables[t.leagueId]?.placeText(t.teamId) }
@@ -248,13 +271,6 @@ private fun com.nuvio.app.features.livetv.sports.FollowedTeam.toTeamInfo() =
 
 // ------------------------------------------------------------------ All Events
 
-private class DaySections(
-    val weekLong: List<SportsEvent>,
-    val live: List<SportsEvent>,
-    val upcoming: List<SportsEvent>,
-    val finished: List<SportsEvent>,
-)
-
 @Composable
 private fun AllEventsTab(
     events: List<SportsEvent>,
@@ -277,42 +293,21 @@ private fun AllEventsTab(
     val active = remember(settings, follows) { repo.activeLeagues(settings, follows).map { it.id }.toSet() + SportsMatcher.OTHER_ID }
     val hasChannels = LiveTvRepository.channels.collectAsStateWithLifecycle().value.isNotEmpty()
     val filterToChannels = settings.onlyOnMyChannels && hasChannels && matches.isNotEmpty()
-    val dayEvents = remember(events, dayStart, dayEnd, active, filterToChannels, matches, follows, now / 60_000L) {
-        events.filter { ev ->
-            val onDay = when {
-                ev.state == GameState.POST -> {
-                    val finished = if (ev.hasTime) ev.startMs else minOf(ev.endMs ?: ev.startMs, now)
-                    finished in dayStart until dayEnd
-                }
-                ev.hasTime -> ev.startMs in dayStart until dayEnd
-                ev.state == GameState.PRE -> ev.startMs in dayStart until dayEnd
-                else -> dayEnd > now && ev.startMs < dayEnd && (ev.endMs ?: (ev.startMs + 1)) >= dayStart
-            }
-            ev.leagueId in active && onDay &&
-                (!filterToChannels || ev.state == GameState.POST || isMine(ev, follows) || matches[ev.id]?.isNotEmpty() == true)
-        }
+    val query = SportsDayQuery(day, sportFilter, dayStart, dayEnd, active, filterToChannels, follows)
+    val inputs = remember(events, follows, settings, matches, active, filterToChannels, dayStart, dayEnd, query, now / 60_000L) {
+        SportsDayInputs(query, events, settings, matches, now)
     }
-    val sports = remember(dayEvents, settings) {
-        val order = SportsCatalog.sportsOrder(settings)
-        dayEvents.mapNotNull { SportsCatalog.league(it.leagueId)?.sport }.distinct().sortedBy { order.indexOf(it).let { i -> if (i < 0) 99 else i } }
+    val currentInputs by rememberUpdatedState(inputs)
+    var prepared by remember { mutableStateOf<PreparedSportsPage<SportsDayQuery, SportsDayPage>?>(null) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { currentInputs }.prepareSportsPages({ it.query }) { buildSportsDayPage(it, ::isMine) }
+            .collect { prepared = it }
     }
-    val shown = remember(dayEvents, sportFilter) {
-        if (sportFilter == null) dayEvents else dayEvents.filter { SportsCatalog.league(it.leagueId)?.sport?.name == sportFilter }
-    }
-    val leagueRank = remember(settings) { SportsCatalog.ordered(settings).mapIndexed { i, l -> l.id to i }.toMap() }
-    val sections = remember(shown, matches, follows, now / 60_000L, leagueRank) {
-        fun rank(ev: SportsEvent) = leagueRank[ev.leagueId] ?: 999
-        fun airingNow(ev: SportsEvent): Boolean = matches[ev.id]?.any { m -> m.program?.let { now >= it.startMs && now < it.stopMs } == true } == true
-        val weekLong = shown.filter { !it.hasTime && it.state == GameState.LIVE && !airingNow(it) }
-        val weekIds = weekLong.mapTo(HashSet()) { it.id }
-        val live = shown.filter { it.state == GameState.LIVE && it.id !in weekIds }
-            .sortedWith(compareByDescending<SportsEvent> { isMine(it, follows) }.thenByDescending { matches[it.id]?.isNotEmpty() == true }.thenBy { rank(it) }.thenBy { it.startMs })
-        val upcoming = shown.filter { it.state == GameState.PRE || it.state == GameState.OFF }
-            .sortedWith(compareBy<SportsEvent> { if (it.hasTime) it.startMs else Long.MIN_VALUE }.thenByDescending { isMine(it, follows) }.thenBy { rank(it) })
-        val finished = shown.filter { it.state == GameState.POST }
-            .sortedWith(compareByDescending<SportsEvent> { it.startMs }.thenBy { rank(it) })
-        DaySections(weekLong, live, upcoming, finished)
-    }
+    val ready = prepared?.forQuery(query)
+    val page = ready ?: emptySportsDayPage
+    // Keep the existing filter choices available while the newly selected page is prepared.
+    val sports = ready?.sports ?: prepared?.page?.sports.orEmpty()
+    val sections = page.sections
 
     Column(modifier = Modifier.fillMaxSize()) {
         LazyRow(
@@ -353,7 +348,7 @@ private fun AllEventsTab(
             if (empty) {
                 item {
                     Text(
-                        if (loading) "Getting today's games…" else stringResource(Res.string.livetv_sports_nothing_today),
+                        if (ready == null || loading) "Getting today's games…" else stringResource(Res.string.livetv_sports_nothing_today),
                         style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textMuted, modifier = Modifier.padding(vertical = NuvioTokens.Space.s24),
                     )
                 }
