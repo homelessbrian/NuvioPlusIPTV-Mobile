@@ -1,6 +1,9 @@
 package com.nuvio.app.features.livetv.sports
 
 import com.nuvio.app.features.livetv.model.LiveTvClock
+import com.nuvio.app.features.profiles.ProfilePinCrypto
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.Volatile
 import kotlin.math.roundToLong
 
@@ -133,6 +136,76 @@ internal class SportsFeeds {
             out
         }.getOrDefault(emptyMap())
     }
+
+    // ------------------------------------------------------------------ ready-made score files
+
+    /**
+     * nuvio-data's list of its ready-made score files (espn/compact): per league, a fingerprint of
+     * its yesterday-to-tomorrow file ("d") and its week-ahead file ("w"), and when each day was
+     * last asked of ESPN. [day] and [week] are the days the files cover.
+     */
+    class CompactIndex(val day: List<String>, val week: List<String>, val leagues: Map<String, Entry>) {
+        class Entry(val dayHash: String?, val dayStamps: List<Long>, val weekHash: String?, val weekStamps: List<Long>)
+    }
+
+    /** One ready-made file: its games, the league's logo, and the fingerprint of what came. */
+    class CompactFile(val games: List<SportsEvent>, val logo: String?, val hash: String)
+
+    private val compactLock = Mutex()
+    @Volatile private var compactIndexKept: CompactIndex? = null
+    @Volatile private var compactIndexAt = 0L
+
+    /**
+     * The index, asked again at most once a minute (one small request for every league in a
+     * round). The last copy when it can't be reached for a little while; null when there is none,
+     * or it's old (the caller then reads the old way).
+     */
+    suspend fun compactIndex(now: Long): CompactIndex? {
+        val kept = compactIndexKept
+        if (kept != null && now - compactIndexAt < 60_000L) return kept
+        return compactLock.withLock {
+            val again = compactIndexKept
+            if (again != null && now - compactIndexAt < 60_000L) return@withLock again
+            val fresh = runCatching { parseCompactIndex(get(DATA_URL + "espn/compact/index.json")) }.getOrNull()
+            if (fresh != null) {
+                compactIndexKept = fresh
+                compactIndexAt = now
+                fresh
+            } else {
+                // Couldn't be had: the last copy is still fine for a few minutes (its stamps say how fresh).
+                again?.takeIf { now - compactIndexAt < 20 * 60_000L }
+            }
+        }
+    }
+
+    /** One league's ready-made file ("day" or "week"); null when it can't be had or read. */
+    suspend fun compactFile(leagueId: String, window: String): CompactFile? = runCatching {
+        val text = get(DATA_URL + "espn/compact/$window/" + safeFileId(leagueId) + ".json")
+        val o = JSONObject(text)
+        if (o.optInt("v") != 1) return@runCatching null
+        val games = SportsEventCodec.decode(o.optJSONArray("g") ?: return@runCatching null) ?: return@runCatching null
+        CompactFile(games, o.optString("lg").takeIf { it.startsWith("http") }, compactHash(text))
+    }.getOrNull()
+
+    /** The fingerprint nuvio-data gives a ready-made file (the start of its SHA-256). */
+    private fun compactHash(text: String): String = ProfilePinCrypto.sha256Hex(text).take(16)
+
+    private fun parseCompactIndex(text: String): CompactIndex? = runCatching {
+        val o = JSONObject(text)
+        if (o.optInt("v") != 1) return@runCatching null
+        fun days(a: JSONArray?) = if (a == null) emptyList() else (0 until a.length()).map { a.optString(it) }
+        fun stamps(a: JSONArray?) = if (a == null) emptyList() else (0 until a.length()).map { a.optLong(it) * 1000 }
+        val all = o.optJSONObject("leagues") ?: return@runCatching null
+        val map = HashMap<String, CompactIndex.Entry>()
+        all.keys().forEach { id ->
+            val e = all.optJSONObject(id) ?: return@forEach
+            map[id] = CompactIndex.Entry(
+                e.optString("d").ifBlank { null }, stamps(e.optJSONArray("ds")),
+                e.optString("w").ifBlank { null }, stamps(e.optJSONArray("ws"))
+            )
+        }
+        CompactIndex(days(o.optJSONArray("day")), days(o.optJSONArray("week")), map)
+    }.getOrNull()
 
     companion object {
         private const val ESPN = "https://site.api.espn.com/apis/site/v2/sports/"
