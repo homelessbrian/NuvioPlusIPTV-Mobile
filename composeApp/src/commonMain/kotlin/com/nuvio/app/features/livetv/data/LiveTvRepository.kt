@@ -680,9 +680,13 @@ internal object LiveTvRepository {
         _epgLogos.value = logos
         _epgSources.value = sourceLists
         val (from, to) = defaultWindow(now)
-        _programs.value = programs.mapValues { (_, list) ->
-            list.filter { it.stopMs > from && it.startMs < to }.map { EpgProgram(it.startMs, it.stopMs, it.title, episode = it.episode, icon = it.icon) }
-        }.filterValues { it.isNotEmpty() }
+        val copies = GuideWindowCopies(from, to)
+        val window = HashMap<String, List<EpgProgram>>(best.size)
+        best.forEach { (key, c) ->
+            val list = copies.forGuide(c.sourceId, c.xmltvId, c.programs)
+            if (list.isNotEmpty()) window[key] = list
+        }
+        _programs.value = window
         _guideGeneration.value++
     }
 
