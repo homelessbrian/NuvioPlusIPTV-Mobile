@@ -9,7 +9,6 @@ import com.nuvio.app.features.livetv.model.EpgSourceChannels
 import com.nuvio.app.features.livetv.model.LiveChannel
 import com.nuvio.app.features.livetv.model.LiveTvClock
 import com.nuvio.app.features.livetv.model.LiveTvSettings
-import com.nuvio.app.features.livetv.model.LiveUserState
 import com.nuvio.app.features.livetv.model.PlaylistSource
 import io.ktor.http.Url
 import kotlinx.coroutines.CoroutineScope
@@ -21,7 +20,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -87,11 +85,11 @@ internal object LiveTvRepository {
      * The channel list with your renames, numbers, group names, the channel name editor and
      * logo choices applied: what every screen shows.
      */
-    val displayChannels: StateFlow<List<LiveChannel>> = combine(
+    val displayChannels: StateFlow<List<LiveChannel>> = displayChannelChanges(
         _channels, prefs.userState, prefs.settings, _epgLogos,
         prefs.playlists.map { list -> list.filter { it.logoSource == "epg" }.mapTo(HashSet()) { it.id } }.distinctUntilChanged()
-    ) { channels, user, s, logos, preferEpg ->
-        withPickedLogos(withLogos(named(channels, user, s), logos, preferEpg), user.channelLogos)
+    ) { channels, overrides, nameRemovals, logos, preferEpg ->
+        withPickedLogos(withLogos(named(channels, overrides, nameRemovals), logos, preferEpg), overrides.channelLogos)
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     private var initialized = false
@@ -796,8 +794,8 @@ internal object LiveTvRepository {
 
     // ---------------------------------------------------------------- display names and logos
 
-    private fun named(channels: List<LiveChannel>, user: LiveUserState, s: LiveTvSettings): List<LiveChannel> {
-        val terms = ChannelNameEditor.terms(s.nameRemovals)
+    private fun named(channels: List<LiveChannel>, user: ChannelDisplayOverrides, nameRemovals: String): List<LiveChannel> {
+        val terms = ChannelNameEditor.terms(nameRemovals)
         if (user.channelNames.isEmpty() && user.channelNumbers.isEmpty() && user.groupNames.isEmpty() && terms.isEmpty()) return channels
         val spaced = if (terms.isEmpty()) emptyMap() else channels.groupBy { it.sourceId }.mapValues { (_, list) -> ChannelNameEditor.spacePrefixes(list.map { it.name }, terms) }
         val currentKeys = channels.mapTo(HashSet()) { it.key }
