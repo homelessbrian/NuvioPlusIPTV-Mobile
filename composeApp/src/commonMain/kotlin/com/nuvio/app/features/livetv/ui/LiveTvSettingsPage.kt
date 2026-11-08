@@ -505,19 +505,19 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
-                    title = stringResource(Res.string.livetv_show_update_banners),
-                    description = stringResource(Res.string.livetv_show_update_banners_description),
-                    checked = settings.showImportProgress,
-                    isTablet = isTablet,
-                    onCheckedChange = { on -> update { it.copy(showImportProgress = on) } },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
                     title = stringResource(Res.string.livetv_show_tab),
                     description = stringResource(Res.string.livetv_show_tab_description),
                     checked = settings.showInSidebar,
                     isTablet = isTablet,
                     onCheckedChange = { on -> update { it.copy(showInSidebar = on) } },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.livetv_show_update_banners),
+                    description = stringResource(Res.string.livetv_show_update_banners_description),
+                    checked = settings.showImportProgress,
+                    isTablet = isTablet,
+                    onCheckedChange = { on -> update { it.copy(showImportProgress = on) } },
                 )
             }
         }
