@@ -79,7 +79,7 @@ internal object LiveTvCatchup {
         if (!CatchupUrlBuilder.isAvailable(catchup, program.startMs, now)) return null
         val shift = shiftMs(settings)
         val (start, stop) = window(program, offsetMs, now)
-        val zone = playlist?.serverTimezone?.takeIf { it.isNotBlank() }
+        val zone = (playlist?.catchupTimezone?.takeIf { it.isNotBlank() } ?: playlist?.serverTimezone)?.takeIf { it.isNotBlank() }
         val preferHls = preferHls(settings, playlist, now)
         val url = CatchupUrlBuilder.build(
             channel.url, catchup, start - shift, stop - shift, now,

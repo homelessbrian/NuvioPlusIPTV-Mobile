@@ -292,7 +292,7 @@ internal object LiveTvRecordingScheduler {
             val channel = freshChannel(s.channel)
             val catchup = channel.catchup ?: s.channel.catchup
             val settings = LiveTvPreferences.currentSettings()
-            val zone = LiveTvPreferences.currentPlaylists().firstOrNull { it.id == channel.sourceId }?.serverTimezone?.takeIf { it.isNotBlank() }
+            val zone = LiveTvPreferences.currentPlaylists().firstOrNull { it.id == channel.sourceId }?.let { p -> p.catchupTimezone.ifBlank { p.serverTimezone } }?.takeIf { it.isNotBlank() }
             // As when watching catch-up: the guide's shift off, the catch-up shift on.
             val shift = LiveTvCatchup.shiftMs(settings)
             val url = catchup?.let {

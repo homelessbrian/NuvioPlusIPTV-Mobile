@@ -32,6 +32,11 @@ data class PlaylistSource(
     /** Xtream: the server's time zone (from its account info), used for catch-up times. */
     val serverTimezone: String = "",
     /**
+     * The catch-up time zone picked for this playlist (on the TV app; synced) — "" = Automatic,
+     * which uses [serverTimezone]. For providers whose time zone can't be found.
+     */
+    val catchupTimezone: String = "",
+    /**
      * Xtream: when catch-up as HLS (.m3u8) last failed on this provider while TS worked (0: HLS
      * fine). For a week after, catch-up asks for TS straight away (saves a failed try on every
      * replay); then HLS is tried again, in case the provider has added it.
