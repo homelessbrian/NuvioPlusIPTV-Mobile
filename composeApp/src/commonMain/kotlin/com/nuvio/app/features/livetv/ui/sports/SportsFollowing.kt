@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -60,6 +61,7 @@ import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.livetv.sports.ChannelRegions
+import com.nuvio.app.features.livetv.sports.FollowTeamSearchResult
 import com.nuvio.app.features.livetv.sports.League
 import com.nuvio.app.features.livetv.sports.LeagueKind
 import com.nuvio.app.features.livetv.sports.Sport
@@ -70,6 +72,8 @@ import com.nuvio.app.features.livetv.sports.SportsRepository
 import com.nuvio.app.features.livetv.sports.SportsRows
 import com.nuvio.app.features.livetv.sports.SportsSettings
 import com.nuvio.app.features.livetv.sports.TeamInfo
+import com.nuvio.app.features.livetv.sports.knownTeamSearchResults
+import com.nuvio.app.features.livetv.sports.leagueTeamSearchResults
 import com.nuvio.app.features.settings.SettingsGroup
 import com.nuvio.app.features.settings.SettingsGroupDivider
 import com.nuvio.app.features.settings.SettingsNavigationRow
@@ -96,6 +100,7 @@ import nuvio.composeapp.generated.resources.livetv_sports_unfollow
 import nuvio.composeapp.generated.resources.livetv_sports_channels_from
 import nuvio.composeapp.generated.resources.livetv_sports_clear_fixes
 import nuvio.composeapp.generated.resources.livetv_sports_clear_fixes_description
+import kotlinx.coroutines.flow.collect
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -115,12 +120,11 @@ internal fun SportsSearchTab(known: List<SportsEvent>, follows: SportsFollows, a
             l.name.contains(q, true) || l.short.contains(q, true) || l.guideWords.any { it.contains(q, true) }
         }.take(20)
     }
-    val teams = remember(q, known) {
-        if (q.length < 2) emptyList() else known.asSequence().flatMap { it.sides.asSequence() }.map { it.team }
-            .filter { it.fullName.contains(q, true) || it.name.contains(q, true) || it.abbr.equals(q, true) }
-            .distinctBy { SportsCatalog.teamFamily(it.leagueId) + "|" + it.id }
-            .take(30).toList()
+    var teamResult by remember(known) { mutableStateOf<FollowTeamSearchResult?>(null) }
+    LaunchedEffect(known) {
+        knownTeamSearchResults(known, snapshotFlow { query }).collect { teamResult = it }
     }
+    val teams = teamResult?.forQuery(query).orEmpty()
     Column(modifier = Modifier.fillMaxSize()) {
         NuvioInputField(
             value = query, onValueChange = { query = it },
@@ -261,6 +265,12 @@ internal fun TeamPickerSheet(league: League, follows: SportsFollows, onOpenLeagu
     var teams by remember(league.id) { mutableStateOf<List<TeamInfo>?>(null) }
     var filter by remember { mutableStateOf("") }
     LaunchedEffect(league.id) { teams = runCatching { repo.teams(league) }.getOrDefault(emptyList()) }
+    var searchResult by remember(league.id, teams) { mutableStateOf<FollowTeamSearchResult?>(null) }
+    LaunchedEffect(league.id, teams) {
+        teams?.let { loaded ->
+            leagueTeamSearchResults(loaded, snapshotFlow { filter }).collect { searchResult = it }
+        }
+    }
     val followedLeague = league.id in follows.pins || league.id in follows.leagues
     NuvioModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, fullHeight = true) {
         Row(
@@ -281,14 +291,14 @@ internal fun TeamPickerSheet(league: League, follows: SportsFollows, onOpenLeagu
         if (list == null) {
             NuvioLoadingIndicator(modifier = Modifier.padding(NuvioTokens.Space.s24).align(Alignment.CenterHorizontally))
         } else {
-            val shown = list.filter { filter.isBlank() || it.fullName.contains(filter, true) || it.abbr.contains(filter, true) }
+            val shown = if (filter.isBlank()) list else searchResult?.forQuery(filter)
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
                 contentPadding = PaddingValues(horizontal = NuvioTokens.Space.s16, vertical = NuvioTokens.Space.s8, ),
                 verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
             ) {
-                if (shown.isEmpty()) item { Text("No teams to show", style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textMuted) }
-                items(shown, key = { it.key }) { t ->
+                if (shown != null && shown.isEmpty()) item { Text("No teams to show", style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textMuted) }
+                items(shown.orEmpty(), key = { it.key }) { t ->
                     val followed = follows.followedTeam(t) != null
                     FollowRow(
                         title = t.fullName,
