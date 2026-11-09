@@ -106,6 +106,10 @@ jobs:
           echo 'org.gradle.workers.max=3' >> gradle.properties
           ./gradlew :androidApp:assembleFullRelease -Pnuvio.app.versionName="$TAG" -Pnuvio.app.versionCode="$CODE" --stacktrace
 
+      - name: Package OpenVPN 2 corresponding source
+        run: |
+          python3 vpn-android/ci/package-openvpn2-sources.py --output out/openvpn2-corresponding-source.tar.gz
+
       - name: Collect APKs
         env:
           TAG: ${{ steps.ver.outputs.tag }}
@@ -124,7 +128,9 @@ jobs:
           target_commitish: main
           name: Nuvio Mobile + IPTV ${{ steps.ver.outputs.tag }}
           prerelease: true
-          files: out/*.apk
+          files: |
+            out/*.apk
+            out/openvpn2-corresponding-source.tar.gz
           body: ${{ inputs.notes }}
 
       - name: Update the Downloader link
@@ -137,7 +143,7 @@ jobs:
           gh release view downloader -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create downloader -R "$GITHUB_REPOSITORY" --title "$APP_NAME (always the newest version)" \
               --notes "Replaced with the newest build every release." --latest=false --prerelease
-          gh release upload downloader "dl/$APP_NAME.apk" -R "$GITHUB_REPOSITORY" --clobber
+          gh release upload downloader "dl/$APP_NAME.apk" out/openvpn2-corresponding-source.tar.gz -R "$GITHUB_REPOSITORY" --clobber
 
       # Brings the README from dev onto main, so the front page shows the newest one. Only the README
       # changes on main; the app that was just released is untouched.
