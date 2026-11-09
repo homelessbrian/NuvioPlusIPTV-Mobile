@@ -236,6 +236,24 @@ class LiveTvBackupFileTest {
     private fun reason(text: String) = assertIs<BackupFileException>(parseBackupFile(text).exceptionOrNull()).reason
 
     @Test
+    fun updateBannerPreferenceSurvivesFileBackupAndDefaultsForLegacyFiles() = runTest {
+        val store = TestStore()
+        store.importFromSync(tvData())
+        store.updateSettings { it.copy(showImportProgress = false) }
+        val text = exportBackupFileText(store, deviceId = "phone-1", deviceName = "Pixel", nowMs = 42L)
+        val exported = parseBackupFile(text).getOrThrow().data
+        assertEquals(bool(false), exported["show_import_progress"])
+
+        val restored = TestStore()
+        importBackupFile(text, restored) {}.getOrThrow()
+        assertFalse(restored.currentSettings().showImportProgress)
+
+        importBackupFile(tvFile(), restored) {}.getOrThrow()
+        assertFalse(restored.rawData.value.containsKey(LiveTvKeys.showImportProgress))
+        assertTrue(restored.currentSettings().showImportProgress)
+    }
+
+    @Test
     fun importThenExportKeepsEveryKey() = runTest {
         val store = TestStore()
         val reloads = ArrayList<Set<String>>()

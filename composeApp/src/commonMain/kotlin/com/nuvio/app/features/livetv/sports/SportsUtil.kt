@@ -18,6 +18,10 @@ internal class SyncMap<K, V> {
     operator fun set(key: K, value: V) { synchronized(lock) { map[key] = value } }
     fun containsKey(key: K): Boolean = synchronized(lock) { map.containsKey(key) }
     fun remove(key: K): V? = synchronized(lock) { map.remove(key) }
+    fun remove(key: K, expected: V): Boolean = synchronized(lock) {
+        if (map[key] != expected || !map.containsKey(key)) false
+        else { map.remove(key); true }
+    }
     val isEmpty: Boolean get() = synchronized(lock) { map.isEmpty() }
     val size: Int get() = synchronized(lock) { map.size }
     fun snapshot(): Map<K, V> = synchronized(lock) { HashMap(map) }

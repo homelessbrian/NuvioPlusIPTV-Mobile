@@ -1,6 +1,7 @@
 package com.nuvio.app.features.livetv.player
 
 import com.nuvio.app.features.livetv.data.CatchupUrlBuilder
+import com.nuvio.app.features.livetv.data.LiveTvRepository
 import com.nuvio.app.features.livetv.model.EpgProgram
 import com.nuvio.app.features.livetv.model.LiveChannel
 import com.nuvio.app.features.livetv.model.LiveTvSettings
@@ -46,11 +47,21 @@ internal object LiveTvCatchup {
 
     /**
      * The time to take off the guide's times when asking the archive: the guide's own time shift
-     * is taken back off (the archive goes by the guide's real times), then the catch-up time shift
-     * is added, for providers whose archive runs on another clock.
+     * (its guide source's, or the playlist's built-in guide's, plus the channel's tvg-shift) is
+     * taken back off, as the archive goes by the guide's real times; then the playlist's catch-up
+     * time shift is added, for providers whose archive runs on another clock. (The old
+     * one-for-everything values are 0 once moved onto each source.)
      */
-    fun shiftMs(settings: LiveTvSettings): Long =
-        settings.epgOffsetMinutes * 60_000L - settings.catchupShiftMinutes * 60_000L
+    fun shiftMs(
+        settings: LiveTvSettings,
+        channel: LiveChannel,
+        playlist: PlaylistSource?,
+        /** How far the channel's stored listings were moved (see [LiveTvRepository.guideShiftMs]). */
+        guideShiftMs: Long = LiveTvRepository.guideShiftMs(channel),
+    ): Long =
+        guideShiftMs +
+            settings.epgOffsetMinutes * 60_000L - settings.catchupShiftMinutes * 60_000L -
+            (playlist?.catchupShiftMinutes ?: 0) * 60_000L
 
     /** Ask for HLS: the setting is on and this provider's HLS replays haven't failed lately. */
     fun preferHls(settings: LiveTvSettings, playlist: PlaylistSource?, now: Long): Boolean =
@@ -77,9 +88,9 @@ internal object LiveTvCatchup {
     ): CatchupPlan? {
         val catchup = channel.catchup ?: return null
         if (!CatchupUrlBuilder.isAvailable(catchup, program.startMs, now)) return null
-        val shift = shiftMs(settings)
+        val shift = shiftMs(settings, channel, playlist)
         val (start, stop) = window(program, offsetMs, now)
-        val zone = playlist?.serverTimezone?.takeIf { it.isNotBlank() }
+        val zone = playlist?.catchupZone?.takeIf { it.isNotBlank() }
         val preferHls = preferHls(settings, playlist, now)
         val url = CatchupUrlBuilder.build(
             channel.url, catchup, start - shift, stop - shift, now,

@@ -79,6 +79,8 @@ object ProfileRepository {
         set(value) {
             ProfileStorage.onActiveProfileChanged(value)
             field = value
+            // Live TV keeps favorites, hidden groups and so on per profile, like the TV app.
+            runCatching { com.nuvio.app.features.livetv.data.LiveTvPreferences.onProfileChanged(value) }
         }
     private var loadedCacheForUserId: String? = null
 

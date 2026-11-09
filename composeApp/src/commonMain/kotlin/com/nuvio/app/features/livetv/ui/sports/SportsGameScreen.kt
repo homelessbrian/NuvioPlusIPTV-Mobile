@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +86,8 @@ import com.nuvio.app.features.livetv.sports.LeagueKind
 import com.nuvio.app.features.livetv.sports.ScoringPlay
 import com.nuvio.app.features.livetv.sports.Side
 import com.nuvio.app.features.livetv.sports.Sport
+import com.nuvio.app.features.livetv.sports.ChannelPickerSearchResult
+import com.nuvio.app.features.livetv.sports.channelPickerSearchResults
 import com.nuvio.app.features.livetv.sports.SportsCatalog
 import com.nuvio.app.features.livetv.sports.SportsEvent
 import com.nuvio.app.features.livetv.sports.SportsMatcher
@@ -93,6 +96,7 @@ import com.nuvio.app.features.livetv.sports.SportsRepository
 import com.nuvio.app.features.livetv.sports.Standings
 import com.nuvio.app.features.livetv.sports.TeamInfo
 import com.nuvio.app.features.livetv.ui.ChannelLogo
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
@@ -175,7 +179,9 @@ private fun GameBody(ev: SportsEvent, actions: SportsActions) {
         repo.openGame(ev)
         onDispose { repo.closeGame(ev.id) }
     }
-    val replays = repo.vodMatches.collectAsStateWithLifecycle().value[ev.id].orEmpty()
+    val vodLooked = repo.vodMatches.collectAsStateWithLifecycle().value[ev.id]
+    val replays = vodLooked.orEmpty()
+    val vodAddons = repo.vodAddons.collectAsStateWithLifecycle().value[ev.id]
     val reminded = follows.reminders.any { it.eventId == ev.id }
     val recording = remember(schedules, ev.id) { SportsRecordings.forEvent(ev, schedules) }
     var askRecord by remember(ev.id) { mutableStateOf(false) }
@@ -265,6 +271,37 @@ private fun GameBody(ev: SportsEvent, actions: SportsActions) {
                 }
             }
         }
+        // ---- replays and highlights (finished games): they come only from sports addons, so this
+        // list goes first and says where they come from when there are none.
+        if (ev.state == GameState.POST) {
+            item(key = "replays-h") {
+                Text("Replays & highlights", style = MaterialTheme.typography.titleSmall, color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
+            }
+            if (replays.isNotEmpty()) {
+                items(replays, key = { "r:" + it.channel.key }) { m ->
+                    SportsChannelRow(
+                        m = m, copies = 1, ev = ev, use24h = use24h,
+                        onPlay = { c -> actions.onPlay(c.channel, ev.title) },
+                        onLongPress = {},
+                    )
+                }
+            } else {
+                item(key = "replays-none") {
+                    Text(
+                        when {
+                            vodLooked == null -> "Looking in your sports add-ons…"
+                            vodAddons != null && vodAddons.isEmpty() ->
+                                "Replays and highlights come from sports add-ons that offer them (HighFly Premium, StremVerse…). " +
+                                    "None of your add-ons do yet: install one in Add-ons and they'll show here."
+                            else -> (vodAddons?.takeIf { it.isNotEmpty() }?.let { "No replay of this game in ${it.joinToString(", ")} yet. " }
+                                ?: "No replay of this game in your sports add-ons yet. ") +
+                                "They're often added a few hours after the game ends."
+                        },
+                        style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textMuted,
+                    )
+                }
+            }
+        }
         // ---- channels
         item(key = "channels-h") {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -291,19 +328,6 @@ private fun GameBody(ev: SportsEvent, actions: SportsActions) {
                     }
                 },
             )
-        }
-        // ---- replays and highlights (finished games, from your sports addons)
-        if (ev.state == GameState.POST && replays.isNotEmpty()) {
-            item(key = "replays-h") {
-                Text("Replays & highlights", style = MaterialTheme.typography.titleSmall, color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = NuvioTokens.Space.s8))
-            }
-            items(replays, key = { "r:" + it.channel.key }) { m ->
-                SportsChannelRow(
-                    m = m, copies = 1, ev = ev, use24h = use24h,
-                    onPlay = { c -> actions.onPlay(c.channel, ev.title) },
-                    onLongPress = {},
-                )
-            }
         }
         // ---- latest scoring
         if (plays.isNotEmpty()) {
@@ -565,10 +589,11 @@ private fun FixChannelDialog(ev: SportsEvent, matches: List<ChannelMatch>, onDis
 internal fun ChannelPickerDialog(title: String, onPick: (LiveChannel) -> Unit, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
     val all = remember { SportsRepository.channelsForPicker() }
-    val shown = remember(query, all) {
-        val q = query.trim()
-        if (q.isEmpty()) all.take(60) else all.filter { it.name.contains(q, true) }.take(120)
+    var result by remember(all) { mutableStateOf<ChannelPickerSearchResult<LiveChannel>?>(null) }
+    LaunchedEffect(all) {
+        channelPickerSearchResults(all, snapshotFlow { query }) { it.name }.collect { result = it }
     }
+    val shown = result?.forQuery(query).orEmpty()
     DialogSurface(onDismissRequest = onDismiss, title = title) {
         NuvioInputField(value = query, onValueChange = { query = it }, placeholder = "Channel name")
         LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s4)) {

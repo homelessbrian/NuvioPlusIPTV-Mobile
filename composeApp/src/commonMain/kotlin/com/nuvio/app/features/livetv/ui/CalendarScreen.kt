@@ -71,6 +71,8 @@ import com.nuvio.app.features.livetv.calendar.CalendarGuide
 import com.nuvio.app.features.livetv.calendar.CalendarGuideHit
 import com.nuvio.app.features.livetv.calendar.CalendarKind
 import com.nuvio.app.features.livetv.calendar.CalendarRepository
+import com.nuvio.app.features.livetv.calendar.rememberCalendarEntriesByDay
+import com.nuvio.app.features.livetv.calendar.rememberCalendarUpcomingDays
 import com.nuvio.app.features.livetv.data.CivilTime
 import com.nuvio.app.features.livetv.LiveTvDeepLinks
 import com.nuvio.app.features.livetv.data.LiveTvPreferences
@@ -260,6 +262,7 @@ internal fun CalendarScreen(
             CalTab.UPCOMING -> when (view) {
                 CalView.LIST -> UpcomingList(pool, today, now, state.loading, open, hold)
                 CalView.WEEK -> {
+                    val byDay = rememberCalendarEntriesByDay(pool)
                     val mondayIndex = WEEKDAYS.indexOf(SportsDates.weekdayLabel(today))
                     val days = List(7) { SportsDates.dayStart(-mondayIndex + weekOffset * 7 + it) }
                     GridHeader(
@@ -267,10 +270,11 @@ internal fun CalendarScreen(
                             SportsDates.shortDayLabel(days.last()) + " " + SportsDates.monthLabel(days.last()),
                         onPrev = { weekOffset -= 1 }, onNext = { weekOffset += 1 },
                     )
-                    DayStrip(days, pool, today, selectedDay) { selectedDay = it }
-                    DayAgenda(pool.filter { it.dayMs == selectedDay }, selectedDay, today, now, open, hold)
+                    DayStrip(days, byDay, today, selectedDay) { selectedDay = it }
+                    DayAgenda(byDay[selectedDay].orEmpty(), selectedDay, today, now, open, hold)
                 }
                 CalView.MONTH -> {
+                    val byDay = rememberCalendarEntriesByDay(pool)
                     val t = CivilTime.at(today, LiveTvTimeZones.SYSTEM)
                     val index = t.year * 12 + (t.month - 1) + monthOffset
                     val y = index / 12
@@ -283,8 +287,8 @@ internal fun CalendarScreen(
                         label = SportsDates.monthLabel(first) + " " + y,
                         onPrev = { monthOffset -= 1 }, onNext = { monthOffset += 1 },
                     )
-                    MonthGrid(lead, count, first, pool, today, selectedDay) { selectedDay = it }
-                    DayAgenda(pool.filter { it.dayMs == selectedDay }, selectedDay, today, now, open, hold)
+                    MonthGrid(lead, count, first, byDay, today, selectedDay) { selectedDay = it }
+                    DayAgenda(byDay[selectedDay].orEmpty(), selectedDay, today, now, open, hold)
                 }
             }
             CalTab.AIRING -> AiringTab(airing.entries, airing.loading, airing.problem, settings.calendarSkipNewsTalk, open, hold) { skip ->
@@ -325,8 +329,7 @@ private fun UpcomingList(
     open: (CalendarEntry) -> Unit, hold: (CalendarEntry) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val shown = entries.filter { it.dayMs > today || (it.dayMs == today) }
-    val days = remember(shown) { shown.groupBy { it.dayMs }.toList().sortedBy { it.first } }
+    val days = rememberCalendarUpcomingDays(entries, today)
     val listState = rememberLazyListState()
     LazyColumn(
         state = listState,
@@ -375,7 +378,7 @@ private fun GridHeader(label: String, onPrev: () -> Unit, onNext: () -> Unit) {
 }
 
 @Composable
-private fun DayStrip(days: List<Long>, entries: List<CalendarEntry>, today: Long, selected: Long, onPick: (Long) -> Unit) {
+private fun DayStrip(days: List<Long>, byDay: Map<Long, List<CalendarEntry>>, today: Long, selected: Long, onPick: (Long) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = NuvioTokens.Space.s12, vertical = NuvioTokens.Space.s4),
         horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s4),
@@ -386,16 +389,15 @@ private fun DayStrip(days: List<Long>, entries: List<CalendarEntry>, today: Long
                     SportsDates.weekdayLabel(d), style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.nuvio.colors.textMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
                 )
-                DayCell(d, entries.filter { it.dayMs == d }, today, selected, onPick)
+                DayCell(d, byDay[d].orEmpty(), today, selected, onPick)
             }
         }
     }
 }
 
 @Composable
-private fun MonthGrid(lead: Int, count: Int, first: Long, entries: List<CalendarEntry>, today: Long, selected: Long, onPick: (Long) -> Unit) {
+private fun MonthGrid(lead: Int, count: Int, first: Long, byDay: Map<Long, List<CalendarEntry>>, today: Long, selected: Long, onPick: (Long) -> Unit) {
     val tokens = MaterialTheme.nuvio
-    val byDay = remember(entries) { entries.groupBy { it.dayMs } }
     val cells = lead + count
     val rows = (cells + 6) / 7
     val ty = CivilTime.at(first, LiveTvTimeZones.SYSTEM)

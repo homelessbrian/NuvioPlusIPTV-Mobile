@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -39,6 +40,8 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 
 /**
  * Everything behind the Sports hub: today's games from ESPN (refreshed every 30 seconds while
@@ -170,10 +173,25 @@ internal object SportsRepository {
         (espn + (fixtures + guide.filterNot { it.id in replacedGuide }).filterNot(::coveredByEspn) + tsdb).distinctBy { it.id }
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    /** Every game and event on the page's days (a week back to a week ahead), with your country's channels from the TV listings. */
-    val events: StateFlow<List<SportsEvent>> = combine(plainEvents, tvData, tvCountries) { ev, tv, countries ->
+    /** The newest data, before Score Delay: only [events] reads it. */
+    private val withChannels: StateFlow<List<SportsEvent>> = combine(plainEvents, tvData, tvCountries) { ev, tv, countries ->
         runCatching { SportsTvListings.addChannels(ev, tv, countries, tvCache) }.getOrDefault(ev)
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /** Score Delay (Sports settings), see [SportsScoreDelay]. */
+    private val scoreDelay = SportsScoreDelay()
+    private val scoreDelayMs: StateFlow<Long> = settings.map { it.scoreDelaySeconds * 1_000L }.distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, settings.value.scoreDelaySeconds * 1_000L)
+    /** Moves on when a held-back change is due, so it shows without waiting for new data. */
+    private val delayTick = MutableStateFlow(0)
+
+    /**
+     * Every game and event on the page's days (a week back to a week ahead), with your country's
+     * channels from the TV listings, and scores as late as Score Delay says.
+     */
+    val events: StateFlow<List<SportsEvent>> = combine(withChannels, scoreDelayMs, delayTick) { ev, delayMs, _ ->
+        scoreDelay.apply(ev, delayMs, LiveTvClock.nowMs())
+    }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     /**
      * A scheduled or guide event's state from the clock: these were worked out once, when the
@@ -268,6 +286,9 @@ internal object SportsRepository {
     private val _addonVod = MutableStateFlow<Map<String, List<ChannelMatch>>>(emptyMap())
     /** Finished games: event id -> their replays and highlights from your sports addons. */
     val vodMatches: StateFlow<Map<String, List<ChannelMatch>>> = _addonVod.asStateFlow()
+    private val _vodAddons = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    /** Finished games, once looked for: event id -> names of your addons that offer replays at all (empty: none). */
+    val vodAddons: StateFlow<Map<String, List<String>>> = _vodAddons.asStateFlow()
     private val addonJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
 
     /**
@@ -284,6 +305,10 @@ internal object SportsRepository {
                 if (found != null) {
                     _addonLive.update { it + (ev.id to found.live) }
                     _addonVod.update { it + (ev.id to found.vod) }
+                    _vodAddons.update { it + (ev.id to found.vodAddons) }
+                } else if (ev.state == GameState.POST) {
+                    // Couldn't ask: show the "nothing found" text rather than "looking" forever.
+                    _addonVod.update { it + (ev.id to emptyList()) }
                 }
                 val got = found != null && (found.live.isNotEmpty() || found.vod.isNotEmpty())
                 if (ev.state == GameState.POST || got || ++round >= 20) break
@@ -346,8 +371,17 @@ internal object SportsRepository {
         if (started) return
         started = true
         LiveTvPlayback.gameFailover = { key, tried -> nextChannelForGame(key, tried) }
+        watchDelayedScores()
         scope.launch {
-            runCatching { withContext(Dispatchers.Default) { loadCache() } }
+            // The Sports page's own leagues (yours and your region's) first, so the page has
+            // something to show sooner; everything else after.
+            val first = runCatching {
+                val f = SportsFollows.fromJson(prefs.sportsMineJson.first())
+                val st = SportsSettings.fromJson(prefs.sportsSettingsJson.first())
+                SportsCatalog.leagues.filter { it.espnPath != null && (isMine(it, f) || SportsCatalog.shown(it, st)) }.map { it.id }.toSet()
+            }.getOrDefault(emptySet())
+            runCatching { withContext(Dispatchers.Default) { leagueData.update { it + readSavedScores(first) } } }
+            runCatching { withContext(Dispatchers.Default) { loadCache(skip = first) } }
             cacheReady.value = true
             runCatching { updateLoop() }
         }
@@ -504,14 +538,37 @@ internal object SportsRepository {
             coroutineScopeFetch(due) { l ->
                 gate.withPermit {
                     val useDirect = isMine(l, f) || l.id in playingLeagues || (viewing && SportsCatalog.shown(l, s))
+                    // Leagues nobody is looking at: nuvio-data's ready-made file when it's fresh
+                    // (already read, and only downloaded when it changed); otherwise as before.
+                    val compact = if (useDirect) null else runCatching {
+                        fromCompact(l, "d", days, now, leagueData.value[l.id] != null) { i -> if (i == 1) 20 * MINUTE else 90 * MINUTE }
+                    }.getOrNull()
+                    if (compact != null) {
+                        val at = LiveTvClock.nowMs()
+                        val games = compact.games
+                        if (games == null) {
+                            // Same file as last time: nothing to read or save.
+                            leagueData.update { m -> m + (l.id to LeagueData(m[l.id]?.events.orEmpty(), at, null)) }
+                            return@withPermit
+                        }
+                        val before = leagueData.value[l.id]?.events
+                        leagueData.update { it + (l.id to LeagueData(games, at, null)) }
+                        runCatching { LiveTvFiles.writeSmall(DIR, "sb_${safe(l.id)}.json", "$at\n" + GAMES_MARK + SportsEventCodec.encode(games)) }
+                        compact.hash?.let { compactSeen["d|" + l.id] = it }
+                        compactDirty = true
+                        if (before != null && scoreDelayMs.value <= 0) noticeScoring(l, before, games)
+                        return@withPermit
+                    }
                     val r = runCatching { if (useDirect) fetchScoreboard(l, days) else fetchViaSharedCache(l, days, now) }
                     r.onSuccess { raws ->
+                        if (compactSeen.remove("d|" + l.id) != null) compactDirty = true
                         val parsed = raws.flatMap { raw -> runCatching { SportsFeeds.parseScoreboard(l, raw) }.getOrElse { emptyList() } }
                             .distinctBy { it.id }
                         val before = leagueData.value[l.id]?.events
                         leagueData.update { it + (l.id to LeagueData(parsed, LiveTvClock.nowMs(), null)) }
                         runCatching { LiveTvFiles.writeSmall(DIR, "sb_${safe(l.id)}.json", "${LiveTvClock.nowMs()}\n" + raws.joinToString(RAW_SEP)) }
-                        if (before != null) noticeScoring(l, before, parsed)
+                        // With Score Delay on, alerts come from the delayed scores instead (see watchDelayedScores).
+                        if (before != null && scoreDelayMs.value <= 0) noticeScoring(l, before, parsed)
                     }.onFailure { e ->
                         failLock.lock()
                         try { failed += l.name; reasons += describe(e) } finally { failLock.unlock() }
@@ -525,6 +582,7 @@ internal object SportsRepository {
             val why = reasons.take(2).joinToString(", ")
             _problem.value = if (failed.size >= due.size && due.isNotEmpty()) "Couldn't reach the scores service ($why). Showing what was saved." else null
             _updatedAt.value = LiveTvClock.nowMs()
+            saveCompactSeen()
             rebuildLiveScores()
         } finally {
             _loading.value = false
@@ -553,6 +611,23 @@ internal object SportsRepository {
         coroutineScopeFetch(due) { l ->
             gate.withPermit {
                 val useDirect = isMine(l, f) || (viewing && SportsCatalog.shown(l, s))
+                // Leagues nobody is looking at: nuvio-data's ready-made week file when it's fresh.
+                val compact = if (useDirect) null else runCatching {
+                    fromCompact(l, "w", singleDays, now, weekData.value[l.id] != null) { 6 * HOUR }
+                }.getOrNull()
+                if (compact != null) {
+                    val at = LiveTvClock.nowMs()
+                    val games = compact.games
+                    if (games == null) {
+                        weekData.update { m -> m + (l.id to LeagueData(m[l.id]?.events.orEmpty(), at, null)) }
+                        return@withPermit
+                    }
+                    weekData.update { it + (l.id to LeagueData(games, at, null)) }
+                    runCatching { LiveTvFiles.writeSmall(DIR, "wk_${safe(l.id)}.json", "$at\n" + GAMES_MARK + SportsEventCodec.encode(games)) }
+                    compact.hash?.let { compactSeen["w|" + l.id] = it }
+                    compactDirty = true
+                    return@withPermit
+                }
                 // A day at a time (ESPN turns down a range of days).
                 val raws: List<String> = if (useDirect) singleDays.mapNotNull { d -> runCatching { feeds.scoreboardDayRaw(l, d) }.getOrNull() }
                 else fetchWeekViaSharedCache(l, singleDays, now)
@@ -565,8 +640,10 @@ internal object SportsRepository {
                 val parsed = raws.flatMap { raw -> runCatching { SportsFeeds.parseScoreboard(l, raw) }.getOrDefault(emptyList()) }.distinctBy { it.id }
                 weekData.update { it + (l.id to LeagueData(parsed, at, null)) }
                 runCatching { LiveTvFiles.writeSmall(DIR, "wk_${safe(l.id)}.json", "$at\n" + raws.joinToString(RAW_SEP)) }
+                if (compactSeen.remove("w|" + l.id) != null) compactDirty = true
             }
         }
+        saveCompactSeen()
     }
 
     /** Leagues you follow or show on My Sports: up to five weeks ahead (one request each, a few times a day). */
@@ -786,6 +863,61 @@ internal object SportsRepository {
         return have + direct
     }
 
+    // ------------------------------------------------------------------ ready-made score files (nuvio-data)
+
+    /** What a ready-made file gave: new [games], or null games when it's the same file as last time. */
+    private class Compact(val games: List<SportsEvent>?, val hash: String?)
+
+    /**
+     * The fingerprint of the ready-made file each league's games last came from ("d|<id>" for
+     * yesterday to tomorrow, "w|<id>" for the week ahead). Saved, so after a restart a league
+     * that hasn't changed isn't downloaded again.
+     */
+    private val compactSeen = SyncMap<String, String>()
+    @Volatile private var compactDirty = false
+
+    /**
+     * [l]'s games for [days] from nuvio-data's ready-made files: already worked out the same way
+     * the app does, so nothing to work through here. Null when they can't be used (not made yet,
+     * a day missing, not fresh enough by [maxAgeFor], other days than wanted, or can't be
+     * reached): the caller then reads the old way. [have]: there are games for this league
+     * already, so the same file as last time needn't be downloaded.
+     */
+    private suspend fun fromCompact(l: League, window: String, days: List<String>, now: Long, have: Boolean, maxAgeFor: (Int) -> Long): Compact? {
+        val index = feeds.compactIndex(now) ?: return null
+        if ((if (window == "d") index.day else index.week) != days) return null
+        val entry = index.leagues[l.id] ?: return null
+        val hash = (if (window == "d") entry.dayHash else entry.weekHash) ?: return null
+        val stamps = if (window == "d") entry.dayStamps else entry.weekStamps
+        if (stamps.size != days.size || stamps.withIndex().any { (i, at) -> at <= 0L || now - at > maxAgeFor(i) }) return null
+        if (have && compactSeen["$window|${l.id}"] == hash) return Compact(null, hash)
+        val file = feeds.compactFile(l.id, if (window == "d") "day" else "week") ?: return null
+        file.logo?.let { logo -> SportsFeeds.leagueLogos.getOrPut(l.id) { logo } }
+        return Compact(file.games, file.hash)
+    }
+
+    private fun saveCompactSeen() {
+        if (!compactDirty) return
+        compactDirty = false
+        runCatching {
+            val o = JSONObject()
+            compactSeen.snapshot().forEach { (k, v) -> o.put(k, v) }
+            LiveTvFiles.writeSmall(DIR, "compact_seen.json", o.toString())
+        }
+    }
+
+    private fun loadCompactSeen() {
+        runCatching {
+            val o = JSONObject(LiveTvFiles.readSmall(DIR, "compact_seen.json") ?: return)
+            o.keys().forEach { k -> o.optString(k).ifBlank { null }?.let { compactSeen[k] = it } }
+        }
+    }
+
+    /** A saved scores file's games: ready-made ones (see [GAMES_MARK]) or the feed's own answers. */
+    private fun savedGames(l: League, body: String): List<SportsEvent> =
+        if (body.startsWith(GAMES_MARK)) SportsEventCodec.decode(body.substring(GAMES_MARK.length)).orEmpty()
+        else body.split(RAW_SEP).flatMap { SportsFeeds.parseScoreboard(l, it) }.distinctBy { it.id }
+
     private fun describe(e: Throwable): String = e.message?.take(80)?.ifBlank { null } ?: "unknown problem"
 
     private suspend fun coroutineScopeFetch(list: List<League>, block: suspend (League) -> Unit) {
@@ -822,18 +954,35 @@ internal object SportsRepository {
         }
     }
 
-    private fun loadCache() {
+    /** The saved scores of [ids] (leagues read from their files; too old ones are left out). */
+    private fun readSavedScores(ids: Set<String>): Map<String, LeagueData> {
         val now = LiveTvClock.nowMs()
         val m = HashMap<String, LeagueData>()
         for (l in SportsCatalog.leagues) {
-            if (l.espnPath == null) continue
-            val text = LiveTvFiles.readSmall(DIR, "sb_${safe(l.id)}.json") ?: continue
-            runCatching {
-                val nl = text.indexOf('\n')
-                val at = text.substring(0, nl).toLong()
-                if (now - at > 2 * DAY) return@runCatching
-                m[l.id] = LeagueData(text.substring(nl + 1).split(RAW_SEP).flatMap { SportsFeeds.parseScoreboard(l, it) }.distinctBy { it.id }, at, null)
-            }
+            if (l.espnPath == null || l.id !in ids) continue
+            readSavedLeague(l, now)?.let { m[l.id] = it }
+        }
+        return m
+    }
+
+    private fun readSavedLeague(l: League, now: Long): LeagueData? {
+        val text = LiveTvFiles.readSmall(DIR, "sb_${safe(l.id)}.json") ?: return null
+        return runCatching {
+            val nl = text.indexOf('\n')
+            val at = text.substring(0, nl).toLong()
+            if (now - at > 2 * DAY) return@runCatching null
+            LeagueData(savedGames(l, text.substring(nl + 1)), at, null)
+        }.getOrNull()
+    }
+
+    /** Everything else saved last time ([skip]: leagues whose scores were already read). */
+    private fun loadCache(skip: Set<String> = emptySet()) {
+        val now = LiveTvClock.nowMs()
+        loadCompactSeen()
+        val m = HashMap<String, LeagueData>()
+        for (l in SportsCatalog.leagues) {
+            if (l.espnPath == null || l.id in skip) continue
+            readSavedLeague(l, now)?.let { m[l.id] = it }
         }
         runCatching { LiveTvFiles.readSmall(DIR, "tsdb_index.json")?.let { applyTsdbIndex(it) } }
         val fx = HashMap<String, LeagueData>()
@@ -845,7 +994,8 @@ internal object SportsRepository {
         runCatching {
             LiveTvFiles.readSmall(DIR, "fx_wrestling.json")?.let { text -> SportsFeeds.parseWrestling(text).forEach { (id, list) -> fx[id] = LeagueData(list, 0L, null) } }
         }
-        leagueData.value = m
+        // Added to the page's own leagues, read first (see start).
+        leagueData.update { it + m }
         fixtureData.value = fx
         val wk = HashMap<String, LeagueData>()
         for (l in SportsCatalog.leagues) {
@@ -855,7 +1005,7 @@ internal object SportsRepository {
                 val nl = text.indexOf('\n')
                 val at = text.substring(0, nl).toLong()
                 if (now - at > 3 * DAY) return@runCatching
-                wk[l.id] = LeagueData(text.substring(nl + 1).split(RAW_SEP).flatMap { SportsFeeds.parseScoreboard(l, it) }.distinctBy { it.id }, at, null)
+                wk[l.id] = LeagueData(savedGames(l, text.substring(nl + 1)), at, null)
             }
         }
         weekData.value = wk
@@ -950,6 +1100,8 @@ internal object SportsRepository {
                 if (_matches.value.isEmpty()) runCatching { restoreMatches(saved, chans) }
             }
         }
+        // Not before the saved games are read: a search with no games found nothing, then ran again.
+        cacheReady.first { it }
         combine(trigger, matchKick) { t, k -> t to k }.debounce { if (_matches.value.isEmpty()) 0L else 1_500L }.collect {
             // Put off (not lost): it runs when the app is back in front / the update is done.
             if (!foreground.value && viewers.value == 0) { matchMissed = true; return@collect }
@@ -1095,6 +1247,36 @@ internal object SportsRepository {
         }
         SportsLive.byChannel.value = out
         SportsLive.cardByChannel.value = cards
+    }
+
+    /**
+     * Score Delay: held-back changes show when they're due, scores elsewhere in the app follow
+     * what the Sports page shows, and Scoring Alerts go off when the delayed score moves.
+     */
+    private fun watchDelayedScores() {
+        scope.launch {
+            scoreDelay.nextChangeAt.collectLatest { at ->
+                if (at == null) return@collectLatest
+                delay((at - LiveTvClock.nowMs()).coerceAtLeast(0L) + 50L)
+                delayTick.value++
+            }
+        }
+        scope.launch {
+            var before: Map<String, SportsEvent> = emptyMap()
+            events.collect { list ->
+                val now = list.associateBy { it.id }
+                if (scoreDelayMs.value > 0 && before.isNotEmpty()) {
+                    runCatching { rebuildLiveScores() }
+                    list.filter { ev -> before[ev.id].let { it != null && it !== ev && it.sides != ev.sides } }
+                        .groupBy { it.leagueId }
+                        .forEach { (leagueId, changed) ->
+                            val league = SportsCatalog.league(leagueId) ?: return@forEach
+                            noticeScoring(league, changed.mapNotNull { before[it.id] }, changed)
+                        }
+                }
+                before = now
+            }
+        }
     }
 
     /** A team you follow scored: tell the app (Scoring Alerts). */
@@ -1321,11 +1503,34 @@ internal object SportsRepository {
     }
 
     /** The game's scoring plays (touchdowns, goals…), when ESPN has them. */
-    suspend fun scoringPlays(ev: SportsEvent): List<ScoringPlay> =
-        if (ev.state == GameState.PRE) emptyList() else summaryFor(ev)?.plays.orEmpty()
+    suspend fun scoringPlays(ev: SportsEvent): List<ScoringPlay> {
+        if (ev.state == GameState.PRE) return emptyList()
+        val plays = summaryFor(ev)?.plays.orEmpty()
+        // Score Delay: a play past the score shown waits until that score shows.
+        return if (scoreDelayMs.value > 0) SportsScoreDelay.playsUpTo(plays, ev) else plays
+    }
 
     /** Everything else about the game ESPN has (see [GameExtras]); null when there's nothing to ask. */
-    suspend fun gameExtras(ev: SportsEvent): GameExtras? = summaryFor(ev)?.extras
+    suspend fun gameExtras(ev: SportsEvent): GameExtras? {
+        val summary = summaryFor(ev) ?: return null
+        val delayMs = scoreDelayMs.value
+        if (delayMs <= 0 || ev.state != GameState.LIVE) return summary.extras
+        // Score Delay: live stats and win chances as they were that long ago (none until then).
+        return synchronized(delayedExtrasLock) {
+            // Moved to the end: the games looked at most recently are the ones kept.
+            val l = delayedExtras.remove(ev.id) ?: ArrayDeque()
+            delayedExtras[ev.id] = l
+            if (l.lastOrNull()?.first != summary.at) l.addLast(summary.at to summary.extras)
+            val cutoff = LiveTvClock.nowMs() - delayMs
+            while (l.size > 1 && l[1].first <= cutoff) l.removeFirst()
+            while (delayedExtras.size > 12) delayedExtras.remove(delayedExtras.keys.first())
+            l.first().takeIf { it.first <= cutoff }?.second
+        }
+    }
+
+    /** Score Delay: a live game's extras by when they arrived, oldest first. */
+    private val delayedExtras = LinkedHashMap<String, ArrayDeque<Pair<Long, GameExtras>>>()
+    private val delayedExtrasLock = SynchronizedObject()
 
     // ------------------------------------------------------------------ your choices
 
@@ -1525,6 +1730,8 @@ internal object SportsRepository {
     const val DAYS_BACK = 7
     /** Between saved answers when a league was asked one day at a time. */
     private const val RAW_SEP = "\n\u0001\n"
+    /** Starts a saved scores file holding ready-made games (nuvio-data's) instead of the feed's answers. */
+    private const val GAMES_MARK = "\u0002games\n"
     /** A "maybe" channel match good enough to show its game's score when nothing else could be on it. */
     private const val LIKELY_SCORE = 52
 }

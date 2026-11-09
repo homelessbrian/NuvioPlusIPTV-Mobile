@@ -5,6 +5,7 @@ import com.nuvio.app.features.livetv.data.LiveTvDirs
 import com.nuvio.app.features.livetv.data.LiveTvFiles
 import com.nuvio.app.features.livetv.data.LiveTvPreferences
 import com.nuvio.app.features.livetv.data.LiveTvRepository
+import com.nuvio.app.features.livetv.data.ServerZones
 import com.nuvio.app.features.livetv.data.optJSONArray
 import com.nuvio.app.features.livetv.data.parseObject
 import com.nuvio.app.features.livetv.model.EpgProgram
@@ -292,18 +293,38 @@ internal object LiveTvRecordingScheduler {
             val channel = freshChannel(s.channel)
             val catchup = channel.catchup ?: s.channel.catchup
             val settings = LiveTvPreferences.currentSettings()
-            val zone = LiveTvPreferences.currentPlaylists().firstOrNull { it.id == channel.sourceId }?.serverTimezone?.takeIf { it.isNotBlank() }
-            // As when watching catch-up: the guide's shift off, the catch-up shift on.
-            val shift = LiveTvCatchup.shiftMs(settings)
+            val playlist = LiveTvPreferences.currentPlaylists().firstOrNull { it.id == channel.sourceId }
+            // Not known yet: look it up first (as when watching), so the saved show is the right one.
+            val zone = playlist?.catchupZone?.takeIf { it.isNotBlank() }
+                ?: (if (ServerZones.canLookUp(channel, playlist)) kotlinx.coroutines.withTimeoutOrNull(10_000L) { ServerZones.learn(channel) } else null)
+            // As when watching catch-up: the guide's shift off, the playlist's catch-up shift on.
+            val shift = LiveTvCatchup.shiftMs(settings, channel, playlist)
             val url = catchup?.let {
-                CatchupUrlBuilder.build(channel.url, it, s.startMs - s.pre - shift, s.stopMs + s.post - shift, now, preferHls = false, serverTimezone = zone)
+                // Same kind of link as watching (the catch-up setting): HLS comes as pieces, which
+                // providers send at full speed; one long TS stream is often sent at viewing speed
+                // or slower. The TS link stays as the fall-back if the HLS one sends nothing.
+                CatchupUrlBuilder.build(channel.url, it, s.startMs - s.pre - shift, s.stopMs + s.post - shift, now,
+                    preferHls = LiveTvCatchup.preferHls(settings, playlist, now), serverTimezone = zone)
             }
             if (url == null) {
                 drop(s, "\"${s.title}\" couldn't be saved: this channel's catch-up isn't available")
                 return@launch
             }
-            remove(s)
-            markSeen(s)
+            // One catch-up download per provider at a time, oldest show first: most accounts allow
+            // one connection, and a second download made the provider close the first part way
+            // (back-to-back shows of a series each came out a few minutes short).
+            val started = catchupStartLock.withLock {
+                val now2 = LiveTvClock.nowMs()
+                // An earlier show of this provider that's due, or waiting its turn (a retry after a
+                // failure, half an hour away, doesn't hold the others up).
+                val earlierWaiting = _schedules.value.any { o ->
+                    o.id != s.id && o.useCatchup && o.channel.sourceId == channel.sourceId &&
+                        o.startMs < s.startMs && o.stopMs + RecordingRules.CATCHUP_DELAY_MS <= now2 &&
+                        RecordingRules.fireTime(o) <= now2 + QUEUE_WAIT_MS
+                }
+                if (LiveTvRecorder.catchupBusy(channel.sourceId) || earlierWaiting) return@withLock null
+                remove(s)
+                markSeen(s)
             LiveTvRecorder.start(
                 channel, url, s.title, s.episode, s.description, s.startMs, s.stopMs,
                 stopAtMs = now + (s.stopMs - s.startMs) * 3 + 30 * 60_000L,
@@ -316,6 +337,8 @@ internal object LiveTvRecordingScheduler {
                     catchup?.let {
                         val from = s.startMs - s.pre - shift + doneMs - 30_000L
                         CatchupUrlBuilder.build(channel.url, it, from, s.stopMs + s.post - shift, LiveTvClock.nowMs(), preferHls = false, serverTimezone = zone)
+                            // Carrying on happens in the TS download: an m3u8 channel's link in its TS form.
+                            ?.let { link -> CatchupUrlBuilder.tsFallback(link) ?: link }
                     }
                 },
                 onFinished = { rec ->
@@ -341,8 +364,25 @@ internal object LiveTvRecordingScheduler {
                     }
                 }
             )
+            }
+            if (started == null) {
+                // Another download from this provider first: check again in a minute (not a try used up).
+                val wait = s.copy(nextTryMs = LiveTvClock.nowMs() + QUEUE_WAIT_MS)
+                mutex.withLock {
+                    _schedules.value = _schedules.value.map { if (it.id == s.id) wait else it }
+                    save()
+                }
+                arm(wait)
+                LiveTvRecorder.stopServiceIfIdle()
+            }
         }
     }
+
+    /** Checking for and starting a catch-up download happen together (two alarms at once). */
+    private val catchupStartLock = Mutex()
+
+    /** A catch-up download waiting for another from the same provider checks again this often. */
+    private const val QUEUE_WAIT_MS = 60_000L
 
     /** Failures that mean "no connection at all", not "the provider said no". */
     private fun looksOffline(problem: String?): Boolean {

@@ -35,9 +35,10 @@ internal val PlayerScreenRuntime.selectedAddonSubtitle: AddonSubtitle?
 internal fun PlayerScreenRuntime.updateTrackPreference(
     update: (PersistedPlayerTrackPreference) -> PersistedPlayerTrackPreference,
 ) {
-    if (parentMetaId.isBlank()) return
-    val current = PlayerTrackPreferenceStorage.load(parentMetaId) ?: PersistedPlayerTrackPreference()
-    PlayerTrackPreferenceStorage.save(parentMetaId, update(current))
+    val id = trackPreferenceId
+    if (id.isBlank()) return
+    val current = PlayerTrackPreferenceStorage.load(id) ?: PersistedPlayerTrackPreference()
+    PlayerTrackPreferenceStorage.save(id, update(current))
 }
 
 internal fun PlayerScreenRuntime.persistAudioPreference(track: AudioTrack?) {
@@ -91,7 +92,7 @@ internal fun PlayerScreenRuntime.restorePersistedTrackPreferenceIfNeeded(): Bool
     // A pending carry-over describes the selection playing right now; it wins over the stored
     // preference (same ordering as NuvioTV).
     if (pendingEngineSwitchTrackPreference?.sourceIdentity == activePlaybackIdentity) return true
-    val preference = PlayerTrackPreferenceStorage.load(parentMetaId)
+    val preference = PlayerTrackPreferenceStorage.load(trackPreferenceId)
     if (preference == null) {
         trackPreferenceRestoreApplied = true
         return true

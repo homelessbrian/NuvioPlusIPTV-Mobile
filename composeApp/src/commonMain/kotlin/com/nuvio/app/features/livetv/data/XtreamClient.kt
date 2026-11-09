@@ -31,7 +31,7 @@ internal data class XtreamAccountInfo(
     val status: String,
     /** Stream formats this account may use ("ts", "m3u8", "rtmp"); empty when the panel doesn't say. */
     val allowedFormats: Set<String>,
-    /** server_info.timezone, when given. */
+    /** The server's time zone: server_info.timezone, or worked out from its clock (see [ZoneFinder]). */
     val serverTimezone: String?
 ) {
     /** Why this login can't be used, in plain words, or null when it can. */
@@ -113,8 +113,9 @@ internal class XtreamClient(
             // Which stream formats this account may use (some panels turn off .ts and only
             // allow .m3u8; asking for .ts then fails on every channel with "bad http status").
             allowedFormats = ui?.optJSONArray("allowed_output_formats")?.strings()?.map { it.lowercase() }?.toSet() ?: emptySet(),
-            // Catch-up links are in the server's local time: remember its zone for catch-up.
-            serverTimezone = info.optJSONObject("server_info")?.optString("timezone")?.takeIf { it.isNotBlank() }
+            // Catch-up links are in the server's local time: remember its zone for catch-up (a
+            // server that names no time zone: worked out from its clock instead).
+            serverTimezone = ZoneFinder.fromServerInfo(info.optJSONObject("server_info"))?.first
         )
     }
 
@@ -139,10 +140,43 @@ internal class XtreamClient(
     suspend fun serverTimezoneFor(channelUrl: String, userAgent: String): String? {
         val m = xtreamLink.find(channelUrl) ?: return null
         val (host, user, pass) = m.destructured
-        return runCatching {
-            val url = "$host/player_api.php?username=" + user.encodeURLParameter() + "&password=" + pass.encodeURLParameter()
-            parseObjectOrNull(getText(url, userAgent))?.optJSONObject("server_info")?.optString("timezone")?.takeIf { it.isNotBlank() }
-        }.getOrNull()
+        return runCatching { serverZone(host, user, pass, userAgent) }.getOrNull()?.first
+    }
+
+    /**
+     * The server's time zone from its account reply (player_api.php): named, else worked out
+     * from its clock. Null when it says neither; throws when the server can't be reached.
+     */
+    suspend fun serverZone(host: String, user: String, pass: String, userAgent: String): Pair<String, String>? {
+        val url = "$host/player_api.php?username=" + user.encodeURLParameter() + "&password=" + pass.encodeURLParameter()
+        val info = parseObjectOrNull(getText(url, userAgent)) ?: error("its reply wasn't the usual account details")
+        return ZoneFinder.fromServerInfo(info.optJSONObject("server_info"))
+    }
+
+    /** The start of the provider's own guide (xmltv.php on the same server), as text: enough to read its first times. */
+    suspend fun guideStart(host: String, user: String, pass: String, userAgent: String, maxBytes: Int): String {
+        val url = "$host/xmltv.php?username=" + user.encodeURLParameter() + "&password=" + pass.encodeURLParameter()
+        return client.prepareGet(url) {
+            header("User-Agent", userAgent.ifBlank { DEFAULT_UA })
+            header("Accept", "*/*")
+            timeout {
+                requestTimeoutMillis = 30_000
+                socketTimeoutMillis = 15_000
+            }
+        }.execute { response ->
+            val code = response.status.value
+            if (code !in 200..299) error(httpError(code))
+            val channel = response.bodyAsChannel()
+            val buf = ByteArray(maxBytes)
+            var n = 0
+            while (n < maxBytes) {
+                val r = channel.readAvailable(buf, n, maxBytes - n)
+                if (r == -1) break
+                n += r
+            }
+            // A gzipped guide can't be read here: no times found in it.
+            if (n >= 2 && buf[0] == 0x1f.toByte() && buf[1] == 0x8b.toByte()) "" else buf.decodeToString(0, n)
+        }
     }
 
     /**
@@ -225,11 +259,14 @@ internal class XtreamClient(
             if (count % 500 == 0) onProgress?.invoke(count)
         }
         if (count == 0) error("The provider returned no live channels")
-        return LivePlaylist(out.toString(), count, info)
+        // The provider's own group order (as it lists its categories), kept for the group list;
+        // names as the playlist reader will see them in group-title.
+        val groupOrder = categories.values.map { it.replace("\n", " ").replace("\"", "'").split(';').first().trim() }.filter { it.isNotBlank() }.distinct()
+        return LivePlaylist(out.toString(), count, info, groupOrder)
     }
 
     /** The result of [livePlaylistM3u]. */
-    class LivePlaylist(val m3u: String, val channelCount: Int, val account: XtreamAccountInfo)
+    class LivePlaylist(val m3u: String, val channelCount: Int, val account: XtreamAccountInfo, val groupOrder: List<String> = emptyList())
 
     /** The stream file extension for this login: its own choice, or what the account allows. */
     fun streamExtension(pl: PlaylistSource, allowedFormats: Set<String>): String = when (pl.streamFormat) {
@@ -300,7 +337,8 @@ internal class XtreamClient(
     // ---------- plumbing ----------
 
     private suspend fun categories(pl: PlaylistSource, action: String): Map<String, String> = runCatching {
-        val out = HashMap<String, String>()
+        // In the provider's order (the group list follows it).
+        val out = LinkedHashMap<String, String>()
         jsonArrayOf(getText("${pl.xtreamApiUrl()}&action=$action", pl.userAgent)).forEach { e ->
             val c = e as? JsonObject ?: return@forEach
             out[c.optString("category_id")] = c.optString("category_name")

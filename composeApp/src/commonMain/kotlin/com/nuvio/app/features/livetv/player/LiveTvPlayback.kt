@@ -3,10 +3,12 @@ package com.nuvio.app.features.livetv.player
 import com.nuvio.app.features.livetv.data.CatchupUrlBuilder
 import com.nuvio.app.features.livetv.data.LiveTvPreferences
 import com.nuvio.app.features.livetv.data.LiveTvRepository
+import com.nuvio.app.features.livetv.data.ServerZones
 import com.nuvio.app.features.livetv.data.XtreamClient
 import com.nuvio.app.features.livetv.model.EpgProgram
 import com.nuvio.app.features.livetv.model.LiveChannel
 import com.nuvio.app.features.livetv.model.LiveTvClock
+import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -69,10 +71,11 @@ internal object LiveTvPlayback {
     /** TS catch-up links being tried because the HLS one failed: URL -> playlist id. */
     private val hlsFailedOn = HashMap<String, String>()
 
-    /** Playlists whose server time zone has been asked for (once per run). */
-    private val zoneAsked = HashSet<String>()
+    /** Playlists already told this run that their server's time zone is unknown (one notice each). */
+    private val zoneWarned = HashSet<String>()
 
-    private val xtream: XtreamClient by lazy { XtreamClient() }
+    /** How long a replay waits for the server's time zone before playing without it. */
+    private const val ZONE_WAIT_MS = 5_000L
 
     /**
      * The Sports hub's answer to "this channel showing a live game won't play": the next channel
@@ -174,25 +177,26 @@ internal object LiveTvPlayback {
     /**
      * Puts a catch-up replay of [program] on [channel] in the launch store (from [offsetMs] into
      * the show) and returns its id for a PlayerRoute, or null when the show can't be replayed.
-     * An Xtream server whose time zone isn't known yet is asked for it first (once, a few
-     * seconds at most), so the replay starts at the right time.
+     * The time zone picked for this playlist, else the server's. Not known yet (M3U from an Xtream
+     * server, or a login whose server didn't say): looked up first (a few seconds at most), so the
+     * replay starts at the right time. Once found it's saved with the playlist; until then it's
+     * asked again on later replays.
      */
     suspend fun prepareCatchup(channel: LiveChannel, program: EpgProgram, profileId: Int, offsetMs: Long = 0L): Long? {
         val prefs = LiveTvPreferences
         val stored = prefs.currentPlaylists().firstOrNull { it.id == channel.sourceId }
-        val askZone = stored != null && stored.serverTimezone.isBlank() && XtreamClient.xtreamLink.containsMatchIn(channel.url) &&
-            synchronized(lock) { zoneAsked.add(channel.sourceId) }
         var playlist = stored
-        if (askZone && stored != null) {
-            val userAgent = stored.userAgent
-            val tz = runCatching { withTimeoutOrNull(4_000) { xtream.serverTimezoneFor(channel.url, userAgent) } }.getOrNull()
-            if (tz != null) {
-                prefs.updatePlaylists { l -> l.map { if (it.id == channel.sourceId) it.copy(serverTimezone = tz) else it } }
-                playlist = stored.copy(serverTimezone = tz)
-            }
+        if (stored != null && stored.catchupZone.isNotBlank()) {
+            // A zone worked out from the server's clock or guide is checked again now and then
+            // in the background (clock changes); never one picked in settings.
+            if (stored.catchupTimezone.isBlank()) ServerZones.recheck(channel)
+        } else if (stored != null && ServerZones.canLookUp(channel, stored)) {
+            val tz = runCatching { withTimeoutOrNull(ZONE_WAIT_MS) { ServerZones.learn(channel) } }.getOrNull()
+            if (tz != null) playlist = stored.copy(serverTimezone = tz)
         }
         val now = LiveTvClock.nowMs()
         val plan = LiveTvCatchup.plan(channel, program, prefs.currentSettings(), playlist, now, offsetMs) ?: return null
+        if (playlist?.catchupZone.isNullOrBlank()) warnZoneUnknown(playlist?.id, playlist?.name, plan.url)
         // The kind of link that worked last time on this provider goes first, so a skip or a
         // second replay doesn't wait on links the provider never answers.
         val links = CatchupUrlBuilder.preferForm(plan.url, plan.fallbacks, synchronized(lock) { catchupForms[channel.sourceId] })
@@ -222,6 +226,19 @@ internal object LiveTvPlayback {
             parentMetaType = CONTENT_TYPE,
         )
         return PlayerLaunchStore.put(launch)
+    }
+
+    /**
+     * The server's time zone couldn't be found, so catch-up times are written in this device's own
+     * zone and can land on a show hours away: says once per playlist (per app run) where to set it.
+     */
+    private fun warnZoneUnknown(sourceId: String?, name: String?, url: String) {
+        if (sourceId == null || name == null || CatchupUrlBuilder.askedStamp(url) == null) return
+        if (!synchronized(lock) { zoneWarned.add(sourceId) }) return
+        NuvioToastController.show(
+            "\"$name\" didn't say its time zone, so replays may start at the wrong time. Pick it under Catch-up time zone in the playlist's menu in Live TV settings",
+            durationMillis = 6_000L,
+        )
     }
 
     /**

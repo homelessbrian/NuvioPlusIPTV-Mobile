@@ -24,6 +24,7 @@ import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import com.nuvio.vpn.core.ProfileImport;
+import com.nuvio.vpn.core.OpenVpnDocument;
 import com.nuvio.vpn.core.ProfileEnvelope;
 import com.nuvio.vpn.core.ProtectionMode;
 import com.nuvio.vpn.core.VpnPreferences;
@@ -158,7 +159,7 @@ public final class VpnProfilesActivity extends Activity {
                 int outcome = R.string.vpn_scope_saved;
                 try {
                     settings.setShared(checkedId == allProfilesId);
-                    VpnConnectionService.settingsChanged(this);
+                    VpnConnectionService.settingsChanged(this, true);
                 } catch (IOException failure) { outcome = R.string.vpn_scope_failed; }
                 final int message = outcome;
                 showResult(() -> refresh(message));
@@ -184,7 +185,7 @@ public final class VpnProfilesActivity extends Activity {
             worker.execute(() -> {
                 try {
                     settings.saveMode(mode);
-                    VpnConnectionService.settingsChanged(this);
+                    VpnConnectionService.settingsChanged(this, true);
                     event("scope_intent_saved: " + mode.name());
                     showResult(() -> { savedMode = mode; setBusy(false); status.setText(R.string.vpn_scope_saved); });
                 } catch (Exception e) {
@@ -196,6 +197,15 @@ public final class VpnProfilesActivity extends Activity {
                     });
                 }
             });
+        });
+        // A checked radio does not emit OnCheckedChange again. An explicit
+        // Full app click can retry system consent after a previous denial.
+        // A newly changed selection is already busy saving above, so it only
+        // starts that one settings action.
+        scope.findViewById(appId).setOnClickListener(view -> {
+            if (!busy && savedMode == ProtectionMode.APP_WIDE
+                    && scope.getCheckedRadioButtonId() == appId)
+                VpnPlaybackProtection.requestAutomaticAppWide(true);
         });
         scopeCard.addView(scope);
         content.addView(scopeCard);
@@ -260,7 +270,7 @@ public final class VpnProfilesActivity extends Activity {
             String needsCredentials = null;
             try (InputStream input = getContentResolver().openInputStream(uri)) {
                 if (input == null) throw new IOException("Configuration is unavailable.");
-                try (ProfileImport.Candidate candidate = ProfileImport.read(input, protocol)) {
+                try (ProfileImport.Candidate candidate = OpenVpnDocument.read(input, protocol)) {
                     if (protocol == ProfileImport.Protocol.WIREGUARD) WireGuardProfiles.parse(candidate);
                     String id = java.util.UUID.randomUUID().toString();
                     if (protocol == ProfileImport.Protocol.OPENVPN && OpenVpnSession.evaluate(candidate.copyContents()) == 2)
@@ -315,7 +325,12 @@ public final class VpnProfilesActivity extends Activity {
                                 setBusy(true);
                                 worker.execute(() -> {
                                     int message;
-                                    try { VpnBackup.updateCredentials(this,id,revision,user,secret); message = R.string.vpn_credentials_saved; }
+                                    try {
+                                        VpnBackup.updateCredentials(this,id,revision,user,secret);
+                                        if (id.equals(settings.read().getSelectedProfileId()))
+                                            VpnPlaybackProtection.requestAutomaticAppWide(true);
+                                        message = R.string.vpn_credentials_saved;
+                                    }
                                     catch (Exception | LinkageError failure) { message = R.string.vpn_credentials_failed; }
                                     int notice = message;
                                     showResult(() -> { setBusy(false); refresh(notice); });
@@ -335,7 +350,7 @@ public final class VpnProfilesActivity extends Activity {
             if (cursor != null && cursor.moveToFirst()) name = cursor.getString(0);
         } catch (Exception ignored) { /* Display names are optional/untrusted metadata. */ }
         if (name != null) {
-            name = name.replaceFirst("(?i)\\.(ovpn|conf)$", "")
+            name = name.replaceFirst("(?i)\\.(ovpn|conf|zip)$", "")
                     .replaceAll("[^\\p{L}\\p{N} ._()-]", "_").trim();
             if (name.length() > 60) name = name.substring(0, 60);
         }
@@ -446,7 +461,7 @@ public final class VpnProfilesActivity extends Activity {
                         settings.selectProfile(entry.id);
                     }
                 }
-                VpnConnectionService.settingsChanged(this);
+                VpnConnectionService.settingsChanged(this, true);
                 event(entry == null ? "selection_cleared; scope_off" : "selection_saved");
             } catch (Exception e) {
                 event("selection_failed: " + e.getClass().getSimpleName());

@@ -174,6 +174,7 @@ fun LiveTvScreen(
         onDispose { LiveTvListMemory.saveScroll(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) }
     }
     val playlists by LiveTvPreferences.playlists.collectAsStateWithLifecycle()
+    val settings by LiveTvPreferences.settings.collectAsStateWithLifecycle()
     val savedPlaylist by PlaylistFilter.selected.collectAsStateWithLifecycle()
     val hasOnDemand by OnDemandRepository.hasContent.collectAsStateWithLifecycle()
     val showOnDemand = hasOnDemand || playlists.any { it.enabled && it.importVod }
@@ -315,7 +316,9 @@ fun LiveTvScreen(
                             modifier = Modifier.padding(bottom = NuvioTokens.Space.s8),
                         )
                     }
-                    if (status.loading && status.message != null) {
+                    if (status.loading && status.message != null &&
+                        (settings.showImportProgress || sections.none { it.channels.isNotEmpty() })
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(bottom = NuvioTokens.Space.s8),
                             verticalAlignment = Alignment.CenterVertically,

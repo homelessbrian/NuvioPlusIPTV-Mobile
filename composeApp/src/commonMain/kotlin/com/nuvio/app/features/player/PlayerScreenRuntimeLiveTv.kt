@@ -12,6 +12,15 @@ import com.nuvio.app.features.livetv.ui.LiveTvViewState
 internal val PlayerScreenRuntime.isLiveTv: Boolean
     get() = LiveTvPlayback.owns(activeProviderAddonId)
 
+/**
+ * Where the caption and audio choices are kept: per title, and for Live TV per channel — the one
+ * now on screen, which changes as you switch channels in the player (the title it was opened
+ * with stays the first channel). So captions on or off, and the sound track, are as you left
+ * them on each channel, also after switching to it in the player.
+ */
+internal val PlayerScreenRuntime.trackPreferenceId: String
+    get() = if (isLiveTv) activeVideoId?.takeIf { it.isNotBlank() } ?: parentMetaId else parentMetaId
+
 /** The title for the controls: the channel now on screen, which changes as you switch channels. */
 internal fun PlayerScreenRuntime.liveTitleOr(fallback: String): String =
     activeStreamTitle.takeIf { isLiveTv && it.isNotBlank() } ?: fallback

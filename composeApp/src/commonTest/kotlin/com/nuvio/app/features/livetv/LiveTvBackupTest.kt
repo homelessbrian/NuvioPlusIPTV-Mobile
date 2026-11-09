@@ -75,6 +75,50 @@ class LiveTvBackupTest {
     private fun JsonObject.value(key: String) = this[key]!!.jsonObject["v"]!!
 
     @Test
+    fun updateBannersDefaultToVisibleAndPersistAcrossReloads() {
+        var saved: Map<String, PrefValue> = emptyMap()
+        val store = LiveTvPreferencesStore().apply {
+            installPersistence(load = { null }, save = { saved = it })
+        }
+        assertTrue(store.currentSettings().showImportProgress)
+
+        store.updateSettings { it.copy(showImportProgress = false) }
+        assertFalse(store.currentSettings().showImportProgress)
+        assertEquals(PrefValue.Bool(false), saved[LiveTvKeys.showImportProgress])
+
+        val reloaded = LiveTvPreferencesStore().apply {
+            installPersistence(load = { saved }, save = { saved = it })
+        }
+        assertFalse(reloaded.currentSettings().showImportProgress)
+
+        reloaded.updateSettings { it.copy(showImportProgress = true) }
+        val enabled = LiveTvPreferencesStore().apply {
+            installPersistence(load = { saved }, save = {})
+        }
+        assertTrue(enabled.currentSettings().showImportProgress)
+    }
+
+    @Test
+    fun updateBannerSettingSyncsWithTvAndOlderBackupsUseTheDefault() {
+        val source = TestStore()
+        source.importFromSync(tvExport())
+        val restored = TestStore()
+        for (show in listOf(false, true)) {
+            source.updateSettings { it.copy(showImportProgress = show) }
+            val exported = source.exportForSync()
+            // The physical preference name and Boolean type match the TV's DataStore export.
+            assertEquals(entry("b", JsonPrimitive(show)), exported["show_import_progress"])
+            restored.importFromSync(exported)
+            assertEquals(show, restored.currentSettings().showImportProgress)
+        }
+
+        restored.updateSettings { it.copy(showImportProgress = false) }
+        restored.importFromSync(tvExport())
+        assertFalse(restored.rawData.value.containsKey(LiveTvKeys.showImportProgress))
+        assertTrue(restored.currentSettings().showImportProgress)
+    }
+
+    @Test
     fun exportMatchesTvFormatAfterRoundTrip() {
         val store = TestStore()
         val incoming = tvExport()

@@ -48,6 +48,17 @@ internal val navigationSavedStateConfiguration = SavedStateConfiguration {
             subclass(StreamRoute::class, StreamRoute.serializer())
             subclass(CatalogRoute::class, CatalogRoute.serializer())
             subclass(PlayerRoute::class, PlayerRoute.serializer())
+            // Live TV screens: without these, leaving the app from one of them closed it in the
+            // background (the open screens couldn't be saved), and it reopened at the profile screen.
+            subclass(LiveTvGuideRoute::class, LiveTvGuideRoute.serializer())
+            subclass(LiveTvOnDemandRoute::class, LiveTvOnDemandRoute.serializer())
+            subclass(LiveTvOnDemandSeeAllRoute::class, LiveTvOnDemandSeeAllRoute.serializer())
+            subclass(LiveTvRecordingsRoute::class, LiveTvRecordingsRoute.serializer())
+            subclass(LiveTvCalendarRoute::class, LiveTvCalendarRoute.serializer())
+            subclass(LiveTvManageRoute::class, LiveTvManageRoute.serializer())
+            subclass(LiveTvSportsRoute::class, LiveTvSportsRoute.serializer())
+            subclass(LiveTvSportsGameRoute::class, LiveTvSportsGameRoute.serializer())
+            subclass(LiveTvSportsLeagueRoute::class, LiveTvSportsLeagueRoute.serializer())
         }
     }
 }

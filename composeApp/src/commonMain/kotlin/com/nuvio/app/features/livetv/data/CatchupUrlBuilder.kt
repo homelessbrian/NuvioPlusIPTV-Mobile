@@ -37,20 +37,25 @@ object CatchupUrlBuilder {
         // Xtream-style links (server/user/pass/id) whose playlist doesn't say which kind of
         // catch-up: they use Xtream's /timeshift/ links, like TiviMate assumes.
         val xtreamGuess = { xtream(liveUrl, startMsC, duration, preferHls, serverTimezone) }
+        // Playlists with their own catch-up link (catchup-source): the times written in it go
+        // by the server's clock when it's known, like the links built here (before, they always
+        // went by this device's clock, so a server in another time zone replayed a show hours off).
+        val zone = serverTimezone?.takeIf { it.isNotBlank() && ZoneFinder.isKnown(it) }
+        val fillIn = { t: String -> fill(t, start, end, now, duration, zone) }
         return when (catchup.type) {
-            "append" -> catchup.source?.let { liveUrl + fill(it, start, end, now, duration) }
+            "append" -> catchup.source?.let { liveUrl + fillIn(it) }
             "default" -> {
                 val src = catchup.source
                 when {
                     src.isNullOrBlank() -> xtreamGuess() ?: shift(liveUrl, start, now)
-                    src.startsWith("http", ignoreCase = true) -> fill(src, start, end, now, duration)
-                    else -> liveUrl + fill(src, start, end, now, duration)
+                    src.startsWith("http", ignoreCase = true) -> fillIn(src)
+                    else -> liveUrl + fillIn(src)
                 }
             }
             "shift", "timeshift" -> if (catchup.source.isNullOrBlank()) xtreamGuess() ?: shift(liveUrl, start, now) else shift(liveUrl, start, now)
             "flussonic", "flussonic-hls", "flussonic-ts", "fs" -> flussonic(liveUrl, start, duration)
             "xc", "xtream" -> xtream(liveUrl, startMsC, duration, preferHls, serverTimezone)
-            else -> catchup.source?.let { fill(it, start, end, now, duration) }
+            else -> catchup.source?.let { fillIn(it) }
         }
     }
 
@@ -130,16 +135,25 @@ object CatchupUrlBuilder {
         }
         // timeshift.php form (some panels only answer this).
         out += "$host/streaming/timeshift.php?username=$user&password=$pass&stream=$id&start=$stamp&duration=$minutes"
-        // Same request with the time written in the other clock (server vs device).
-        val serverZone = serverTimezone?.takeIf { it.isNotBlank() && LiveTvTimeZones.isKnown(it) }
-        val startMs = parseStamp(stamp, serverZone ?: LiveTvTimeZones.SYSTEM)
-        if (startMs != null) {
-            val other = stamp(startMs, if (serverZone != null) LiveTvTimeZones.SYSTEM else LiveTvTimeZones.UTC)
-            if (other != stamp) out += "$host/timeshift/$user/$pass/$minutes/$other/$id${ext.ifEmpty { ".ts" }}$query"
+        // Same request with the time written in the other clock (device vs UTC). Only a guess
+        // for when the server's time zone isn't known: once it is known the first link already
+        // has the right time, and this one could only land on a show from hours earlier or later.
+        val serverZone = serverTimezone?.takeIf { it.isNotBlank() && ZoneFinder.isKnown(it) }
+        if (serverZone == null) {
+            val startMs = parseStamp(stamp, LiveTvTimeZones.SYSTEM)
+            if (startMs != null) {
+                val other = stamp(startMs, LiveTvTimeZones.UTC)
+                if (other != stamp) out += "$host/timeshift/$user/$pass/$minutes/$other/$id${ext.ifEmpty { ".ts" }}$query"
+            }
         }
         out.remove(url)
         return out.toList()
     }
+
+    /** The start time written in a catch-up link (Xtream timeshift or timeshift.php), or null for other kinds. */
+    fun askedStamp(url: String): String? = STAMP_IN_LINK.find(url)?.value
+
+    private val STAMP_IN_LINK = Regex("""\d{4}-\d{2}-\d{2}:\d{2}-\d{2}""")
 
     /**
      * Xtream replay links name a whole minute (9:10, never 9:10:45): the replay really starts
@@ -196,8 +210,16 @@ object CatchupUrlBuilder {
     private val durationToken = Regex("""\$?\{duration:(\d+)\}""")
     private val offsetToken = Regex("""\$?\{offset:(\d+)\}""")
 
-    internal fun fill(template: String, start: Long, end: Long, now: Long, duration: Long): String {
+    internal fun fill(
+        template: String, start: Long, end: Long, now: Long, duration: Long,
+        /** The server's time zone, when known. */
+        serverZone: String? = null
+    ): String {
         var out = template
+        // Xtream replay links (/timeshift/…, timeshift.php) name the start in the server's own
+        // time, so their formatted dates are written in it. Other links keep UTC, as before.
+        val xtreamLink = template.contains("/timeshift/", ignoreCase = true) || template.contains("timeshift.php", ignoreCase = true)
+        val formatZone = if (serverZone != null && xtreamLink) serverZone else LiveTvTimeZones.UTC
         // {utc:YmdHMS} / ${start:Y-m-d} style formatted dates.
         out = formattedToken.replace(out) { m ->
             val epoch = when (m.groupValues[1]) {
@@ -205,7 +227,7 @@ object CatchupUrlBuilder {
                 "lutc", "now", "timestamp" -> now
                 else -> start
             }
-            formatPattern(m.groupValues[2], epoch)
+            formatPattern(m.groupValues[2], epoch, formatZone)
         }
         out = durationToken.replace(out) { m ->
             val divisor = m.groupValues[1].toLongOrNull()?.coerceAtLeast(1) ?: 1
@@ -224,8 +246,9 @@ object CatchupUrlBuilder {
         simple.forEach { (k, v) ->
             out = out.replace("\${$k}", v.toString()).replace("{$k}", v.toString())
         }
-        // Bare {Y}{m}{d}{H}{M}{S} refer to the program start in local time.
-        val t = CivilTime.at(start * 1000, LiveTvTimeZones.SYSTEM)
+        // Bare {Y}{m}{d}{H}{M}{S} refer to the program start in local time: the server's, when
+        // known (that's the clock the server reads them in), otherwise this device's.
+        val t = CivilTime.at(start * 1000, serverZone ?: LiveTvTimeZones.SYSTEM)
         out = out
             .replace("{Y}", pad(t.year, 4))
             .replace("{m}", pad(t.month, 2))
@@ -238,10 +261,10 @@ object CatchupUrlBuilder {
 
     /**
      * A strftime-style pattern (Y, m, d, H, M, S; anything else copied), for the program's time
-     * in UTC. Like the TV app's SimpleDateFormat version, other letters come through as they are.
+     * in [zone]. Like the TV app's SimpleDateFormat version, other letters come through as they are.
      */
-    private fun formatPattern(pattern: String, epochSec: Long): String {
-        val t = CivilTime.at(epochSec * 1000, LiveTvTimeZones.UTC)
+    private fun formatPattern(pattern: String, epochSec: Long, zone: String): String {
+        val t = CivilTime.at(epochSec * 1000, zone)
         return buildString {
             pattern.forEach { c ->
                 append(
@@ -260,7 +283,7 @@ object CatchupUrlBuilder {
     }
 
     private fun zone(name: String?): String =
-        name?.takeIf { it.isNotBlank() && LiveTvTimeZones.isKnown(it) } ?: LiveTvTimeZones.SYSTEM
+        name?.takeIf { it.isNotBlank() && ZoneFinder.isKnown(it) } ?: LiveTvTimeZones.SYSTEM
 
     /** Xtream's "yyyy-MM-dd:HH-mm" for a time, in [zone]. */
     private fun stamp(epochMs: Long, zone: String): String {
@@ -287,7 +310,7 @@ object CatchupUrlBuilder {
 internal data class CivilTime(val year: Int, val month: Int, val day: Int, val hour: Int, val minute: Int, val second: Int) {
     companion object {
         /** The civil time of [epochMs] in [zone] (a zone id, [LiveTvTimeZones.SYSTEM] or [LiveTvTimeZones.UTC]). */
-        fun at(epochMs: Long, zone: String): CivilTime = atUtc(epochMs + LiveTvTimeZones.offsetMs(zone, epochMs))
+        fun at(epochMs: Long, zone: String): CivilTime = atUtc(epochMs + ZoneFinder.offsetMs(zone, epochMs))
 
         fun atUtc(epochMs: Long): CivilTime {
             val days = epochMs.floorDiv(86_400_000L)
@@ -324,8 +347,8 @@ internal data class CivilTime(val year: Int, val month: Int, val day: Int, val h
             val asUtc = (daysFromCivil(year, month, day) * 86_400L + hour * 3_600L + minute * 60L + second) * 1_000L
             // The offset depends on the instant (summer time): take it at the UTC guess, then
             // once more at the result, which settles it except right at a clock change.
-            val guess = asUtc - LiveTvTimeZones.offsetMs(zone, asUtc)
-            return asUtc - LiveTvTimeZones.offsetMs(zone, guess)
+            val guess = asUtc - ZoneFinder.offsetMs(zone, asUtc)
+            return asUtc - ZoneFinder.offsetMs(zone, guess)
         }
     }
 }

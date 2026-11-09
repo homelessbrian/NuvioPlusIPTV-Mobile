@@ -10,6 +10,9 @@ import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -124,6 +127,16 @@ internal object CalendarRepository {
         _follows.value = decodeFollows(LiveTvPreferences.calendarFollowsNow())
         _hidden.value = decodeHidden(LiveTvPreferences.calendarHiddenShowsNow())
         // Follow the synced setting from here on: a sync from the TV, or another Nuvio profile, updates the lists.
+        // Switching Nuvio profile: drop the old profile's shows at once and build this profile's own
+        // (its Library, watch history and bells), even when both profiles' bell lists happen to match.
+        scope.launch {
+            LiveTvPreferences.activeProfile.drop(1).distinctUntilChanged().collect {
+                mutex.withLock { _state.value = CalendarState() }
+                delay(500)
+                job?.cancel()
+                refresh(force = false)
+            }
+        }
         scope.launch {
             LiveTvPreferences.calendarFollows.collect { raw ->
                 val list = decodeFollows(raw)
