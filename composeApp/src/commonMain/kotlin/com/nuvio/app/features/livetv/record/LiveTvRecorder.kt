@@ -412,6 +412,7 @@ internal object LiveTvRecorder {
         var target = 6
         var problem: String? = null
         var mapDone = false
+        var shownAt = LiveTvClock.nowMs()
         while (scope.isActive && !stopping(rec.id) && LiveTvClock.nowMs() < currentStop(rec.id)) {
             if (nothingYet()) return HLS_SENT_NOTHING
             val lines = text.lines()
@@ -436,22 +437,37 @@ internal object LiveTvRecorder {
                     l.startsWith("#EXTINF:") -> dur = l.removePrefix("#EXTINF:").substringBefore(',').toDoubleOrNull() ?: target.toDouble()
                     l.isNotBlank() && !l.startsWith("#") -> {
                         if (seq > lastSeq) {
-                            val failure = try {
-                                // A stop (or an HLS replay that's sent nothing) cuts a piece part way
-                                // instead of waiting for it: some providers send a whole show as one
-                                // long piece, at viewing speed. What came in of it is kept.
-                                RecordingPlatform.download(resolve(mediaUrl, l), headers, path, append = RecordingPlatform.fileSize(path) > 0, shouldStop = { stopping(rec.id) || nothingYet() }) {}
-                                null
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: RecordingHttpError) {
-                                "The provider answered HTTP ${e.code} for the video pieces"
-                            } catch (e: Exception) {
-                                e.message ?: "unknown error"
+                            var failure: String? = null
+                            var tries = 0
+                            while (true) {
+                                val sizeBefore = RecordingPlatform.fileSize(path)
+                                failure = try {
+                                    // A stop (or an HLS replay that's sent nothing) cuts a piece part way
+                                    // instead of waiting for it: some providers send a whole show as one
+                                    // long piece, at viewing speed. What came in of it is kept.
+                                    RecordingPlatform.download(resolve(mediaUrl, l), headers, path, append = sizeBefore > 0, shouldStop = { stopping(rec.id) || nothingYet() }) {}
+                                    null
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: RecordingHttpError) {
+                                    "The provider answered HTTP ${e.code} for the video pieces"
+                                } catch (e: Exception) {
+                                    e.message ?: "unknown error"
+                                }
+                                // A catch-up show's list has every piece at once and isn't read again:
+                                // a piece that failed before any of it was saved gets a few more tries.
+                                if (failure == null || !finite || ++tries >= 3 || stopping(rec.id) ||
+                                    RecordingPlatform.fileSize(path) != sizeBefore) break
+                                delay(1_000L * tries)
                             }
                             if (failure == null) {
                                 total += dur
                                 lastSeq = seq
+                                // The saved part shows as it comes in, not only once the whole list is done.
+                                if (finite && LiveTvClock.nowMs() - shownAt > 5_000) {
+                                    shownAt = LiveTvClock.nowMs()
+                                    onProgress(total, RecordingPlatform.dirSize(rec.dir))
+                                }
                             } else if (total <= 0.0) {
                                 problem = failure
                                 noteProblem(rec, failure) // kept even if a stop cancels this loop

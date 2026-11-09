@@ -300,7 +300,11 @@ internal object LiveTvRecordingScheduler {
             // As when watching catch-up: the guide's shift off, the playlist's catch-up shift on.
             val shift = LiveTvCatchup.shiftMs(settings, channel, playlist)
             val url = catchup?.let {
-                CatchupUrlBuilder.build(channel.url, it, s.startMs - s.pre - shift, s.stopMs + s.post - shift, now, preferHls = false, serverTimezone = zone)
+                // Same kind of link as watching (the catch-up setting): HLS comes as pieces, which
+                // providers send at full speed; one long TS stream is often sent at viewing speed
+                // or slower. The TS link stays as the fall-back if the HLS one sends nothing.
+                CatchupUrlBuilder.build(channel.url, it, s.startMs - s.pre - shift, s.stopMs + s.post - shift, now,
+                    preferHls = LiveTvCatchup.preferHls(settings, playlist, now), serverTimezone = zone)
             }
             if (url == null) {
                 drop(s, "\"${s.title}\" couldn't be saved: this channel's catch-up isn't available")
@@ -333,6 +337,8 @@ internal object LiveTvRecordingScheduler {
                     catchup?.let {
                         val from = s.startMs - s.pre - shift + doneMs - 30_000L
                         CatchupUrlBuilder.build(channel.url, it, from, s.stopMs + s.post - shift, LiveTvClock.nowMs(), preferHls = false, serverTimezone = zone)
+                            // Carrying on happens in the TS download: an m3u8 channel's link in its TS form.
+                            ?.let { link -> CatchupUrlBuilder.tsFallback(link) ?: link }
                     }
                 },
                 onFinished = { rec ->
