@@ -579,6 +579,14 @@ data class EpgChannelEntry(
     val displayName: String get() = names.firstOrNull() ?: id
 }
 
+/**
+ * The provider's own group order (Xtream logins list their categories in the order the provider
+ * set). Group id -> place; groups it doesn't name keep the order their channels come in.
+ */
+object PlaylistGroupOrder {
+    @kotlin.concurrent.Volatile var ranks: Map<String, Int> = emptyMap()
+}
+
 /** A row in the TiviMate-style group panel. */
 data class ChannelGroup(
     val id: String,

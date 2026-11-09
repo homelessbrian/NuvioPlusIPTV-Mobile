@@ -259,11 +259,13 @@ internal class XtreamClient(
             if (count % 500 == 0) onProgress?.invoke(count)
         }
         if (count == 0) error("The provider returned no live channels")
-        return LivePlaylist(out.toString(), count, info)
+        // The provider's own group order (as it lists its categories), kept for the group list.
+        val groupOrder = categories.values.map { it.replace("\n", " ").replace("\"", "'").trim() }.filter { it.isNotBlank() }.distinct()
+        return LivePlaylist(out.toString(), count, info, groupOrder)
     }
 
     /** The result of [livePlaylistM3u]. */
-    class LivePlaylist(val m3u: String, val channelCount: Int, val account: XtreamAccountInfo)
+    class LivePlaylist(val m3u: String, val channelCount: Int, val account: XtreamAccountInfo, val groupOrder: List<String> = emptyList())
 
     /** The stream file extension for this login: its own choice, or what the account allows. */
     fun streamExtension(pl: PlaylistSource, allowedFormats: Set<String>): String = when (pl.streamFormat) {
@@ -334,7 +336,8 @@ internal class XtreamClient(
     // ---------- plumbing ----------
 
     private suspend fun categories(pl: PlaylistSource, action: String): Map<String, String> = runCatching {
-        val out = HashMap<String, String>()
+        // In the provider's order (the group list follows it).
+        val out = LinkedHashMap<String, String>()
         jsonArrayOf(getText("${pl.xtreamApiUrl()}&action=$action", pl.userAgent)).forEach { e ->
             val c = e as? JsonObject ?: return@forEach
             out[c.optString("category_id")] = c.optString("category_name")

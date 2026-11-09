@@ -211,6 +211,7 @@ internal object LiveTvRepository {
         prefs.updatePlaylists { list -> list.filterNot { it.id == id } }
         prefs.setPlaylistAccount(id, null)
         LiveTvFiles.delete(LiveTvDirs.PLAYLISTS, "$id.m3u")
+        LiveTvFiles.delete(LiveTvDirs.PLAYLISTS, groupOrderFile(id))
         embeddedEpgUrls.remove(id)
         dropPlaylistNow(id)
         scope.launch { runCatching { mutex.withLock { rebuildLocked() } } }
@@ -411,12 +412,29 @@ internal object LiveTvRepository {
             }
         }
         sweep(LiveTvDirs.EPG, { it.substringBefore(".xml").substringBefore(".tmp") }, guideIds)
-        sweep(LiveTvDirs.PLAYLISTS, { it.substringBefore(".m3u").substringBefore(".tmp") }, playlistIds)
+        sweep(LiveTvDirs.PLAYLISTS, { it.substringBefore(".m3u").substringBefore(".groups").substringBefore(".tmp") }, playlistIds)
     }
 
     // ---------------------------------------------------------------- downloads
 
     private fun playlistFile(id: String) = "$id.m3u"
+    /** An Xtream login's group names in the provider's order (see [PlaylistGroupOrder]). */
+    private fun groupOrderFile(id: String) = "$id.groups"
+
+    /** The providers' own group order, for the group list. */
+    private fun loadGroupOrder(playlists: List<PlaylistSource>) {
+        PlaylistGroupOrder.ranks = runCatching {
+            val multi = playlists.size > 1
+            val ranks = HashMap<String, Int>()
+            for (pl in playlists) {
+                val text = LiveTvFiles.readSmall(LiveTvDirs.PLAYLISTS, groupOrderFile(pl.id)) ?: continue
+                text.lines().filter { it.isNotBlank() }.forEachIndexed { i, name ->
+                    if ((if (multi) "${pl.id}::$name" else name) !in ranks) ranks[if (multi) "${pl.id}::$name" else name] = i
+                }
+            }
+            ranks
+        }.getOrDefault(emptyMap())
+    }
     private fun epgFile(id: String) = "$id.xml"
 
     /** An Xtream login: the API's channel list written as an M3U; get.php when the API won't answer. */
@@ -425,6 +443,7 @@ internal object LiveTvRepository {
         val playlist = viaApi.getOrNull()
         if (playlist != null) {
             playlist.account.account?.let { prefs.setPlaylistAccount(pl.id, it) }
+            if (playlist.groupOrder.isNotEmpty()) runCatching { LiveTvFiles.writeSmall(LiveTvDirs.PLAYLISTS, groupOrderFile(pl.id), playlist.groupOrder.joinToString("\n")) }
             playlist.account.serverTimezone?.let { tz ->
                 if (tz != pl.serverTimezone) prefs.updatePlaylists { l -> l.map { if (it.id == pl.id) it.copy(serverTimezone = tz) else it } }
                 ServerZones.noteFound(pl.id)
@@ -527,6 +546,7 @@ internal object LiveTvRepository {
                 prefs.updatePlaylists { list -> list.map { if (it.id == pl.id) it.copy(channelCount = count) else it } }
             }
         }
+        loadGroupOrder(playlists)
         _channels.value = out
         carryOverRenamedChannels(before, out)
     }
