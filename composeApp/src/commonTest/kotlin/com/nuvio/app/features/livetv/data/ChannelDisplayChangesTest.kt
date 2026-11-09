@@ -337,10 +337,12 @@ class ChannelDisplayChangesTest {
     private data class Inputs(
         val channels: List<LiveChannel>,
         val overrides: ChannelDisplayOverrides,
-        val nameRemovals: String,
+        val cleanup: ChannelNameCleanup,
         val logos: Map<String, String>,
         val preferEpg: Set<String>,
-    )
+    ) {
+        val nameRemovals: String get() = cleanup.removals
+    }
 
     private class Harness(
         scope: TestScope,

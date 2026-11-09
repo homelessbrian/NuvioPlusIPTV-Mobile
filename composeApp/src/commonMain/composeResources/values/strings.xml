@@ -2741,6 +2741,8 @@
     <string name="livetv_guide_shift_description">Moves this playlist's built-in guide earlier or later, for listings out of step with what's playing</string>
     <string name="livetv_epg_shift">Time shift</string>
     <string name="livetv_epg_shift_description">Moves this guide's listings earlier or later, for listings out of step with what's playing</string>
+    <string name="livetv_clean_group_names">Also clean group names</string>
+    <string name="livetv_clean_group_names_description">Take the Channel Name Cleanup words (set in the TV app) off group names too, like "| NL | Sports"</string>
     <string name="livetv_time_shifts_note">Catch-up and guide time shifts are set for each playlist and guide: tap one under Playlists or Guides to change it.</string>
     <string name="livetv_on_demand">On Demand</string>
     <string name="livetv_vod_movies">Movies</string>

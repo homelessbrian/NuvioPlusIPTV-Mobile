@@ -115,6 +115,8 @@ import nuvio.composeapp.generated.resources.livetv_epg_shift_description
 import nuvio.composeapp.generated.resources.livetv_guide_shift
 import nuvio.composeapp.generated.resources.livetv_guide_shift_description
 import nuvio.composeapp.generated.resources.livetv_time_shifts_note
+import nuvio.composeapp.generated.resources.livetv_clean_group_names
+import nuvio.composeapp.generated.resources.livetv_clean_group_names_description
 import nuvio.composeapp.generated.resources.livetv_section_catchup
 import nuvio.composeapp.generated.resources.livetv_days_ahead
 import nuvio.composeapp.generated.resources.livetv_days_ahead_description
@@ -606,6 +608,15 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
                     checked = settings.showNowLine,
                     isTablet = isTablet,
                     onCheckedChange = { on -> update { it.copy(showNowLine = on) } },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                // Channel Name Cleanup's words (set on the TV app, synced) taken off group names too.
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.livetv_clean_group_names),
+                    description = stringResource(Res.string.livetv_clean_group_names_description),
+                    checked = settings.cleanGroupNames,
+                    isTablet = isTablet,
+                    onCheckedChange = { on -> update { it.copy(cleanGroupNames = on) } },
                 )
             }
         }

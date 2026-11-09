@@ -259,8 +259,9 @@ internal class XtreamClient(
             if (count % 500 == 0) onProgress?.invoke(count)
         }
         if (count == 0) error("The provider returned no live channels")
-        // The provider's own group order (as it lists its categories), kept for the group list.
-        val groupOrder = categories.values.map { it.replace("\n", " ").replace("\"", "'").trim() }.filter { it.isNotBlank() }.distinct()
+        // The provider's own group order (as it lists its categories), kept for the group list;
+        // names as the playlist reader will see them in group-title.
+        val groupOrder = categories.values.map { it.replace("\n", " ").replace("\"", "'").split(';').first().trim() }.filter { it.isNotBlank() }.distinct()
         return LivePlaylist(out.toString(), count, info, groupOrder)
     }
 

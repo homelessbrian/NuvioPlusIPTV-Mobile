@@ -16,6 +16,9 @@ internal data class ChannelDisplayOverrides(
     val channelLogos: Map<String, String>,
 )
 
+/** Channel Name Cleanup as the display transform uses it: the words to remove, and whether group names get it too. */
+internal data class ChannelNameCleanup(val removals: String, val cleanGroups: Boolean = false)
+
 /** Only saved overrides used by the display transform should rebuild the channel list. */
 internal fun displayChannelChanges(
     channels: Flow<List<LiveChannel>>,
@@ -23,7 +26,7 @@ internal fun displayChannelChanges(
     settings: Flow<LiveTvSettings>,
     logos: Flow<Map<String, String>>,
     preferEpg: Flow<Set<String>>,
-    transform: suspend (List<LiveChannel>, ChannelDisplayOverrides, String, Map<String, String>, Set<String>) -> List<LiveChannel>,
+    transform: suspend (List<LiveChannel>, ChannelDisplayOverrides, ChannelNameCleanup, Map<String, String>, Set<String>) -> List<LiveChannel>,
 ): Flow<List<LiveChannel>> = combine(
     channels,
     // Keep in step with named() and withPickedLogos() in LiveTvRepository.
@@ -34,7 +37,7 @@ internal fun displayChannelChanges(
                 sameOrderedEntries(a.channelNumbers, b.channelNumbers) &&
                 a.groupNames == b.groupNames && sameOrderedEntries(a.channelLogos, b.channelLogos)
         },
-    settings.map { it.nameRemovals }.distinctUntilChanged(),
+    settings.map { ChannelNameCleanup(it.nameRemovals, it.cleanGroupNames) }.distinctUntilChanged(),
     logos,
     preferEpg,
     transform,

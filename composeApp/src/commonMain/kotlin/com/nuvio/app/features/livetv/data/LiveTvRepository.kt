@@ -88,8 +88,8 @@ internal object LiveTvRepository {
     val displayChannels: StateFlow<List<LiveChannel>> = displayChannelChanges(
         _channels, prefs.userState, prefs.settings, _epgLogos,
         prefs.playlists.map { list -> list.filter { it.logoSource == "epg" }.mapTo(HashSet()) { it.id } }.distinctUntilChanged()
-    ) { channels, overrides, nameRemovals, logos, preferEpg ->
-        withPickedLogos(withLogos(named(channels, overrides, nameRemovals), logos, preferEpg), overrides.channelLogos)
+    ) { channels, overrides, cleanup, logos, preferEpg ->
+        withPickedLogos(withLogos(named(channels, overrides, cleanup.removals, cleanup.cleanGroups), logos, preferEpg), overrides.channelLogos)
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     private var initialized = false
@@ -900,20 +900,25 @@ internal object LiveTvRepository {
 
     // ---------------------------------------------------------------- display names and logos
 
-    private fun named(channels: List<LiveChannel>, user: ChannelDisplayOverrides, nameRemovals: String): List<LiveChannel> {
+    private fun named(channels: List<LiveChannel>, user: ChannelDisplayOverrides, nameRemovals: String, cleanGroups: Boolean = false): List<LiveChannel> {
         val terms = ChannelNameEditor.terms(nameRemovals)
         if (user.channelNames.isEmpty() && user.channelNumbers.isEmpty() && user.groupNames.isEmpty() && terms.isEmpty()) return channels
         val spaced = if (terms.isEmpty()) emptyMap() else channels.groupBy { it.sourceId }.mapValues { (_, list) -> ChannelNameEditor.spacePrefixes(list.map { it.name }, terms) }
         val currentKeys = channels.mapTo(HashSet()) { it.key }
         val namesById = stableIndex(user.channelNames.filterKeys { it !in currentKeys })
         val numbersById = stableIndex(user.channelNumbers.filterKeys { it !in currentKeys })
+        // Group names get the same cleaning when that's switched on. Worked out once per
+        // distinct group name; a group you renamed yourself keeps your name.
+        val cleanedGroups: Map<String, String> =
+            if (cleanGroups && terms.isNotEmpty()) channels.mapTo(HashSet()) { it.group }.associateWith { ChannelNameEditor.clean(it, terms) }
+            else emptyMap()
         return channels.map { c ->
             val id = stableId(c.key)
             val cleaned = if (terms.isEmpty()) null else ChannelNameEditor.clean(c.name, terms, spaced[c.sourceId].orEmpty()).takeIf { it != c.name }
             c.copy(
                 name = user.channelNames[c.key] ?: id?.let { namesById[it] } ?: cleaned ?: c.name,
                 number = user.channelNumbers[c.key] ?: id?.let { numbersById[it] } ?: c.number,
-                group = user.groupNames[c.groupId] ?: c.group
+                group = user.groupNames[c.groupId] ?: cleanedGroups[c.group]?.ifBlank { null } ?: c.group
             )
         }
     }

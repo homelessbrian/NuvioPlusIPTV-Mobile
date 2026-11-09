@@ -411,6 +411,8 @@ data class LiveTvSettings(
     val groupPlaylistHeadings: Boolean = true,
     /** Channel name editor (TiviMate style): prefixes/suffixes to remove, comma-separated. */
     val nameRemovals: String = "",
+    /** Also take those prefixes/suffixes off group names (off by default). */
+    val cleanGroupNames: Boolean = false,
     /** Hidden developer tools (Test poster lookup). Turned on with a secret word. */
     val developerTools: Boolean = false,
     /** Satellite-box style: picking a group lands on the channel names (OK plays, Right opens the schedule). */
