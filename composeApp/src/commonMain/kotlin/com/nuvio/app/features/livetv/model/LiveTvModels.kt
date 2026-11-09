@@ -474,7 +474,9 @@ data class LiveTvSettings(
     /** Parts of the guide's info panel that are switched off (see GuideInfoPart), comma separated. */
     val guideInfoHidden: String = "",
     /** Rows on the launcher home screen: "sports", "favorites", "recent" (comma separated; empty = none). */
-    val launcherRows: String = ""
+    val launcherRows: String = "",
+    /** Show passive playlist, EPG and On Demand update progress while content is available. */
+    val showImportProgress: Boolean = true
 )
 
 data class LiveUserState(

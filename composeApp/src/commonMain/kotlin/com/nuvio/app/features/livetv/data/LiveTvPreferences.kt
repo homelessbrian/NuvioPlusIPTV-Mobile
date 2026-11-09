@@ -77,6 +77,7 @@ internal object LiveTvKeys {
     const val bannerSeconds = "banner_seconds"
     const val playlistRefresh = "playlist_refresh_hours"
     const val epgRefresh = "epg_refresh_hours"
+    const val showImportProgress = "show_import_progress"
     const val epgPast = "epg_past_hours"
     const val epgFuture = "epg_future_days"
     const val clock24 = "clock_24h"
@@ -801,7 +802,8 @@ internal open class LiveTvPreferencesStore {
             channelSurf = p.bool(LiveTvKeys.channelSurf) ?: d.channelSurf,
             barHidden = p.str(LiveTvKeys.barHidden) ?: d.barHidden,
             guideInfoHidden = p.str(LiveTvKeys.guideInfoHidden) ?: d.guideInfoHidden,
-            launcherRows = p.str(LiveTvKeys.launcherRows) ?: d.launcherRows
+            launcherRows = p.str(LiveTvKeys.launcherRows) ?: d.launcherRows,
+            showImportProgress = p.bool(LiveTvKeys.showImportProgress) ?: d.showImportProgress
         )
     }
 
@@ -1067,6 +1069,7 @@ internal open class LiveTvPreferencesStore {
         p[LiveTvKeys.barHidden] = s.barHidden
         p[LiveTvKeys.guideInfoHidden] = s.guideInfoHidden
         p[LiveTvKeys.launcherRows] = s.launcherRows
+        p[LiveTvKeys.showImportProgress] = s.showImportProgress
     }
 
     // ---------- channel management ----------
