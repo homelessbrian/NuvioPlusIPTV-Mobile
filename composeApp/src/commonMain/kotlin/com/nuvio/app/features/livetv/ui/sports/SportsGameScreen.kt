@@ -179,7 +179,9 @@ private fun GameBody(ev: SportsEvent, actions: SportsActions) {
         repo.openGame(ev)
         onDispose { repo.closeGame(ev.id) }
     }
-    val replays = repo.vodMatches.collectAsStateWithLifecycle().value[ev.id].orEmpty()
+    val vodLooked = repo.vodMatches.collectAsStateWithLifecycle().value[ev.id]
+    val replays = vodLooked.orEmpty()
+    val vodAddons = repo.vodAddons.collectAsStateWithLifecycle().value[ev.id]
     val reminded = follows.reminders.any { it.eventId == ev.id }
     val recording = remember(schedules, ev.id) { SportsRecordings.forEvent(ev, schedules) }
     var askRecord by remember(ev.id) { mutableStateOf(false) }
@@ -269,6 +271,37 @@ private fun GameBody(ev: SportsEvent, actions: SportsActions) {
                 }
             }
         }
+        // ---- replays and highlights (finished games): they come only from sports addons, so this
+        // list goes first and says where they come from when there are none.
+        if (ev.state == GameState.POST) {
+            item(key = "replays-h") {
+                Text("Replays & highlights", style = MaterialTheme.typography.titleSmall, color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
+            }
+            if (replays.isNotEmpty()) {
+                items(replays, key = { "r:" + it.channel.key }) { m ->
+                    SportsChannelRow(
+                        m = m, copies = 1, ev = ev, use24h = use24h,
+                        onPlay = { c -> actions.onPlay(c.channel, ev.title) },
+                        onLongPress = {},
+                    )
+                }
+            } else {
+                item(key = "replays-none") {
+                    Text(
+                        when {
+                            vodLooked == null -> "Looking in your sports add-ons…"
+                            vodAddons != null && vodAddons.isEmpty() ->
+                                "Replays and highlights come from sports add-ons that offer them (HighFly Premium, StremVerse…). " +
+                                    "None of your add-ons do yet: install one in Add-ons and they'll show here."
+                            else -> (vodAddons?.takeIf { it.isNotEmpty() }?.let { "No replay of this game in ${it.joinToString(", ")} yet. " }
+                                ?: "No replay of this game in your sports add-ons yet. ") +
+                                "They're often added a few hours after the game ends."
+                        },
+                        style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textMuted,
+                    )
+                }
+            }
+        }
         // ---- channels
         item(key = "channels-h") {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -295,19 +328,6 @@ private fun GameBody(ev: SportsEvent, actions: SportsActions) {
                     }
                 },
             )
-        }
-        // ---- replays and highlights (finished games, from your sports addons)
-        if (ev.state == GameState.POST && replays.isNotEmpty()) {
-            item(key = "replays-h") {
-                Text("Replays & highlights", style = MaterialTheme.typography.titleSmall, color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = NuvioTokens.Space.s8))
-            }
-            items(replays, key = { "r:" + it.channel.key }) { m ->
-                SportsChannelRow(
-                    m = m, copies = 1, ev = ev, use24h = use24h,
-                    onPlay = { c -> actions.onPlay(c.channel, ev.title) },
-                    onLongPress = {},
-                )
-            }
         }
         // ---- latest scoring
         if (plays.isNotEmpty()) {
