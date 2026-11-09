@@ -180,6 +180,8 @@ internal fun LiveTvPreferencesStore.importFromSync(data: JsonObject): Set<String
         changed = imported.changed
         p.clear()
         p.putAll(imported.data)
+        // A setup from an older version: its one-for-everything time shifts onto each source.
+        moveTimeShifts(p)
     }
     return changed
 }

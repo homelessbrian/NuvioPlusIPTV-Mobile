@@ -5,6 +5,7 @@ import com.nuvio.app.features.livetv.data.LiveTvDirs
 import com.nuvio.app.features.livetv.data.LiveTvFiles
 import com.nuvio.app.features.livetv.data.LiveTvPreferences
 import com.nuvio.app.features.livetv.data.LiveTvRepository
+import com.nuvio.app.features.livetv.data.ServerZones
 import com.nuvio.app.features.livetv.data.optJSONArray
 import com.nuvio.app.features.livetv.data.parseObject
 import com.nuvio.app.features.livetv.model.EpgProgram
@@ -292,9 +293,12 @@ internal object LiveTvRecordingScheduler {
             val channel = freshChannel(s.channel)
             val catchup = channel.catchup ?: s.channel.catchup
             val settings = LiveTvPreferences.currentSettings()
-            val zone = LiveTvPreferences.currentPlaylists().firstOrNull { it.id == channel.sourceId }?.let { p -> p.catchupTimezone.ifBlank { p.serverTimezone } }?.takeIf { it.isNotBlank() }
-            // As when watching catch-up: the guide's shift off, the catch-up shift on.
-            val shift = LiveTvCatchup.shiftMs(settings)
+            val playlist = LiveTvPreferences.currentPlaylists().firstOrNull { it.id == channel.sourceId }
+            // Not known yet: look it up first (as when watching), so the saved show is the right one.
+            val zone = playlist?.catchupZone?.takeIf { it.isNotBlank() }
+                ?: (if (ServerZones.canLookUp(channel, playlist)) kotlinx.coroutines.withTimeoutOrNull(10_000L) { ServerZones.learn(channel) } else null)
+            // As when watching catch-up: the guide's shift off, the playlist's catch-up shift on.
+            val shift = LiveTvCatchup.shiftMs(settings, channel, playlist)
             val url = catchup?.let {
                 CatchupUrlBuilder.build(channel.url, it, s.startMs - s.pre - shift, s.stopMs + s.post - shift, now, preferHls = false, serverTimezone = zone)
             }

@@ -74,8 +74,13 @@ class LiveTvCatchupTest {
 
     @Test
     fun timeShiftsCombineTheGuideOffsetAndTheCatchupShift() {
-        assertEquals(0L, LiveTvCatchup.shiftMs(LiveTvSettings()))
-        assertEquals(60 * 60_000L - 30 * 60_000L, LiveTvCatchup.shiftMs(LiveTvSettings(epgOffsetMinutes = 60, catchupShiftMinutes = 30)))
+        val ch = channel()
+        assertEquals(0L, LiveTvCatchup.shiftMs(LiveTvSettings(), ch, null, guideShiftMs = 0L))
+        // Old one-for-everything values (until they're moved onto each source) still count.
+        assertEquals(60 * 60_000L - 30 * 60_000L, LiveTvCatchup.shiftMs(LiveTvSettings(epgOffsetMinutes = 60, catchupShiftMinutes = 30), ch, null, guideShiftMs = 0L))
+        // The guide's shift comes back off; the playlist's catch-up shift goes on.
+        val pl = PlaylistSource(id = "pl", name = "Provider", url = "", catchupShiftMinutes = 30)
+        assertEquals(90 * 60_000L - 30 * 60_000L, LiveTvCatchup.shiftMs(LiveTvSettings(), ch, pl, guideShiftMs = 90 * 60_000L))
     }
 
     @Test

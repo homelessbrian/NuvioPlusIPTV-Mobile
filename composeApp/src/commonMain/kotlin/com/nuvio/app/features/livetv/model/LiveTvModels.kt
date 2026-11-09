@@ -29,11 +29,14 @@ data class PlaylistSource(
     val importLive: Boolean = true,
     /** Xtream live stream format: "auto" (what the provider allows), "ts" or "m3u8". */
     val streamFormat: String = "auto",
-    /** Xtream: the server's time zone (from its account info), used for catch-up times. */
+    /**
+     * The server's time zone, used for catch-up times: as the server reports it, or worked out
+     * (a fixed offset like "GMT+01:00") from the server's clock or its own guide. Per device.
+     */
     val serverTimezone: String = "",
     /**
-     * The catch-up time zone picked for this playlist (on the TV app; synced) — "" = Automatic,
-     * which uses [serverTimezone]. For providers whose time zone can't be found.
+     * The catch-up time zone picked for this playlist in its settings ("" = Automatic, which uses
+     * [serverTimezone]). For providers whose time zone can't be found or is reported wrong.
      */
     val catchupTimezone: String = "",
     /**
@@ -46,9 +49,22 @@ data class PlaylistSource(
      * Where channel logos come from: "playlist" (the playlist's own, the guide's when the
      * playlist has none) or "epg" (the guide's, the playlist's when the guide has none).
      */
-    val logoSource: String = "playlist"
+    val logoSource: String = "playlist",
+    /**
+     * Minutes to move this playlist's own (built-in) guide by: later (+) or earlier (−), for a
+     * guide that's out of step with what's playing. Applied when the guide is stored.
+     */
+    val guideShiftMinutes: Int = 0,
+    /**
+     * Minutes to move the time asked for in this playlist's catch-up (and catch-up saves): for
+     * providers whose archive runs on a different clock than their guide.
+     */
+    val catchupShiftMinutes: Int = 0
 ) {
     val isXtream: Boolean get() = xtreamServer.isNotBlank()
+
+    /** The time zone catch-up links are written in: the one picked in settings, else the server's. */
+    val catchupZone: String get() = catchupTimezone.ifBlank { serverTimezone }
 
     /** Whether this source's live channels (and their guide) are loaded. */
     val liveEnabled: Boolean get() = enabled && (!isXtream || importLive)
@@ -126,7 +142,9 @@ data class EpgSource(
     val enabled: Boolean = true,
     val lastUpdatedMs: Long = 0L,
     val lastError: String? = null,
-    val programCount: Int = 0
+    val programCount: Int = 0,
+    /** Minutes to move this guide's listings by: later (+) or earlier (−). Applied when the guide is stored. */
+    val shiftMinutes: Int = 0
 )
 
 data class CatchupInfo(
@@ -154,7 +172,9 @@ data class LiveChannel(
     val headers: Map<String, String> = emptyMap(),
     val catchup: CatchupInfo? = null,
     /** Protected (DRM) stream details from the playlist, e.g. MPEG-DASH with a license. */
-    val drm: DrmInfo? = null
+    val drm: DrmInfo? = null,
+    /** The playlist's "tvg-shift" for this channel, in minutes: moves its guide listings. */
+    val tvgShiftMinutes: Int = 0
 )
 
 /**
@@ -252,6 +272,11 @@ data class LiveTvSettings(
     val showEpisodeNumbers: Boolean = true,
     /** Guide Size: COMPACT, STANDARD, LARGE or XLARGE (blank = from the old Slimmer Rows switch). */
     val guideSize: String = "",
+    /**
+     * The old Guide Time Shift for every guide (set on the TV app). No longer used: on loading
+     * it's moved onto each playlist's built-in guide and each guide source (see
+     * LiveTvPreferences.moveTimeShiftsToSources), then set back to 0.
+     */
     val epgOffsetMinutes: Int = 0,
     val reverseZap: Boolean = false,
     val zapMode: ZapMode = ZapMode.GROUP,
@@ -320,9 +345,8 @@ data class LiveTvSettings(
     val phoneChannelNames: Boolean = true,
     val phoneChannelNumbers: Boolean = true,
     /**
-     * Moves the time asked for in catch-up (and catch-up saves) later (+) or earlier (−), for
-     * providers whose archive runs on a different clock than their guide: replays that start
-     * the show before (or after) the one picked.
+     * The old Catch-Up Time Shift for every playlist. No longer offered: moved onto each playlist
+     * on loading (see LiveTvPreferences.moveTimeShiftsToSources), then set back to 0.
      */
     val catchupShiftMinutes: Int = 0,
     /** Parental controls: a 4-digit PIN; empty = parental controls off. */

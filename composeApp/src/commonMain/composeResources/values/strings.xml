@@ -2732,6 +2732,16 @@
     <string name="livetv_catchup_shift">Catch-up time shift</string>
     <string name="livetv_catchup_shift_description">If replays start the show before (or after) the one you picked, move the time asked for by that much. Example: it plays the show an hour earlier, set +1 h.</string>
     <string name="livetv_catchup_shift_none">None</string>
+    <string name="livetv_catchup_zone">Catch-up time zone</string>
+    <string name="livetv_catchup_zone_description">The clock %1$s keeps its replays on. Automatic finds it from the provider. If replays play a different show, pick the time zone whose clock matches the provider's.</string>
+    <string name="livetv_catchup_zone_automatic">Automatic</string>
+    <string name="livetv_catchup_zone_found">Automatic (%1$s)</string>
+    <string name="livetv_catchup_zone_not_found">not found yet</string>
+    <string name="livetv_guide_shift">Guide time shift</string>
+    <string name="livetv_guide_shift_description">Moves this playlist's built-in guide earlier or later, for listings out of step with what's playing</string>
+    <string name="livetv_epg_shift">Time shift</string>
+    <string name="livetv_epg_shift_description">Moves this guide's listings earlier or later, for listings out of step with what's playing</string>
+    <string name="livetv_time_shifts_note">Catch-up and guide time shifts are set for each playlist and guide: tap one under Playlists or Guides to change it.</string>
     <string name="livetv_on_demand">On Demand</string>
     <string name="livetv_vod_movies">Movies</string>
     <string name="livetv_vod_series">Series</string>

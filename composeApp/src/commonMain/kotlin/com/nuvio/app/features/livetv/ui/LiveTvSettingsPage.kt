@@ -42,6 +42,8 @@ import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.livetv.data.LiveTvPreferences
 import com.nuvio.app.features.livetv.data.LiveTvRepository
+import com.nuvio.app.features.livetv.data.CivilTime
+import com.nuvio.app.features.livetv.model.LiveTvClock
 import com.nuvio.app.features.livetv.data.BackupFileException
 import com.nuvio.app.features.livetv.data.BackupFileInfo
 import com.nuvio.app.features.livetv.data.exportBackupFileText
@@ -103,6 +105,16 @@ import nuvio.composeapp.generated.resources.livetv_catchup_prefer_hls_descriptio
 import nuvio.composeapp.generated.resources.livetv_catchup_shift
 import nuvio.composeapp.generated.resources.livetv_catchup_shift_description
 import nuvio.composeapp.generated.resources.livetv_catchup_shift_none
+import nuvio.composeapp.generated.resources.livetv_catchup_zone
+import nuvio.composeapp.generated.resources.livetv_catchup_zone_automatic
+import nuvio.composeapp.generated.resources.livetv_catchup_zone_description
+import nuvio.composeapp.generated.resources.livetv_catchup_zone_found
+import nuvio.composeapp.generated.resources.livetv_catchup_zone_not_found
+import nuvio.composeapp.generated.resources.livetv_epg_shift
+import nuvio.composeapp.generated.resources.livetv_epg_shift_description
+import nuvio.composeapp.generated.resources.livetv_guide_shift
+import nuvio.composeapp.generated.resources.livetv_guide_shift_description
+import nuvio.composeapp.generated.resources.livetv_time_shifts_note
 import nuvio.composeapp.generated.resources.livetv_section_catchup
 import nuvio.composeapp.generated.resources.livetv_days_ahead
 import nuvio.composeapp.generated.resources.livetv_days_ahead_description
@@ -285,6 +297,38 @@ private fun pastHoursLabel(h: Int): String = when {
 }
 /** Time shifts in minutes, half an hour apart, a day either way (the TV app's choices). */
 private val EPG_OFFSETS = (-24..24).map { it * 30 }
+
+/** Time zones offered for a playlist's catch-up (the common ones IPTV servers run on), as on the TV app. */
+private val CATCHUP_ZONES = listOf(
+    "UTC" to "UTC",
+    "Europe/London" to "UK & Ireland (London)",
+    "Europe/Amsterdam" to "Central Europe (Amsterdam, Paris, Berlin)",
+    "Europe/Athens" to "Eastern Europe (Athens, Bucharest)",
+    "Europe/Istanbul" to "Turkey (Istanbul)",
+    "Europe/Moscow" to "Moscow",
+    "Asia/Dubai" to "Gulf (Dubai)",
+    "Asia/Kolkata" to "India",
+    "America/New_York" to "US Eastern (New York)",
+    "America/Chicago" to "US Central (Chicago)",
+    "America/Denver" to "US Mountain (Denver)",
+    "America/Los_Angeles" to "US Pacific (Los Angeles)",
+)
+
+/** A zone id in words: one of the list's names, else as found (e.g. "GMT+01:00"). */
+private fun zoneName(id: String): String = CATCHUP_ZONES.firstOrNull { it.first == id }?.second ?: id
+
+/** The time on that zone's clock now, to match against the provider's. */
+private fun zoneClock(id: String): String {
+    val t = CivilTime.at(LiveTvClock.nowMs(), id)
+    return "${t.hour.toString().padStart(2, '0')}:${t.minute.toString().padStart(2, '0')}"
+}
+
+@Composable
+private fun catchupZoneLabel(p: PlaylistSource): String = when {
+    p.catchupTimezone.isNotBlank() -> zoneName(p.catchupTimezone)
+    p.serverTimezone.isNotBlank() -> stringResource(Res.string.livetv_catchup_zone_found, zoneName(p.serverTimezone))
+    else -> stringResource(Res.string.livetv_catchup_zone_automatic)
+}
 private val PADDING_MINUTES = listOf(0, 1, 2, 3, 5, 10, 15, 30)
 private val KEEP_COUNTS = listOf(0, 1, 2, 3, 5, 10, 20)
 private val REMINDER_LEADS = listOf(0, 1, 2, 5, 10, 15, 30)
@@ -317,7 +361,10 @@ private sealed interface LiveDialog {
     data object FutureDays : LiveDialog
     data object PastHours : LiveDialog
     data object StreamFormat : LiveDialog
-    data object CatchupShift : LiveDialog
+    data class CatchupZone(val source: PlaylistSource) : LiveDialog
+    data class PlaylistGuideShift(val source: PlaylistSource) : LiveDialog
+    data class PlaylistCatchupShift(val source: PlaylistSource) : LiveDialog
+    data class EpgSourceShift(val source: EpgSource) : LiveDialog
     data object VodDefaultSort : LiveDialog
     data object VodTabPosition : LiveDialog
     data object RecordPre : LiveDialog
@@ -610,12 +657,12 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
                     onCheckedChange = { on -> update { it.copy(catchupPreferHls = on) } },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.livetv_catchup_shift),
-                    description = stringResource(Res.string.livetv_catchup_shift_description),
-                    isTablet = isTablet,
-                    trailingContent = { ValueLabel(offsetLabel(settings.catchupShiftMinutes, stringResource(Res.string.livetv_catchup_shift_none))) },
-                    onClick = { dialog = LiveDialog.CatchupShift },
+                // Catch-up and guide time shifts are set on each playlist and guide (their menus).
+                Text(
+                    stringResource(Res.string.livetv_time_shifts_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.colors.textSecondary,
+                    modifier = Modifier.padding(NuvioTokens.Space.s16),
                 )
             }
         }
@@ -1033,12 +1080,65 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
                     if (d.source.isXtream && d.source.importVod && d.source.enabled && !d.source.liveEnabled) OnDemandRepository.refreshNow(d.source.id)
                     close()
                 },
+                // Which clock replay links are written in. Automatic: the one the provider's
+                // server reports (or that the app worked out); pick one when that's wrong.
+                stringResource(Res.string.livetv_catchup_zone) + ": " + catchupZoneLabel(d.source) to { dialog = LiveDialog.CatchupZone(d.source) },
+            ) + (if (d.source.liveEnabled) listOf(
+                // Time shifts for this playlist: its built-in guide, and its catch-up.
+                stringResource(Res.string.livetv_guide_shift) + ": " + offsetLabel(d.source.guideShiftMinutes, stringResource(Res.string.livetv_catchup_shift_none)) to {
+                    dialog = LiveDialog.PlaylistGuideShift(d.source)
+                },
+                stringResource(Res.string.livetv_catchup_shift) + ": " + offsetLabel(d.source.catchupShiftMinutes, stringResource(Res.string.livetv_catchup_shift_none)) to {
+                    dialog = LiveDialog.PlaylistCatchupShift(d.source)
+                },
+            ) else emptyList()) + listOf(
                 stringResource(if (d.source.enabled) Res.string.livetv_disable else Res.string.livetv_enable) to {
                     LiveTvRepository.setPlaylistEnabled(d.source.id, !d.source.enabled); close()
                 },
                 stringResource(Res.string.action_delete) to { dialog = LiveDialog.DeletePlaylist(d.source) },
             ),
         )
+        is LiveDialog.CatchupZone -> {
+            val automatic = d.source.serverTimezone.takeIf { it.isNotBlank() }?.let { stringResource(Res.string.livetv_catchup_zone_found, zoneName(it)) }
+                ?: (stringResource(Res.string.livetv_catchup_zone_automatic) + " · " + stringResource(Res.string.livetv_catchup_zone_not_found))
+            ChoiceDialog(
+                title = stringResource(Res.string.livetv_catchup_zone),
+                message = stringResource(Res.string.livetv_catchup_zone_description, d.source.name),
+                options = listOf("" to automatic) + CATCHUP_ZONES.map { (id, name) -> id to "$name · ${zoneClock(id)}" },
+                selected = d.source.catchupTimezone,
+                onDismiss = close,
+            ) { v -> LiveTvRepository.setPlaylistCatchupZone(d.source.id, v) }
+        }
+        is LiveDialog.PlaylistGuideShift -> {
+            val none = stringResource(Res.string.livetv_catchup_shift_none)
+            ChoiceDialog(
+                title = stringResource(Res.string.livetv_guide_shift) + ": " + d.source.name,
+                message = stringResource(Res.string.livetv_guide_shift_description),
+                options = EPG_OFFSETS.map { it to offsetLabel(it, none) },
+                selected = d.source.guideShiftMinutes,
+                onDismiss = close,
+            ) { v -> LiveTvRepository.setPlaylistGuideShift(d.source.id, v) }
+        }
+        is LiveDialog.PlaylistCatchupShift -> {
+            val none = stringResource(Res.string.livetv_catchup_shift_none)
+            ChoiceDialog(
+                title = stringResource(Res.string.livetv_catchup_shift) + ": " + d.source.name,
+                message = stringResource(Res.string.livetv_catchup_shift_description),
+                options = EPG_OFFSETS.map { it to offsetLabel(it, none) },
+                selected = d.source.catchupShiftMinutes,
+                onDismiss = close,
+            ) { v -> LiveTvRepository.setPlaylistCatchupShift(d.source.id, v) }
+        }
+        is LiveDialog.EpgSourceShift -> {
+            val none = stringResource(Res.string.livetv_catchup_shift_none)
+            ChoiceDialog(
+                title = stringResource(Res.string.livetv_epg_shift) + ": " + d.source.name,
+                message = stringResource(Res.string.livetv_epg_shift_description),
+                options = EPG_OFFSETS.map { it to offsetLabel(it, none) },
+                selected = d.source.shiftMinutes,
+                onDismiss = close,
+            ) { v -> LiveTvRepository.setEpgShift(d.source.id, v) }
+        }
         is LiveDialog.EpgActions -> ActionsDialog(
             title = d.source.name,
             subtitle = epgStatus(d.source),
@@ -1046,6 +1146,9 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
             actions = listOf(
                 stringResource(Res.string.action_edit) to { dialog = LiveDialog.EditEpg(d.source) },
                 stringResource(Res.string.livetv_update_now) to { LiveTvRepository.updateEpg(d.source); close() },
+                stringResource(Res.string.livetv_epg_shift) + ": " + offsetLabel(d.source.shiftMinutes, stringResource(Res.string.livetv_catchup_shift_none)) to {
+                    dialog = LiveDialog.EpgSourceShift(d.source)
+                },
                 stringResource(if (d.source.enabled) Res.string.livetv_disable else Res.string.livetv_enable) to {
                     LiveTvRepository.setEpgEnabled(d.source.id, !d.source.enabled); close()
                 },
@@ -1097,15 +1200,6 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
             onDismiss = close,
         ) { v ->
             playlists.filter { it.isXtream && it.streamFormat != v }.forEach { LiveTvRepository.updatePlaylist(it.copy(streamFormat = v)) }
-        }
-        LiveDialog.CatchupShift -> {
-            val none = stringResource(Res.string.livetv_catchup_shift_none)
-            ChoiceDialog(
-                title = stringResource(Res.string.livetv_catchup_shift),
-                options = EPG_OFFSETS.map { it to offsetLabel(it, none) },
-                selected = settings.catchupShiftMinutes,
-                onDismiss = close,
-            ) { v -> update { it.copy(catchupShiftMinutes = v) } }
         }
         LiveDialog.VodTabPosition -> ChoiceDialog(
             title = stringResource(Res.string.livetv_vod_tab_position),
@@ -1309,12 +1403,12 @@ private fun vodTabPositionLabel(v: String): String = stringResource(
 )
 
 @Composable
-private fun <T> ChoiceDialog(title: String, options: List<Pair<T, String>>, selected: T, onDismiss: () -> Unit, onPick: (T) -> Unit) {
+private fun <T> ChoiceDialog(title: String, options: List<Pair<T, String>>, selected: T, onDismiss: () -> Unit, message: String? = null, onPick: (T) -> Unit) {
     // Long lists (catch-up time shift has 49 choices) scroll, and open at the current choice.
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = (options.indexOfFirst { it.first == selected } - 2).coerceAtLeast(0),
     )
-    DialogSurface(onDismissRequest = onDismiss, title = title) {
+    DialogSurface(onDismissRequest = onDismiss, title = title, message = message) {
         LazyColumn(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),

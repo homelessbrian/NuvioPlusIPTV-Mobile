@@ -351,7 +351,9 @@ internal object LiveTvCodec {
                     serverTimezone = o.optString("serverTimezone"),
                     catchupTimezone = o.optString("catchupTimezone"),
                     catchupNoHlsSince = o.optLong("catchupNoHlsSince", 0L),
-                    logoSource = o.optString("logoSource").ifBlank { "playlist" }
+                    logoSource = o.optString("logoSource").ifBlank { "playlist" },
+                    guideShiftMinutes = o.optInt("guideShiftMinutes"),
+                    catchupShiftMinutes = o.optInt("catchupShiftMinutes")
                 )
             }
         }.getOrDefault(emptyList())
@@ -374,6 +376,8 @@ internal object LiveTvCodec {
                 put("catchupTimezone", s.catchupTimezone)
                 put("catchupNoHlsSince", s.catchupNoHlsSince)
                 put("logoSource", s.logoSource)
+                put("guideShiftMinutes", s.guideShiftMinutes)
+                put("catchupShiftMinutes", s.catchupShiftMinutes)
             })
         }
     }.toString()
@@ -390,7 +394,8 @@ internal object LiveTvCodec {
                     enabled = o.optBoolean("enabled", true),
                     lastUpdatedMs = o.optLong("lastUpdatedMs"),
                     lastError = o.optString("lastError").ifBlank { null },
-                    programCount = o.optInt("programCount")
+                    programCount = o.optInt("programCount"),
+                    shiftMinutes = o.optInt("shiftMinutes")
                 )
             }
         }.getOrDefault(emptyList())
@@ -402,6 +407,7 @@ internal object LiveTvCodec {
                 put("id", s.id); put("name", s.name); put("url", s.url)
                 put("enabled", s.enabled); put("lastUpdatedMs", s.lastUpdatedMs)
                 put("lastError", s.lastError ?: ""); put("programCount", s.programCount)
+                put("shiftMinutes", s.shiftMinutes)
             })
         }
     }.toString()
@@ -556,6 +562,41 @@ internal open class LiveTvPreferencesStore {
         // A profile chosen before the saved data was loaded gets its first-time copy now.
         runCatching { seedProfile(_profile.value) }
         runCatching { turnOnPlaylistGroupsOnce() }
+        runCatching { moveTimeShiftsToSources() }
+    }
+
+    /**
+     * The old Guide Time Shift and Catch-Up Time Shift (one value for everything, set on the TV
+     * app) moved onto each playlist and guide source, which now have their own, as the TV app
+     * does. A source that already has its own shift keeps it. Then the old values go back to 0,
+     * so nothing is moved twice. Runs on loading and after a setup is synced or restored.
+     */
+    fun moveTimeShiftsToSources(): Boolean {
+        var moved = false
+        edit { p -> moved = moveTimeShifts(p) }
+        return moved
+    }
+
+    internal fun moveTimeShifts(p: MutableMap<String, PrefValue>): Boolean {
+        val guide = p.int(LiveTvKeys.epgOffset) ?: 0
+        val catchup = p.int(LiveTvKeys.catchupShift) ?: 0
+        if (guide == 0 && catchup == 0) return false
+        val playlists = LiveTvCodec.decodePlaylists(p.str(LiveTvKeys.playlists))
+        if (playlists.isNotEmpty()) {
+            p[LiveTvKeys.playlists] = LiveTvCodec.encodePlaylists(playlists.map {
+                it.copy(
+                    guideShiftMinutes = if (it.guideShiftMinutes == 0) guide else it.guideShiftMinutes,
+                    catchupShiftMinutes = if (it.catchupShiftMinutes == 0) catchup else it.catchupShiftMinutes,
+                )
+            })
+        }
+        val epgs = LiveTvCodec.decodeEpgs(p.str(LiveTvKeys.epgs))
+        if (epgs.isNotEmpty() && guide != 0) {
+            p[LiveTvKeys.epgs] = LiveTvCodec.encodeEpgs(epgs.map { if (it.shiftMinutes == 0) it.copy(shiftMinutes = guide) else it })
+        }
+        p[LiveTvKeys.epgOffset] = 0
+        p[LiveTvKeys.catchupShift] = 0
+        return true
     }
 
     /** Which Nuvio profile's favorites, recents and so on are in use (see [onProfileChanged]). */
