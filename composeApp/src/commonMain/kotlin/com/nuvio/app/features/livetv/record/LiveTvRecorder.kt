@@ -36,6 +36,16 @@ internal object LiveTvRecorder {
     private val lock = SynchronizedObject()
     private val jobs = HashMap<String, Job>()
     private val stopRequested = HashSet<String>()
+    /** Ended here because the job didn't stop in time: when the job does end, it just goes quietly. */
+    private val forced = HashSet<String>()
+    /** Catch-up downloads going on: recording id -> the provider (playlist) it's from. */
+    private val catchupSources = HashMap<String, String>()
+
+    /**
+     * A catch-up download from this provider is going on. Most accounts allow one connection at
+     * a time, so a second one would make the provider close the first part way through.
+     */
+    fun catchupBusy(sourceId: String?): Boolean = sourceId != null && synchronized(lock) { sourceId in catchupSources.values }
 
     private val _recordings = MutableStateFlow<List<LiveTvRecording>>(emptyList())
     /** Every recording, newest first. */
@@ -131,7 +141,14 @@ internal object LiveTvRecorder {
         save(rec)
         update(rec)
         RecordingPlatform.keepAlive(true)
-        val job = scope.launch { record(rec, url, channel.headers, finite, fallbacks, onFinished, resumeFrom) }
+        if (finite) synchronized(lock) { catchupSources[id] = channel.sourceId }
+        val job = scope.launch {
+            try {
+                record(rec, url, channel.headers, finite, fallbacks, onFinished, resumeFrom)
+            } finally {
+                synchronized(lock) { catchupSources.remove(id) }
+            }
+        }
         synchronized(lock) { jobs[id] = job }
         return rec
     }
@@ -158,7 +175,7 @@ internal object LiveTvRecorder {
             problem = if (hasVideo) null else "Stopped before anything was recorded"
         )
         save(done); update(done)
-        synchronized(lock) { jobs.remove(id)?.cancel(); stopRequested.remove(id) }
+        synchronized(lock) { forced += id; jobs.remove(id)?.cancel(); catchupSources.remove(id); stopRequested.remove(id) }
         stopServiceIfIdle()
     }
 
@@ -197,11 +214,36 @@ internal object LiveTvRecorder {
         var problem: String? = null
         val path = filePath(rec)
         val hdrs = withUserAgent(headers)
+        fun looksHls(link: String) = link.substringBefore('?').endsWith(".m3u8", ignoreCase = true)
+        // What's in the file so far is thrown away when the next download starts (a catch-up HLS
+        // replay that sent nothing but a cut-off piece, before switching to its TS link).
+        var discardFile = false
         try {
-            val isHls = url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)
+            val isHls = looksHls(url)
             var hls = isHls
+            // Catch-up saved as HLS: the plain (TS) form to switch to if the HLS one sends nothing,
+            // as the player does when watching (some providers' HLS replays never deliver).
+            val tsLink = if (finite && isHls) links.firstOrNull { !looksHls(it) && it.contains("/timeshift/") } else null
             if (hls) {
-                problem = recordHls(rec, url, hdrs, finite) { secs, size -> rec = progress(rec, secs, size) }
+                problem = try {
+                    recordHls(rec, url, hdrs, finite, canGiveUp = tsLink != null) { secs, size -> rec = progress(rec, secs, size) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (tsLink == null) throw e
+                    HLS_SENT_NOTHING
+                }
+                if (problem == HLS_SENT_NOTHING && tsLink != null && !stopping(rec.id)) {
+                    links.remove(tsLink)
+                    url = tsLink
+                    hls = false
+                    problem = null
+                    discardFile = true
+                    // Back to the plain .ts file (an HLS replay in MP4 pieces had switched it).
+                    val latest = _recordings.value.firstOrNull { it.id == rec.id } ?: rec
+                    rec = latest.copy(fileName = start.fileName, problem = null)
+                    save(rec); update(rec)
+                }
                 // Some providers refuse the pieces of their .m3u8 stream but give the plain stream:
                 // if nothing was saved, try the same link as .ts once.
                 val plain = url.substringBefore('?').removeSuffix(".m3u8").takeIf { it != url.substringBefore('?') }
@@ -233,7 +275,8 @@ internal object LiveTvRecorder {
                     first = false
                     val segmentStart = LiveTvClock.nowMs()
                     try {
-                        val append = RecordingPlatform.fileSize(path) > 0
+                        val append = !discardFile && RecordingPlatform.fileSize(path) > 0
+                        discardFile = false
                         var lastSave = 0L
                         val before = if (append) RecordingPlatform.fileSize(path) else 0L
                         var got = 0L
@@ -279,20 +322,37 @@ internal object LiveTvRecorder {
         } catch (e: Exception) {
             problem = e.message ?: "unknown error"
         } finally {
+            finish(rec, path, problem, onFinished)
+        }
+    }
+
+    /** The end of [record]: the recording marked done or failed, and [onFinished] told. */
+    private fun finish(rec: LiveTvRecording, startPath: String, problem: String?, onFinished: (LiveTvRecording) -> Unit) {
+        // Already ended by [forceFinish] (and maybe deleted since): nothing more to do.
+        if (synchronized(lock) { forced.remove(rec.id) }) {
+            synchronized(lock) { stopRequested.remove(rec.id) }
+            stopServiceIfIdle()
+            return
+        }
+        run {
+            val byHand = stopping(rec.id)
             val latest = _recordings.value.firstOrNull { it.id == rec.id } ?: rec
-            val hasVideo = RecordingPlatform.fileSize(path) > 0
+            val path = latest.dir + "/" + latest.fileName
+            val hasVideo = RecordingPlatform.fileSize(path) > 0 || (path != startPath && RecordingPlatform.fileSize(startPath) > 0)
             val expectedSec = (latest.stopAtMs - latest.startedAtMs) / 1000.0
             val done = latest.copy(
                 status = if (hasVideo) RecordingStatus.DONE else RecordingStatus.FAILED,
                 endedAtMs = LiveTvClock.nowMs(),
                 sizeBytes = RecordingPlatform.dirSize(latest.dir),
                 problem = if (hasVideo) problem?.takeIf { latest.durationSec < expectedSec * 0.9 }
+                else if (byHand) "Stopped before anything was recorded"
                 else (problem ?: latest.problem ?: "Nothing could be recorded from this channel ($NO_VIDEO_SHORT)")
             )
             if (_recordings.value.any { it.id == done.id }) { save(done); update(done) }
             synchronized(lock) { jobs.remove(rec.id); stopRequested.remove(rec.id) }
             stopServiceIfIdle()
-            runCatching { onFinished(done) }
+            // Stopped by hand before anything came in: not a failure to try again later.
+            if (!(byHand && done.status == RecordingStatus.FAILED)) runCatching { onFinished(done) }
         }
     }
 
@@ -322,41 +382,44 @@ internal object LiveTvRecorder {
     private val TARGET_DURATION = Regex("""#EXT-X-TARGETDURATION:(\d+)""")
     private val MAP_URI = Regex("""#EXT-X-MAP:URI="([^"]+)"""")
 
-    /** HLS channel: saves each piece as it appears, appended to one file. Returns a problem, or null. */
+    /**
+     * HLS channel: saves each piece as it appears, appended to one file: a live channel from its
+     * newest pieces (a short lead-in, not its whole look-back window, which can be hours), a
+     * catch-up show all of it. Returns a problem, or null. [canGiveUp]: there's a TS link to
+     * switch to, so a catch-up replay that has saved nothing after [HLS_GIVE_UP_MS] stops with
+     * [HLS_SENT_NOTHING].
+     */
     private suspend fun recordHls(
         rec: LiveTvRecording,
         url: String,
         headers: Map<String, String>,
         finite: Boolean,
+        canGiveUp: Boolean = false,
         onProgress: (Double, Long) -> Unit,
     ): String? {
+        val began = LiveTvClock.nowMs()
+        var total = 0.0
+        fun nothingYet() = canGiveUp && total <= 0.0 && LiveTvClock.nowMs() - began > HLS_GIVE_UP_MS
         var mediaUrl = url
         var text = RecordingPlatform.fetchTextAt(mediaUrl, headers).let { (t, at) -> mediaUrl = at; t }
         if (STREAM_INF.containsMatchIn(text)) {
-            val lines = text.lines()
-            var best = -1L
-            var bestUri: String? = null
-            lines.forEachIndexed { i, l ->
-                if (l.startsWith("#EXT-X-STREAM-INF")) {
-                    val bw = BANDWIDTH.find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-                    val uri = lines.drop(i + 1).firstOrNull { it.isNotBlank() && !it.startsWith("#") }
-                    if (uri != null && bw >= best) { best = bw; bestUri = uri }
-                }
-            }
-            mediaUrl = resolve(mediaUrl, bestUri ?: return "This channel's stream couldn't be read")
+            mediaUrl = resolve(mediaUrl, pickVariant(text) ?: return "This channel's stream couldn't be read")
             text = RecordingPlatform.fetchTextAt(mediaUrl, headers).let { (t, at) -> mediaUrl = at; t }
         }
         if (text.contains("#EXT-X-KEY") && !text.contains("METHOD=NONE")) return "This channel is encrypted and can't be recorded"
         var path = filePath(rec)
         var lastSeq = -1L
         var target = 6
-        var total = 0.0
         var problem: String? = null
         var mapDone = false
         while (scope.isActive && !stopping(rec.id) && LiveTvClock.nowMs() < currentStop(rec.id)) {
+            if (nothingYet()) return HLS_SENT_NOTHING
             val lines = text.lines()
             var seq = MEDIA_SEQUENCE.find(text)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
             target = TARGET_DURATION.find(text)?.groupValues?.get(1)?.toIntOrNull() ?: target
+            // A live channel (first time, or after a reconnect): start a short lead-in before its
+            // newest piece, the way players do, instead of at the start of its look-back window.
+            if (!finite && lastSeq < 0) lastSeq = liveStartSeq(text, seq, target)
             if (!mapDone) {
                 MAP_URI.find(text)?.groupValues?.get(1)?.let { m ->
                     // Fragmented MP4: the init part first, then the pieces, all in one .mp4.
@@ -374,7 +437,10 @@ internal object LiveTvRecorder {
                     l.isNotBlank() && !l.startsWith("#") -> {
                         if (seq > lastSeq) {
                             val failure = try {
-                                RecordingPlatform.download(resolve(mediaUrl, l), headers, path, append = RecordingPlatform.fileSize(path) > 0, shouldStop = { stopping(rec.id) }) {}
+                                // A stop (or an HLS replay that's sent nothing) cuts a piece part way
+                                // instead of waiting for it: some providers send a whole show as one
+                                // long piece, at viewing speed. What came in of it is kept.
+                                RecordingPlatform.download(resolve(mediaUrl, l), headers, path, append = RecordingPlatform.fileSize(path) > 0, shouldStop = { stopping(rec.id) || nothingYet() }) {}
                                 null
                             } catch (e: CancellationException) {
                                 throw e
@@ -395,6 +461,7 @@ internal object LiveTvRecorder {
                     }
                 }
             }
+            if (nothingYet()) return HLS_SENT_NOTHING
             onProgress(total, RecordingPlatform.dirSize(rec.dir))
             if (!ensureSpace(protect = rec.id)) return "Storage ran out, so it stopped early"
             // A finished playlist (a catch-up show): everything's saved.
@@ -414,6 +481,49 @@ internal object LiveTvRecorder {
             }
         }
         return problem
+    }
+
+    /**
+     * The variant of a master playlist to save: the best quality (as before), but one with its
+     * sound inside its pieces when the channel offers both kinds. Channels that send their sound
+     * as a separate stream (ARD, ZDF…) would otherwise save picture only, since a recording here
+     * is one file.
+     */
+    private fun pickVariant(master: String): String? {
+        val lines = master.lines().map { it.trim() }
+        // Sound groups whose chosen sound has its own link (a separate stream).
+        val separate = lines.filter { it.startsWith("#EXT-X-MEDIA:") && attr(it, "TYPE") == "AUDIO" && attr(it, "URI") != null }
+            .mapNotNull { attr(it, "GROUP-ID") }.toSet()
+        data class Variant(val bw: Long, val uri: String, val ownSound: Boolean)
+        val variants = lines.mapIndexedNotNull { i, l ->
+            if (!l.startsWith("#EXT-X-STREAM-INF")) return@mapIndexedNotNull null
+            val uri = lines.drop(i + 1).firstOrNull { it.isNotBlank() && !it.startsWith("#") } ?: return@mapIndexedNotNull null
+            val bw = BANDWIDTH.find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+            Variant(bw, uri, attr(l, "AUDIO")?.let { it !in separate } ?: true)
+        }
+        val pool = variants.filter { it.ownSound }.ifEmpty { variants }
+        return pool.maxByOrNull { it.bw }?.uri
+    }
+
+    private fun attr(line: String, name: String): String? =
+        Regex("""(?:^|[,:])$name=("([^"]*)"|[^,]*)""").find(line)?.let { m -> m.groupValues[2].ifEmpty { m.groupValues[1] } }?.takeIf { it.isNotEmpty() }
+
+    /** The sequence number just before the first piece to save of a live list: about [LIVE_LEAD_MS] before its newest piece. */
+    private fun liveStartSeq(text: String, firstSeq: Long, target: Int): Long {
+        val durs = ArrayList<Double>()
+        var dur = target.toDouble()
+        for (raw in text.lines()) {
+            val l = raw.trim()
+            when {
+                l.startsWith("#EXTINF:") -> dur = l.removePrefix("#EXTINF:").substringBefore(',').toDoubleOrNull() ?: target.toDouble()
+                l.isNotEmpty() && !l.startsWith("#") -> { durs += dur; dur = target.toDouble() }
+            }
+        }
+        if (durs.isEmpty()) return firstSeq - 1
+        var acc = 0.0
+        var i = durs.size
+        while (i > 0 && acc * 1000 < LIVE_LEAD_MS) { i--; acc += durs[i] }
+        return firstSeq + i.coerceIn(0, durs.size - 1) - 1
     }
 
     private fun resolve(base: String, ref: String): String {
@@ -488,6 +598,12 @@ internal object LiveTvRecorder {
 
     private const val NO_VIDEO = "The provider answered but sent no video. If you're watching this channel, your provider may only allow one connection at a time"
     private const val NO_VIDEO_SHORT = "no video came back"
+
+    /** A live HLS recording starts this far before now (the newest pieces), not at the channel's look-back start. */
+    private const val LIVE_LEAD_MS = 30_000L
+    /** A catch-up HLS replay that's saved nothing after this long: switch to the TS link. */
+    private const val HLS_GIVE_UP_MS = 20_000L
+    private const val HLS_SENT_NOTHING = "The HLS replay sent nothing"
 
     /** Below this much free space, recording stops (or the oldest recordings make room). */
     private const val MIN_FREE = 500L * 1024 * 1024
