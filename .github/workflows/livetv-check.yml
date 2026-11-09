@@ -1,17 +1,24 @@
 name: Live TV check
 
 # Compile and unit-test the shared code on every push to a livetv/* branch, and on
-# demand. Faster than a full APK build, and needs no PR.
+# demand (run by hand it checks dev, whichever branch "Use workflow from" is set to). Faster than
+# a full APK build, and needs no PR.
 on:
   push:
     branches: ["livetv/**"]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to check"
+        required: false
+        default: dev
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: livetv-check-${{ github.ref }}
+  group: livetv-check-${{ inputs.branch || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -19,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
 
       - uses: actions/setup-go@v5
         with:
