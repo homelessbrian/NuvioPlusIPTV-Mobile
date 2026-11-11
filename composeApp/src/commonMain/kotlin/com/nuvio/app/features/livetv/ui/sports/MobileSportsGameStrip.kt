@@ -2,7 +2,9 @@ package com.nuvio.app.features.livetv.ui.sports
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,7 +63,10 @@ import com.nuvio.app.features.livetv.sports.SportsCatalog
 import com.nuvio.app.features.livetv.sports.SportsWatchGame
 import com.nuvio.app.features.livetv.sports.SportsWatchRow
 
-/** Touch controls over the video: select a pane, choose a game, then choose its broadcast. */
+/**
+ * Touch controls over the video: select a pane, tap a game to play its best stream there, or
+ * hold a game to choose one of its other streams. [onChannels] goes back to the channel picker.
+ */
 @Composable
 internal fun MobileSportsGameStrip(
     games: List<SportsWatchGame>,
@@ -70,13 +76,17 @@ internal fun MobileSportsGameStrip(
     focusedPane: Int,
     paneCount: Int,
     hideScores: Boolean,
+    /** Finds the game's broadcasts (for its streams list); false when there are none. */
     onGame: (SportsWatchGame) -> Boolean,
+    /** Plays the game's best stream in the pane; false when none can be played. */
+    onPlayGame: (SportsWatchGame) -> Boolean,
     onStream: (SportsWatchGame, String) -> Unit,
     onAdd: () -> Unit,
     onRemove: () -> Unit,
     onPane: (Int) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    onChannels: (() -> Unit)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val chosenGames = remember { mutableStateMapOf<Int, String>() }
@@ -162,11 +172,23 @@ internal fun MobileSportsGameStrip(
                 horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Chip("Games", !streamsOpen, onClick = { streamsOpen = false })
-                Chip("Streams", streamsOpen, enabled = streamGame != null, onClick = { streamsOpen = true })
-                Text(streamGame?.event?.title ?: "Choose a game", modifier = Modifier.weight(1f),
+                if (streamsOpen) Chip("Games", false, onClick = { streamsOpen = false })
+                Text(
+                    if (streamsOpen) streamGame?.event?.title.orEmpty() else "Tap a game to play it · hold for its other streams",
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelSmall, color = tokens.colors.textMuted,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (onChannels != null) {
+                    Row(
+                        Modifier.clip(tokens.shapes.compactCard).clickable(onClick = onChannels)
+                            .padding(horizontal = NuvioTokens.Space.s8, vertical = NuvioTokens.Space.s4),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s4),
+                    ) {
+                        Icon(Icons.Filled.LiveTv, contentDescription = null, tint = tokens.colors.textPrimary, modifier = Modifier.size(16.dp))
+                        Text("Channels", style = MaterialTheme.typography.labelMedium, color = tokens.colors.textPrimary)
+                    }
+                }
             }
             if (streamsOpen && streamGame != null) {
                 if (streams.isEmpty()) {
@@ -201,13 +223,21 @@ internal fun MobileSportsGameStrip(
                             horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
                         ) {
                             items(row.games, key = { it.event.id }) { game ->
-                                MobileSportsGameCard(game, game.event.id == targetGameId, hideScores, now, use24h) {
-                                    val selectedPane = target
-                                    if (onGame(game)) {
-                                        chosenGames[selectedPane] = game.event.id
-                                        streamsOpen = true
-                                    } else NuvioToastController.show("No available broadcast for this game right now.")
-                                }
+                                MobileSportsGameCard(
+                                    game, game.event.id == targetGameId, hideScores, now, use24h,
+                                    onClick = {
+                                        val selectedPane = target
+                                        if (onPlayGame(game)) chosenGames[selectedPane] = game.event.id
+                                        else NuvioToastController.show("No stream for this game right now. Hold it to see its broadcasts.")
+                                    },
+                                    onLongClick = {
+                                        val selectedPane = target
+                                        if (onGame(game)) {
+                                            chosenGames[selectedPane] = game.event.id
+                                            streamsOpen = true
+                                        } else NuvioToastController.show("No available broadcast for this game right now.")
+                                    },
+                                )
                             }
                         }
                     }
@@ -226,6 +256,7 @@ private fun EmptySportsPicker(title: String, detail: String, modifier: Modifier)
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MobileSportsGameCard(
     game: SportsWatchGame,
@@ -234,6 +265,7 @@ private fun MobileSportsGameCard(
     now: Long,
     use24h: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     val event = game.event
@@ -244,7 +276,7 @@ private fun MobileSportsGameCard(
             .background(tokens.colors.surfaceElevated)
             .border(if (selected) 2.dp else tokens.borders.thin,
                 if (selected) tokens.colors.accent else tokens.colors.borderDefault, tokens.shapes.compactCard)
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = NuvioTokens.Space.s8, vertical = NuvioTokens.Space.s4),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6)) {
@@ -266,9 +298,15 @@ private fun MobileSportsGameCard(
         } else Text(eventHeadline(event, league), Modifier.padding(horizontal = NuvioTokens.Space.s8),
             style = MaterialTheme.typography.bodySmall, color = tokens.colors.textPrimary,
             maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(game.channels.firstOrNull()?.channel?.name ?: "Check broadcasts", Modifier.padding(NuvioTokens.Space.s8),
-            style = MaterialTheme.typography.labelSmall, color = tokens.colors.textMuted,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val streamCount = game.channels.distinctBy { it.channel.key }.size
+        Row(Modifier.fillMaxWidth().padding(NuvioTokens.Space.s8), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6)) {
+            Text(game.channels.firstOrNull()?.channel?.name ?: "Check broadcasts", Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall, color = tokens.colors.textMuted,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Other streams to choose from by holding the card.
+            if (streamCount > 1) SportsBadge("+${streamCount - 1} streams", tokens.colors.surface)
+        }
     }
 }
 

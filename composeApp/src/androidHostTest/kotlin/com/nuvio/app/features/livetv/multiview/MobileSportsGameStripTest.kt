@@ -10,13 +10,13 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
@@ -59,46 +59,43 @@ class MobileSportsGameStripTest {
     private val paneTargets = mutableListOf<Int>()
     private val openedGames = mutableListOf<Pair<Int, String>>()
     private val broadcasts = mutableListOf<Triple<Int, String, String>>()
+    private val played = mutableListOf<Pair<Int, String>>()
     private val removedPanes = mutableListOf<Int>()
     private var additions = 0
 
     @Test
-    fun choosingGameForPaneTwoOpensStreamsAndOnlyExactBroadcastSelectionTunes() {
+    fun tappingAGamePlaysItsBestStreamAndHoldingItShowsTheOtherStreams() {
         showStrip()
         choosePane(1)
-        button("Games").assertIsDisplayed()
-        button("Streams").assertIsDisplayed().assertIsNotEnabled()
+        button("Games").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(listOf(1), paneTargets)
             assertTrue(openedGames.isEmpty())
             assertTrue(broadcasts.isEmpty())
         }
 
+        // Tap: the game's best stream plays in the chosen pane straight away.
         chooseBeta()
-        assertPickerButtons()
         compose.runOnIdle {
-            assertEquals(listOf(1 to beta.event.id), openedGames)
-            assertTrue(broadcasts.isEmpty(), "Choosing a game must not choose its first broadcast")
-            assertEquals(0, session.selection.value.focusedPane)
+            assertEquals(listOf(1 to beta.event.id), played)
+            assertTrue(openedGames.isEmpty(), "A tap plays the game; it does not open its streams")
+            assertEquals(beta.channels[0].channel.key, session.selection.value.channels[1]?.key)
         }
+
+        // Hold: the game's streams, and only a stream tap tunes one of them.
+        holdBeta()
+        button("Games").assertIsDisplayed().assertIsEnabled()
+        compose.runOnIdle { assertEquals(listOf(1 to beta.event.id), openedGames) }
         touchListText(beta.channels[1].channel.name)
         compose.runOnIdle {
             assertEquals(listOf(Triple(1, beta.event.id, beta.channels[1].channel.key)), broadcasts)
             assertEquals(beta.channels[1].channel.key, session.selection.value.channels[1]?.key)
         }
 
-        // Games and Streams remain independent buttons, and another source retains the game.
+        // Games goes back to the list of games.
         button("Games").performClick()
+        button("Games").assertDoesNotExist()
         assertPickerButtons()
-        button("Streams").performClick()
-        touchListText(beta.channels[0].channel.name)
-        compose.runOnIdle {
-            assertEquals(listOf(1 to beta.event.id), openedGames)
-            assertEquals(listOf(
-                Triple(1, beta.event.id, beta.channels[1].channel.key),
-                Triple(1, beta.event.id, beta.channels[0].channel.key),
-            ), broadcasts)
-        }
     }
 
     @Test
@@ -107,10 +104,8 @@ class MobileSportsGameStripTest {
         // Synthetic available bounds, matching the existing editor host test; not a real IME.
         showStrip()
         choosePane(1)
-        chooseBeta()
+        holdBeta()
         assertPickerButtons()
-        compose.onNodeWithContentDescription("Add pane").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithContentDescription("Remove selected pane").assertIsDisplayed().assertIsEnabled()
 
         // Metadata can scroll inside a short card; it must remain reachable and actionable.
         touchListText(beta.channels[1].how, scrollFully = true)
@@ -118,7 +113,6 @@ class MobileSportsGameStripTest {
             assertEquals(listOf(Triple(1, beta.event.id, beta.channels[1].channel.key)), broadcasts)
         }
         button("Games").assertIsDisplayed().performClick()
-        button("Streams").assertIsDisplayed().assertIsEnabled().performClick()
         compose.onNodeWithContentDescription("Add pane").performClick()
         compose.runOnIdle {
             assertEquals(1, additions)
@@ -132,18 +126,17 @@ class MobileSportsGameStripTest {
             assertEquals(listOf(2), removedPanes)
             assertEquals(2, session.selection.value.layout.paneCount)
             assertEquals(1, broadcasts.size, "Pane controls must not tune another broadcast")
+            assertTrue(played.isEmpty(), "Pane controls must not play a game")
         }
         button("3").assertDoesNotExist()
         assertPickerButtons()
-        compose.onNodeWithContentDescription("Add pane").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithContentDescription("Remove selected pane").assertIsDisplayed().assertIsEnabled()
     }
 
     @Test
-    fun removingAnEarlierTargetKeepsTheSurvivingPanesPendingGameChoice() {
+    fun removingAnEarlierTargetKeepsStreamChoicesOnTheSurvivingPane() {
         showStrip(panes = 3)
         choosePane(2)
-        chooseBeta()
+        holdBeta()
         compose.runOnIdle { assertTrue(broadcasts.isEmpty()) }
 
         choosePane(0)
@@ -152,12 +145,12 @@ class MobileSportsGameStripTest {
             assertEquals(listOf(0), removedPanes)
             assertEquals(2, session.selection.value.layout.paneCount)
         }
-        // The unplayed game selected for old pane 3 belongs to its surviving owner in pane 2.
+        // Old pane 3 is now pane 2: holding the game there and picking a stream tunes that pane.
         choosePane(1)
-        button("Streams").assertIsEnabled().performClick()
+        holdBeta()
         touchListText(beta.channels[1].channel.name)
         compose.runOnIdle {
-            assertEquals(listOf(2 to beta.event.id), openedGames)
+            assertEquals(listOf(2 to beta.event.id, 1 to beta.event.id), openedGames)
             assertEquals(listOf(Triple(1, beta.event.id, beta.channels[1].channel.key)), broadcasts)
         }
     }
@@ -180,6 +173,12 @@ class MobileSportsGameStripTest {
                     paneCount = selection.layout.paneCount,
                     hideScores = false,
                     onGame = { game -> openedGames += targetPane to game.event.id; true },
+                    onPlayGame = { game ->
+                        played += targetPane to game.event.id
+                        session.assign(targetPane, game.channels.first().channel)
+                        session.focus(targetPane)
+                        true
+                    },
                     onStream = { game, key ->
                         broadcasts += Triple(targetPane, game.event.id, key)
                         session.assign(targetPane, game.channels.single { it.channel.key == key }.channel)
@@ -205,16 +204,27 @@ class MobileSportsGameStripTest {
 
     private fun choosePane(index: Int) = button("${index + 1}").assertIsDisplayed().performClick()
 
-    private fun chooseBeta() {
+    private fun scrollToBeta() {
         // Exercise a later ordered row, rather than relying on offscreen lazy children existing.
         compose.onNode(hasScrollToIndexAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
             .performScrollToIndex(1)
+    }
+
+    private fun chooseBeta() {
+        scrollToBeta()
         touchListText(beta.event.title)
     }
 
+    private fun holdBeta() {
+        scrollToBeta()
+        val node = compose.onNode(hasText(beta.event.title) and hasAnyAncestor(hasScrollToIndexAction()), useUnmergedTree = true)
+        if (!node.isDisplayed()) node.performScrollTo()
+        node.assertIsDisplayed().performTouchInput { longClick() }
+    }
+
     private fun assertPickerButtons() {
-        button("Games").assertIsDisplayed().assertIsEnabled()
-        button("Streams").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add pane").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove selected pane").assertIsDisplayed()
     }
 
     private fun button(text: String): SemanticsNodeInteraction = compose.onNode(hasText(text) and hasClickAction())

@@ -3,6 +3,7 @@ package com.nuvio.app.features.livetv.multiview
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SportsSoccer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -81,25 +83,34 @@ import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.livetv.data.LiveTvRepository
 import com.nuvio.app.features.livetv.data.VideoPlaying
 import com.nuvio.app.features.livetv.model.LiveChannel
+import com.nuvio.app.features.livetv.sports.ChannelMatch
 import com.nuvio.app.features.livetv.sports.ChannelPickerSearchResult
 import com.nuvio.app.features.livetv.sports.channelPickerSearchResults
+import com.nuvio.app.features.livetv.sports.SportsRepository
 import com.nuvio.app.features.livetv.sports.SportsSettings
 import com.nuvio.app.features.livetv.sports.SportsWatchController
 import com.nuvio.app.features.livetv.sports.SportsWatchGame
 import com.nuvio.app.features.livetv.sports.SportsWatchRow
+import com.nuvio.app.features.livetv.ui.ChannelLogo
 import com.nuvio.app.features.livetv.ui.LiveTvViewState
 import com.nuvio.app.features.livetv.ui.liveTvSideInsets
 import com.nuvio.app.features.livetv.ui.sports.MobileSportsGameStrip
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 
+/**
+ * One Multiview for everything: the channel picker (with your groups) and the Sports games are
+ * two ways of filling the same panes. [startOnSports] opens it on the games (from the Sports
+ * section). Channels set aside with "Add to Multiview" or the player's Multiview button are put
+ * in the panes when it opens. Selections live only in memory; no stream links are saved.
+ */
 @Composable
 fun MultiviewScreen(
     onBack: () -> Unit,
     session: MultiviewSession,
     modifier: Modifier = Modifier,
     active: Boolean = true,
-    sportsMode: Boolean = false,
+    startOnSports: Boolean = false,
 ) {
     val tokens = MaterialTheme.nuvio
     if (!isMultiviewSupported) {
@@ -110,7 +121,11 @@ fun MultiviewScreen(
         return
     }
     val selection by session.selection.collectAsStateWithLifecycle()
-    val sports = remember(session, sportsMode) { if (sportsMode) SportsWatchController(session.profileId) else null }
+    // The Sports games come from the Sports watch model, made only once the Sports picker is used
+    // (so plain channel Multiview doesn't pay for it).
+    var sportsUsed by remember(session) { mutableStateOf(startOnSports) }
+    var showingSports by remember(session) { mutableStateOf(startOnSports) }
+    val sports = remember(session, sportsUsed) { if (sportsUsed) SportsWatchController(session.profileId) else null }
     DisposableEffect(sports) { onDispose { sports?.close() } }
     val noGames = remember { MutableStateFlow(emptyList<SportsWatchGame>()) }
     val noRows = remember { MutableStateFlow(emptyList<SportsWatchRow>()) }
@@ -127,12 +142,14 @@ fun MultiviewScreen(
     // filtered value before recreating native connections or displaying stale picker rows.
     val list = if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) listFlow.value else collectedList
     // This is the same filtered list used by Live TV search: hidden and locked content is absent.
+    // Sports adds the channels its games use (its own sources), checked by its own rules.
     val allowed = remember(list.visible, sportsChannels, sports, selection.channels) {
-        if (sports == null) list.visible.associateBy { it.key }
+        val base = list.visible.associateBy { it.key }
+        if (sports == null) base
         else {
             // A freshly seeded channel is checked synchronously while the eager permission
             // projection catches up; an empty first flow emission must not discard that seed.
-            val current = sportsChannels.associateBy { it.key }
+            val current = base + sportsChannels.associateBy { it.key }
             current + selection.channels.filterNotNull().filter { it.key !in current && sports.mayPlay(it) }.associateBy { it.key }
         }
     }
@@ -144,19 +161,87 @@ fun MultiviewScreen(
     val playbackActive = active && LocalScreenActive.current && profileIsCurrent() && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
     val audio = remember(session) { MultiviewAudioCoordinator() }
     var editingPane by remember(session) { mutableStateOf<Int?>(null) }
-    var sportsControlsOpen by remember(session) { mutableStateOf(sportsMode) }
+    var sportsControlsOpen by remember(session) { mutableStateOf(startOnSports) }
     var sportsTargetPane by remember(session) {
         mutableIntStateOf((0 until selection.layout.paneCount).firstOrNull { selection.channels[it] == null }
             ?: selection.focusedPane ?: 0)
     }
     val sportsEvents = remember(session) { mutableStateMapOf<Int, String>() }
-    val playerPermission = remember(sports) { sports?.let { watch -> { channel: LiveChannel -> watch.mayPlay(channel) } } }
+    var pickerGroup by remember(session) { mutableStateOf<String?>(null) }
+    val sportsShown = SportsRepository.settings.collectAsStateWithLifecycle().value.showInSidebar
+    val playerPermission = remember(sports) {
+        sports?.let { watch ->
+            { channel: LiveChannel ->
+                profileIsCurrent() && (LiveTvViewState.list.value.visible.any { it == channel } || watch.mayPlay(channel))
+            }
+        }
+    }
+
+    // Channels set aside with "Add to Multiview" (or the player's button) go into the panes.
+    val queued = remember(session) { MultiviewQueue.take() }
+    var seeded by remember(session) { mutableStateOf(queued.isEmpty()) }
+    LaunchedEffect(session, list.visible) {
+        if (seeded || list.visible.isEmpty()) return@LaunchedEffect
+        seeded = true
+        val byKey = list.visible.associateBy { it.key }
+        val chosen = queued.mapNotNull { byKey[it] }
+        if (chosen.isEmpty() || !profileIsCurrent()) return@LaunchedEffect
+        val firstPane = session.placeQueued(chosen) ?: return@LaunchedEffect
+        // The first one (the channel you were watching) keeps the sound.
+        session.focus(firstPane)
+        audio.focus(session.selection.value.paneIds[firstPane])
+        if (queued.size > chosen.size) NuvioToastController.show("Some channels you added aren't available on this profile.")
+    }
+
+    // Now-showing titles for the pane labels, refreshed each minute from the guide in memory.
+    val paneKeys = permittedSelection.channels.take(permittedSelection.layout.paneCount).mapNotNull { it?.key }
+    val nowShowing by produceState(emptyMap<String, String>(), paneKeys) {
+        while (true) {
+            value = LiveTvRepository.nowNext(paneKeys).mapNotNull { (key, nn) -> nn.now?.title?.let { key to it } }.toMap()
+            kotlinx.coroutines.delay(60_000L)
+        }
+    }
 
     fun openSportsPane(pane: Int) {
         sportsTargetPane = pane
         sportsControlsOpen = true
     }
-    PlatformBackHandler(enabled = sportsMode && sportsControlsOpen) { sportsControlsOpen = false }
+    fun openPicker(pane: Int) {
+        if (showingSports) openSportsPane(pane) else editingPane = pane
+    }
+    fun showSports(pane: Int) {
+        editingPane = null
+        sportsUsed = true
+        showingSports = true
+        openSportsPane(pane)
+    }
+    fun showChannels(pane: Int) {
+        sportsControlsOpen = false
+        showingSports = false
+        editingPane = pane
+    }
+    fun playMatch(pane: Int, eventId: String, channelKey: String?): Boolean {
+        val watch = sports ?: return false
+        val current = watch.resolve(eventId, channelKey) ?: return false
+        if (!profileIsCurrent()) return false
+        sportsEvents[pane] = eventId
+        session.assign(pane, current.channel)
+        session.focus(pane)
+        audio.focus(session.selection.value.paneIds[pane])
+        return true
+    }
+    /** The game playing in this pane and its streams after the current one (the next to try). */
+    fun nextStreams(pane: Int): Pair<String, List<ChannelMatch>>? {
+        val channelKey = permittedSelection.channels.getOrNull(pane)?.key ?: return null
+        val eventId = sportsEvents[pane]
+            ?: sportsGames.firstOrNull { game -> game.channels.any { it.channel.key == channelKey } }?.event?.id
+            ?: return null
+        val game = sportsGames.firstOrNull { it.event.id == eventId } ?: return null
+        val streams = game.channels.distinctBy { it.channel.key }
+        val at = streams.indexOfFirst { it.channel.key == channelKey }
+        return eventId to streams.drop(at + 1)
+    }
+    PlatformBackHandler(enabled = sportsControlsOpen) { sportsControlsOpen = false }
 
     LaunchedEffect(audio, playbackActive, permittedSelection.focusedOwnerId) {
         audio.focus(permittedSelection.focusedOwnerId.takeIf { playbackActive })
@@ -176,19 +261,17 @@ fun MultiviewScreen(
             .liveTvSideInsets().padding(bottom = nuvioSafeBottomPadding()),
     ) {
         NuvioScreenHeader(
-            title = if (sportsMode) "Sports Multiview" else "Multiview",
+            title = "Multiview",
             onBack = onBack,
             includeStatusBarPadding = false,
             actions = {
-                IconButton(onClick = {
-                    if (sportsMode) sportsControlsOpen = true else editingPane = permittedSelection.focusedPane ?: 0
-                }) {
+                IconButton(onClick = { openPicker(permittedSelection.focusedPane ?: sportsTargetPane.takeIf { showingSports } ?: 0) }) {
                     Icon(Icons.Filled.Tune, contentDescription = "Edit streams and layout", tint = tokens.colors.textPrimary)
                 }
             },
         )
         Text(
-            if (sportsMode) "Tap a pane, choose a game, then choose a stream."
+            if (showingSports) "Tap a pane, then tap a game to play it there. Hold a game for its other streams."
             else "Tap a video to hear it. Hold a pane to change its channel.",
             style = MaterialTheme.typography.bodySmall,
             color = tokens.colors.textMuted,
@@ -209,25 +292,34 @@ fun MultiviewScreen(
                             ownerId = permittedSelection.paneIds[pane],
                             pane = pane,
                             channel = channel,
+                            nowTitle = channel?.key?.let { nowShowing[it] },
                             focused = permittedSelection.focusedPane == pane,
                             playbackActive = playbackActive,
                             audio = audio,
                             mayPlayChannel = playerPermission,
-                            onFocus = {
-                                if (sportsMode) openSportsPane(pane) else {
-                                    session.focus(pane)
-                                    // Re-selecting the same pane retries lost system audio focus.
-                                    audio.focus(permittedSelection.paneIds[pane])
+                            // A game stream that failed: the button tries the game's next stream.
+                            nextStream = { nextStreams(pane)?.second?.firstOrNull()?.channel?.name },
+                            onNextStream = {
+                                val (eventId, candidates) = nextStreams(pane) ?: return@MultiviewPane
+                                if (candidates.none { playMatch(pane, eventId, it.channel.key) }) {
+                                    NuvioToastController.show("No other stream for this game right now.")
                                 }
                             },
-                            onEdit = { if (sportsMode) openSportsPane(pane) else editingPane = pane },
+                            onFocus = {
+                                session.focus(pane)
+                                // Re-selecting the same pane retries lost system audio focus.
+                                audio.focus(permittedSelection.paneIds[pane])
+                                // With the games open, a tap also picks the pane they fill.
+                                if (showingSports && sportsControlsOpen) openSportsPane(pane)
+                            },
+                            onEdit = { openPicker(pane) },
                             modifier = Modifier.offset(x = paneWidth * columnIndex, y = paneHeight * rowIndex)
                                 .width(paneWidth).height(paneHeight).padding(NuvioTokens.Space.s4),
                         )
                     }
                 }
             }
-            if (sportsMode && sportsControlsOpen && sports != null) {
+            if (showingSports && sportsControlsOpen && sports != null) {
             val target = sportsTargetPane.coerceIn(0, permittedSelection.layout.paneCount - 1)
             MobileSportsGameStrip(
                 games = sportsGames,
@@ -240,15 +332,12 @@ fun MultiviewScreen(
                 paneCount = permittedSelection.layout.paneCount,
                 hideScores = sportsSettings.hideScores,
                 onGame = { game -> sports.openGame(game.event.id) },
+                onPlayGame = { game ->
+                    sports.openGame(game.event.id)
+                    playMatch(target, game.event.id, null)
+                },
                 onStream = { game, channelKey ->
-                    val pane = target
-                    val current = sports.resolve(game.event.id, channelKey)
-                    if (profileIsCurrent() && current != null) {
-                        sportsEvents[pane] = game.event.id
-                        session.assign(pane, current.channel)
-                        session.focus(pane)
-                        audio.focus(session.selection.value.paneIds[pane])
-                    } else NuvioToastController.show("This broadcast is no longer available.")
+                    if (!playMatch(target, game.event.id, channelKey)) NuvioToastController.show("This broadcast is no longer available.")
                 },
                 onAdd = {
                     val count = session.selection.value.layout.paneCount
@@ -270,6 +359,7 @@ fun MultiviewScreen(
                 },
                 onPane = ::openSportsPane,
                 onClose = { sportsControlsOpen = false },
+                onChannels = { showChannels(target) },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
             }
@@ -277,23 +367,38 @@ fun MultiviewScreen(
     }
     editingPane?.let { requestedPane ->
         if (playbackActive) {
+            // Your groups, as the Live TV list shows them (Favorites and Recently watched first).
+            val groups = remember(list.sections) {
+                list.sections.filter { !it.group.locked && it.channels.isNotEmpty() }
+                    .map { MultiviewPickerGroup(it.group.id, it.group.title, it.channels) }
+            }
             MultiviewControlsSheet(
                 selection = permittedSelection,
                 initialPane = requestedPane.coerceAtMost(permittedSelection.layout.paneCount - 1),
                 channels = list.visible,
+                groups = groups,
+                group = pickerGroup?.takeIf { id -> groups.any { it.id == id } },
+                onGroup = { pickerGroup = it },
+                onSports = if (sportsShown) ({ pane: Int -> showSports(pane) }) else null,
                 onLayout = session::setLayout,
                 onAssign = { pane, channel ->
                     // Recheck the current list so a parental/profile update cannot commit a stale row.
                     val current = LiveTvViewState.list.value.visible.firstOrNull { it.key == channel.key }
-                    if (profileIsCurrent() && current != null) session.assign(pane, current)
+                    if (profileIsCurrent() && current != null) {
+                        sportsEvents.remove(pane)
+                        session.assign(pane, current)
+                    }
                     editingPane = null
                 },
-                onClear = { session.assign(it, null) },
+                onClear = { sportsEvents.remove(it); session.assign(it, null) },
                 onDismiss = { editingPane = null },
             )
         }
     }
 }
+
+/** A group in the Multiview channel picker. */
+internal data class MultiviewPickerGroup(val id: String, val title: String, val channels: List<LiveChannel>)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -301,10 +406,13 @@ private fun MultiviewPane(
     ownerId: Int,
     pane: Int,
     channel: LiveChannel?,
+    nowTitle: String?,
     focused: Boolean,
     playbackActive: Boolean,
     audio: MultiviewAudioCoordinator,
     mayPlayChannel: ((LiveChannel) -> Boolean)?,
+    nextStream: () -> String?,
+    onNextStream: () -> Unit,
     onFocus: () -> Unit,
     onEdit: () -> Unit,
     modifier: Modifier,
@@ -341,7 +449,15 @@ private fun MultiviewPane(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(state.error ?: "Unable to play this channel", color = tokens.colors.textPrimary, style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = { attempt++ }) { Text("Retry", color = tokens.colors.accent) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s4)) {
+                            TextButton(onClick = { attempt++ }) { Text("Retry", color = tokens.colors.accent) }
+                            // A game's stream: try the game's next stream in this pane.
+                            nextStream()?.let { name ->
+                                TextButton(onClick = onNextStream) {
+                                    Text("Next: $name", color = tokens.colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -368,16 +484,35 @@ private fun MultiviewPane(
             Modifier.align(Alignment.TopCenter).fillMaxWidth().background(tokens.colors.background.copy(alpha = 0.82f))
                 .padding(start = NuvioTokens.Space.s8),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
         ) {
-            Text(
-                channel?.name ?: "Pane ${pane + 1}",
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.labelMedium,
-                color = tokens.colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (focused) Icon(Icons.Filled.VolumeUp, contentDescription = "Audio selected", tint = tokens.colors.accent)
+            // The channel's logo and what's on now, like the guide.
+            if (channel != null) ChannelLogo(channel, size = 22.dp)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    channel?.name ?: "Pane ${pane + 1}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = tokens.colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (nowTitle != null) Text(
+                    nowTitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.colors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (focused) Row(
+                Modifier.clip(tokens.shapes.compactCard).background(tokens.colors.accent)
+                    .padding(horizontal = NuvioTokens.Space.s6, vertical = NuvioTokens.Space.s2),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s2),
+            ) {
+                Icon(Icons.Filled.VolumeUp, contentDescription = "Audio selected", tint = tokens.colors.onAccent, modifier = Modifier.size(14.dp))
+                Text("SOUND", style = MaterialTheme.typography.labelSmall, color = tokens.colors.onAccent, fontWeight = FontWeight.Bold)
+            }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Filled.MoreVert, contentDescription = "Change pane ${pane + 1}", tint = tokens.colors.textPrimary)
             }
@@ -395,14 +530,22 @@ internal fun MultiviewControlsSheet(
     onAssign: (Int, LiveChannel) -> Unit,
     onClear: (Int) -> Unit,
     onDismiss: () -> Unit,
+    /** Your channel groups; the picker can show one group's channels. */
+    groups: List<MultiviewPickerGroup> = emptyList(),
+    group: String? = null,
+    onGroup: (String?) -> Unit = {},
+    /** Switches this Multiview to the Sports games for the pane (null: no Sports button). */
+    onSports: ((Int) -> Unit)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     var targetPane by remember { mutableStateOf(initialPane) }
     var query by remember { mutableStateOf("") }
     val target = targetPane.coerceAtMost(selection.layout.paneCount - 1)
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val result by produceState(ChannelPickerSearchResult<LiveChannel>("", emptyList()), channels) {
-        channelPickerSearchResults(channels, snapshotFlow { query }) {
+    val scoped = remember(channels, groups, group) { groups.firstOrNull { it.id == group }?.channels ?: channels }
+    val groupTitle = groups.firstOrNull { it.id == group }?.title
+    val result by produceState(ChannelPickerSearchResult<LiveChannel>("", emptyList()), scoped) {
+        channelPickerSearchResults(scoped, snapshotFlow { query }) {
             "${it.name} ${it.number} ${it.group}"
         }.collect { value = it }
     }
@@ -433,7 +576,8 @@ internal fun MultiviewControlsSheet(
                 if (mergedToolbar) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) {
-                            MultiviewPickerControls(selection, target, singleRow = true, onTarget = { targetPane = it }, onLayout = onLayout, showTitle = true)
+                            MultiviewPickerControls(selection, target, singleRow = true, onTarget = { targetPane = it }, onLayout = onLayout, showTitle = true,
+                                groups = groups, group = group, onGroup = onGroup, onSports = onSports?.let { open -> { open(target) } })
                         }
                         actions()
                     }
@@ -453,7 +597,8 @@ internal fun MultiviewControlsSheet(
                         )
                         actions()
                     }
-                    MultiviewPickerControls(selection, target, singleRow = singleControlRow, onTarget = { targetPane = it }, onLayout = onLayout)
+                    MultiviewPickerControls(selection, target, singleRow = singleControlRow, onTarget = { targetPane = it }, onLayout = onLayout,
+                        groups = groups, group = group, onGroup = onGroup, onSports = onSports?.let { open -> { open(target) } })
                 }
                 Box(Modifier.fillMaxWidth().padding(horizontal = NuvioTokens.Space.s12, vertical = if (mergedToolbar) 0.dp else NuvioTokens.Space.s4)) {
                     BasicTextField(
@@ -469,7 +614,7 @@ internal fun MultiviewControlsSheet(
                             .semantics { contentDescription = "Search channels for pane ${target + 1}" },
                         decorationBox = { field ->
                             Box(contentAlignment = Alignment.CenterStart) {
-                                if (query.isEmpty()) Text("Search channels for pane ${target + 1}", style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textMuted)
+                                if (query.isEmpty()) Text(groupTitle?.let { "Search $it for pane ${target + 1}" } ?: "Search channels for pane ${target + 1}", style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 field()
                             }
                         },
@@ -478,7 +623,7 @@ internal fun MultiviewControlsSheet(
                 NuvioBottomSheetDivider()
                 LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                     if (matches.isEmpty()) {
-                        item { Text(if (channels.isEmpty()) "No available channels" else "No matching channels", color = tokens.colors.textMuted, modifier = Modifier.padding(NuvioTokens.Space.s16)) }
+                        item { Text(if (channels.isEmpty()) "No available channels" else if (query.isBlank() && groupTitle != null) "No channels in $groupTitle" else "No matching channels", color = tokens.colors.textMuted, modifier = Modifier.padding(NuvioTokens.Space.s16)) }
                     }
                     items(matches, key = { it.key }) { channel ->
                         NuvioBottomSheetActionRow(
@@ -502,8 +647,36 @@ private fun MultiviewPickerControls(
     onTarget: (Int) -> Unit,
     onLayout: (MultiviewLayout) -> Unit,
     showTitle: Boolean = false,
+    groups: List<MultiviewPickerGroup> = emptyList(),
+    group: String? = null,
+    onGroup: (String?) -> Unit = {},
+    onSports: (() -> Unit)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
+    // Sports games, then your groups: "All" and each group with its channel count.
+    val sources: @Composable () -> Unit = {
+        if (onSports != null) {
+            Row(
+                Modifier.clip(tokens.shapes.compactCard).background(tokens.colors.surfaceCard)
+                    .border(tokens.borders.thin, tokens.colors.borderDefault, tokens.shapes.compactCard)
+                    .clickable(onClick = onSports).heightIn(min = 32.dp)
+                    .padding(horizontal = NuvioTokens.Space.s10, vertical = NuvioTokens.Space.s4),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s4),
+            ) {
+                Icon(Icons.Filled.SportsSoccer, contentDescription = null, tint = tokens.colors.textPrimary, modifier = Modifier.size(16.dp))
+                Text("Sports", style = MaterialTheme.typography.labelMedium, color = tokens.colors.textPrimary)
+            }
+        }
+        if (groups.isNotEmpty()) {
+            Text("Groups", style = MaterialTheme.typography.labelMedium, color = tokens.colors.textMuted)
+            Chip("All", selected = group == null, onClick = { onGroup(null) })
+            groups.forEach { g ->
+                Chip("${g.title} · ${g.channels.size}", selected = group == g.id, onClick = { onGroup(g.id) })
+            }
+        }
+    }
+    val hasSources = onSports != null || groups.isNotEmpty()
     val layouts: @Composable () -> Unit = {
         Text("Layout", style = MaterialTheme.typography.labelMedium, color = tokens.colors.textMuted)
         MultiviewLayout.entries.filter { it.paneCount > 1 }.forEach { layout ->
@@ -526,6 +699,10 @@ private fun MultiviewPickerControls(
             layouts()
             Spacer(Modifier.width(NuvioTokens.Space.s8))
             panes()
+            if (hasSources) {
+                Spacer(Modifier.width(NuvioTokens.Space.s8))
+                sources()
+            }
         }
     } else {
         Row(
@@ -538,5 +715,10 @@ private fun MultiviewPickerControls(
             horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
             verticalAlignment = Alignment.CenterVertically,
         ) { panes() }
+        if (hasSources) Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).heightIn(min = 40.dp).padding(horizontal = NuvioTokens.Space.s12),
+            horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
+            verticalAlignment = Alignment.CenterVertically,
+        ) { sources() }
     }
 }

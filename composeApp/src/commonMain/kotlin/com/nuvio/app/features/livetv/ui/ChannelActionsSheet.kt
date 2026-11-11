@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Image
@@ -75,6 +76,8 @@ import nuvio.composeapp.generated.resources.livetv_group_new_hint
 import nuvio.composeapp.generated.resources.livetv_rename_hint
 import nuvio.composeapp.generated.resources.livetv_watch_from_start
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.features.livetv.multiview.MultiviewQueue
+import com.nuvio.app.features.livetv.multiview.isMultiviewSupported
 
 /** Long-press options for a channel. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,6 +118,13 @@ internal fun ChannelActionsSheet(
             NuvioBottomSheetActionRow(title = stringResource(Res.string.action_play), icon = Icons.Filled.PlayArrow, onClick = { close(onPlay) })
             if (onWatchFromStart != null) {
                 NuvioBottomSheetActionRow(title = stringResource(Res.string.livetv_watch_from_start), icon = Icons.Filled.Replay, onClick = { close(onWatchFromStart) })
+            }
+            if (isMultiviewSupported) {
+                NuvioBottomSheetActionRow(
+                    title = "Add to Multiview",
+                    icon = Icons.Filled.GridView,
+                    onClick = { MultiviewQueue.addAndAnnounce(channel.key); close() },
+                )
             }
             extraRows { then -> close(then) }
             NuvioBottomSheetActionRow(

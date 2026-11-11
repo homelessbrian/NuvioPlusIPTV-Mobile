@@ -143,7 +143,8 @@ import com.nuvio.app.features.livetv.model.LiveChannel
 import com.nuvio.app.features.livetv.player.LiveTvPlayback
 import com.nuvio.app.features.livetv.multiview.MultiviewScreen
 import com.nuvio.app.features.livetv.multiview.MultiviewSession
-import com.nuvio.app.features.livetv.multiview.LocalOpenSportsMultiview
+import com.nuvio.app.features.livetv.multiview.LocalOpenMultiview
+import com.nuvio.app.features.livetv.multiview.MultiviewQueue
 import com.nuvio.app.features.livetv.sports.SportsWatchController
 import com.nuvio.app.features.livetv.multiview.isMultiviewSupported
 import com.nuvio.app.features.livetv.ui.LiveTvCloudSyncPrompts
@@ -1009,6 +1010,16 @@ internal fun MainAppContent(
             }
         }
 
+        /** The player's Multiview button: the one Multiview, with this channel in the first pane. */
+        fun openMultiviewWith(channelKey: String? = null) {
+            if (!isMultiviewSupported) return
+            channelKey?.let(MultiviewQueue::addFirst)
+            navController.navigate(LiveTvMultiviewRoute()) {
+                if (navController.currentRoute is PlayerRoute) popUpTo<PlayerRoute> { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+
         val sportsActions = SportsActions(
             onPlay = ::openLiveChannel,
             onPlayCatchup = ::openLiveCatchup,
@@ -1493,7 +1504,7 @@ internal fun MainAppContent(
             val drawsUnderVerticalBar = currentRoute.drawsUnderVerticalBar(selectedTab)
             SharedTransitionLayout {
                 CompositionLocalProvider(
-                    LocalOpenSportsMultiview provides ::openSportsMultiview,
+                    LocalOpenMultiview provides ::openMultiviewWith,
                     LocalPosterClickAnchor provides if (posterNavigationEnabled) posterNavigation::prepare else null,
                     LocalUseNativeNavigation provides useNativeNavigation,
                     LocalNativeNavigationBarHidden provides (currentRoute?.hidesNavigationBar == true),
@@ -1862,8 +1873,8 @@ internal fun MainAppContent(
                     MultiviewScreen(
                         onBack = onBack,
                         session = if (route.sportsMode) sportsMultiviewSession else multiviewSession,
-                        sportsMode = route.sportsMode,
-                        active = currentRoute == route && (!route.sportsMode || visiblePlayerEntries == 0),
+                        startOnSports = route.sportsMode,
+                        active = currentRoute == route && visiblePlayerEntries == 0,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
