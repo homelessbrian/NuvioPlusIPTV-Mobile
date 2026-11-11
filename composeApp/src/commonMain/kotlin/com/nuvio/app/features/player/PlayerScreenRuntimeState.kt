@@ -117,6 +117,7 @@ internal class PlayerScreenRuntime(
     var activeSourceUrl by mutableStateOf(sourceUrl)
     var activeSourceAudioUrl by mutableStateOf(sourceAudioUrl)
     var activeSourceHeaders by mutableStateOf(sanitizePlaybackHeaders(sourceHeaders))
+    var activeStalkerMediaPolicy by mutableStateOf(args.stalkerMediaPolicy)
     var activeSourceResponseHeaders by mutableStateOf(sanitizePlaybackResponseHeaders(sourceResponseHeaders))
     var activeStreamType by mutableStateOf(streamType)
     var activeTorrentInfoHash by mutableStateOf(torrentInfoHash)

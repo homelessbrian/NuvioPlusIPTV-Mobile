@@ -104,7 +104,11 @@ internal fun OnDemandTitleSheet(item: VodItem, actions: OnDemandActions, onDismi
     fun play(target: VodItem, episode: VodEpisode?) {
         scope.launch {
             val adult = OnDemandRepository.isAdult(target) || OnDemandRepository.isAdult(item)
-            val launch = OnDemandPlayback.launch(target, episode, match, profileId, adult)
+            val launch = try { OnDemandPlayback.launch(target, episode, match, profileId, adult) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: com.nuvio.app.features.livetv.stalker.StalkerRoutingException) { NuvioToastController.show(failure.message.orEmpty()); return@launch }
+            catch (failure: com.nuvio.app.features.livetv.stalker.StalkerRouteMismatchException) { NuvioToastController.show(failure.message.orEmpty()); return@launch }
+            catch (_: Exception) { null }
             if (launch == null) NuvioToastController.show(playFailed) else close { actions.onPlay(launch) }
         }
     }

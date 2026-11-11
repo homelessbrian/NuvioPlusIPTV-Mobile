@@ -26,6 +26,23 @@ import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.youtube_resolution_failed
 import org.jetbrains.compose.resources.getString
 
+/** Keeps portal commands and sessions out of the generic URL/engine path. */
+private fun PlayerScreenRuntime.resolveStalkerForPlayer(stream: StreamItem, videoId: String?, onResolved: (StreamItem) -> Unit): Boolean {
+    if (stream.stalkerStream == null) {
+        if (stream.url?.let(com.nuvio.app.features.livetv.stalker.StalkerGateway::isLocator) != true) return false
+        NuvioToastController.show("This Stalker stream needs to be refreshed from its provider.")
+        return true
+    }
+    if (stream.stalkerMediaPolicy != null) return false
+    credentialRefreshJob?.cancel()
+    credentialRefreshJob = scope.launch {
+        try { onResolved(com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.resolveStreamForPlayback(stream, videoId)) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { NuvioToastController.show(com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.resolutionError(failure)) }
+    }
+    return true
+}
+
 internal fun PlayerScreenRuntime.resolveDebridForPlayer(
     stream: StreamItem,
     season: Int?,
@@ -212,6 +229,8 @@ internal fun PlayerScreenRuntime.saveP2pStreamForReuse(
         bingeGroup = stream.behaviorHints.bingeGroup,
         addonLogo = stream.addonLogo,
         streamDescription = stream.streamSubtitle,
+        stalkerSourceId = stream.stalkerSourceId,
+        stalkerStreamJson = stream.stalkerStream?.encode(),
     )
 }
 
@@ -235,6 +254,7 @@ internal fun PlayerScreenRuntime.switchToP2pSourceStream(stream: StreamItem) {
     activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
+    activeStalkerMediaPolicy = null
     activeSourceResponseHeaders = emptyMap()
     activeStreamType = null
     activeTorrentInfoHash = infoHash
@@ -285,6 +305,7 @@ internal fun PlayerScreenRuntime.switchToP2pEpisodeStream(
     activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
+    activeStalkerMediaPolicy = null
     activeSourceResponseHeaders = emptyMap()
     activeStreamType = null
     activeTorrentInfoHash = infoHash
@@ -299,6 +320,8 @@ internal fun PlayerScreenRuntime.switchToSource(
     stream: StreamItem,
     saveForReuse: Boolean = true,
 ) {
+    if (stream.stalkerMediaPolicy == null) credentialRefreshJob?.cancel()
+    if (resolveStalkerForPlayer(stream, activeVideoId) { switchToSource(it, saveForReuse) }) return
     if (prepareServerForPlayer(stream) { switchToSource(it) }) return
     // The resolved URL expires after a few hours, so it isn't kept for reuse.
     if (resolveYouTubeForPlayer(stream) { switchToSource(it, saveForReuse = false) }) return
@@ -344,6 +367,7 @@ internal fun PlayerScreenRuntime.switchToSource(
     activeSourceUrl = url
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
+    activeStalkerMediaPolicy = stream.stalkerMediaPolicy
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
     activeStreamType = stream.streamType
     activeSourceIdentityKey = sourceIdentityKey
@@ -371,6 +395,8 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     serverResumeMs: Long? = null,
     saveForReuse: Boolean = true,
 ) {
+    if (stream.stalkerMediaPolicy == null) credentialRefreshJob?.cancel()
+    if (resolveStalkerForPlayer(stream, episode.id) { switchToEpisodeStream(it, episode, serverResumeMs, saveForReuse) }) return
     if (prepareServerForPlayer(stream) { switchToEpisodeStream(it, episode, serverResumeMs = newerServerResumeMs(it, episode)) }) return
     if (
         resolveYouTubeForPlayer(stream) { resolved ->
@@ -412,6 +438,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     activeSourceUrl = url
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
+    activeStalkerMediaPolicy = stream.stalkerMediaPolicy
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
     activeStreamType = stream.streamType
     activeSubtitleExtras = SubtitleRequestExtras.from(stream.behaviorHints, url)
@@ -447,6 +474,7 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
     activeSourceUrl = localFileUri
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
+    activeStalkerMediaPolicy = null
     activeSourceResponseHeaders = emptyMap()
     activeStreamType = null
     activeSourceIdentityKey = null
@@ -655,5 +683,7 @@ private fun PlayerScreenRuntime.saveDirectStreamForReuse(
         contentLanguage = contentLanguage,
         addonLogo = stream.addonLogo,
         streamDescription = stream.streamSubtitle,
+        stalkerSourceId = stream.stalkerSourceId,
+        stalkerStreamJson = stream.stalkerStream?.encode(),
     )
 }

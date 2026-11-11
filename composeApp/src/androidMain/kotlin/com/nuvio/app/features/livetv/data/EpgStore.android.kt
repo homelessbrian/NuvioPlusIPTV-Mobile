@@ -9,7 +9,7 @@ import com.nuvio.app.features.livetv.model.EpgProgram
 
 internal actual object EpgStore {
     private const val DB_NAME = "livetv_guide.db"
-    private const val DB_VERSION = 3
+    private const val DB_VERSION = 4
 
     /** The longest a single show is taken to run, for reading "what's on now" by start time. */
     private const val MAX_SHOW_MS = 8L * 60 * 60 * 1000
@@ -30,7 +30,7 @@ internal actual object EpgStore {
             db.execSQL(
                 """CREATE TABLE programs (
                     ch TEXT NOT NULL, start INTEGER NOT NULL, stop INTEGER NOT NULL, title TEXT NOT NULL,
-                    descr TEXT, cat TEXT, ep TEXT, icon TEXT, year INTEGER, people TEXT)"""
+                    descr TEXT, cat TEXT, ep TEXT, icon TEXT, year INTEGER, people TEXT, stalker_program TEXT, stalker_archive INTEGER NOT NULL DEFAULT 0, stalker_source TEXT)"""
             )
             createIndices(db)
             db.execSQL("CREATE TABLE auto (ch TEXT PRIMARY KEY, source TEXT NOT NULL, xmltv TEXT NOT NULL)")
@@ -46,6 +46,14 @@ internal actual object EpgStore {
                         db.execSQL("DROP TABLE IF EXISTS meta")
                         onCreate(db)
                     }
+            }
+            if (oldVersion < 4) {
+                val columns = db.rawQuery("PRAGMA table_info(programs)", null).use { c ->
+                    buildSet { while (c.moveToNext()) add(c.getString(1)) }
+                }
+                if ("stalker_program" !in columns) db.execSQL("ALTER TABLE programs ADD COLUMN stalker_program TEXT")
+                if ("stalker_archive" !in columns) db.execSQL("ALTER TABLE programs ADD COLUMN stalker_archive INTEGER NOT NULL DEFAULT 0")
+                if ("stalker_source" !in columns) db.execSQL("ALTER TABLE programs ADD COLUMN stalker_source TEXT")
             }
         }
     }
@@ -70,7 +78,7 @@ internal actual object EpgStore {
 
     private fun insertAll(db: SQLiteDatabase, programs: Map<String, List<EpgProgram>>) {
         val stmt = db.compileStatement(
-            "INSERT INTO programs (ch, start, stop, title, descr, cat, ep, icon, year, people) VALUES (?,?,?,?,?,?,?,?,?,?)"
+            "INSERT INTO programs (ch, start, stop, title, descr, cat, ep, icon, year, people, stalker_program, stalker_archive, stalker_source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
         )
         programs.forEach { (ch, list) ->
             list.forEach { p ->
@@ -85,6 +93,9 @@ internal actual object EpgStore {
                 p.icon?.let { stmt.bindString(8, it) } ?: stmt.bindNull(8)
                 p.year?.let { stmt.bindLong(9, it.toLong()) } ?: stmt.bindNull(9)
                 if (p.people.isEmpty()) stmt.bindNull(10) else stmt.bindString(10, p.people.joinToString("\u001F"))
+                p.stalkerProgramId?.let { stmt.bindString(11, it) } ?: stmt.bindNull(11)
+                stmt.bindLong(12, if (p.stalkerArchiveAvailable) 1L else 0L)
+                p.stalkerSourceIdentity?.let { stmt.bindString(13, it) } ?: stmt.bindNull(13)
                 stmt.executeInsert()
             }
         }
@@ -140,7 +151,9 @@ internal actual object EpgStore {
     actual fun range(fromMs: Long, toMs: Long, light: Boolean, channels: Collection<String>?): Map<String, List<EpgProgram>> {
         val db = readable ?: return emptyMap()
         val out = HashMap<String, ArrayList<EpgProgram>>()
-        val columns = if (light) "ch, start, stop, title, ep, icon" else "ch, start, stop, title, descr, cat, ep, icon, year, people"
+        // A guide import normally has just one identity per provider, shared by all its rows.
+        val sourceIdentities = HashMap<String, String>()
+        val columns = if (light) "ch, start, stop, title, ep, icon, stalker_program, stalker_archive, stalker_source" else "ch, start, stop, title, descr, cat, ep, icon, year, people, stalker_program, stalker_archive, stalker_source"
         val timeArgs = listOf((fromMs - MAX_SHOW_MS).toString(), toMs.toString(), fromMs.toString())
         fun read(chFilter: String, chArgs: List<String>) {
             val sql = "SELECT $columns FROM programs WHERE $chFilter start >= ? AND start < ? AND stop > ?"
@@ -151,7 +164,10 @@ internal actual object EpgStore {
                         stopMs = c.getLong(2),
                         title = c.getString(3),
                         episode = if (c.isNull(4)) null else c.getString(4),
-                        icon = if (c.isNull(5)) null else c.getString(5)
+                        icon = if (c.isNull(5)) null else c.getString(5),
+                        stalkerProgramId = if (c.isNull(6)) null else c.getString(6),
+                        stalkerArchiveAvailable = c.getInt(7) != 0,
+                        stalkerSourceIdentity = if (c.isNull(8)) null else c.getString(8).let { sourceIdentities.getOrPut(it) { it } }
                     ) else EpgProgram(
                         startMs = c.getLong(1),
                         stopMs = c.getLong(2),
@@ -161,7 +177,10 @@ internal actual object EpgStore {
                         episode = if (c.isNull(6)) null else c.getString(6),
                         icon = if (c.isNull(7)) null else c.getString(7),
                         year = if (c.isNull(8)) null else c.getInt(8),
-                        people = if (c.isNull(9)) emptyList() else c.getString(9).split('\u001F')
+                        people = if (c.isNull(9)) emptyList() else c.getString(9).split('\u001F'),
+                        stalkerProgramId = if (c.isNull(10)) null else c.getString(10),
+                        stalkerArchiveAvailable = c.getInt(11) != 0,
+                        stalkerSourceIdentity = if (c.isNull(12)) null else c.getString(12).let { sourceIdentities.getOrPut(it) { it } }
                     )
                     out.getOrPut(c.getString(0)) { ArrayList() } += p
                 }
@@ -189,6 +208,7 @@ internal actual object EpgStore {
         val clean = words.map { it.trim() }.filter { it.length >= 3 }.distinct()
         if (clean.isEmpty()) return emptyList()
         val out = ArrayList<Pair<String, EpgProgram>>()
+        val sourceIdentities = HashMap<String, String>()
         val seen = HashSet<String>()
         fun like(w: String) = "%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         clean.chunked(if (inDescription) 180 else 360).forEach { part ->
@@ -198,7 +218,7 @@ internal actual object EpgStore {
             }.joinToString(" OR ")
             val args = listOf(fromMs.toString(), toMs.toString(), minStopMs.toString()) +
                 part.flatMap { w -> if (inDescription) listOf(like(w), like(w)) else listOf(like(w)) }
-            val sql = "SELECT ch, start, stop, title, descr, cat FROM programs WHERE start >= ? AND start < ? AND stop > ? AND ($conds) LIMIT ${limit - out.size}"
+            val sql = "SELECT ch, start, stop, title, descr, cat, stalker_program, stalker_archive, stalker_source FROM programs WHERE start >= ? AND start < ? AND stop > ? AND ($conds) LIMIT ${limit - out.size}"
             db.rawQuery(sql, args.toTypedArray()).use { c ->
                 while (c.moveToNext()) {
                     val ch = c.getString(0)
@@ -209,7 +229,10 @@ internal actual object EpgStore {
                         stopMs = c.getLong(2),
                         title = c.getString(3),
                         description = if (c.isNull(4)) null else c.getString(4),
-                        category = if (c.isNull(5)) null else c.getString(5)
+                        category = if (c.isNull(5)) null else c.getString(5),
+                        stalkerProgramId = if (c.isNull(6)) null else c.getString(6),
+                        stalkerArchiveAvailable = c.getInt(7) != 0,
+                        stalkerSourceIdentity = if (c.isNull(8)) null else c.getString(8).let { sourceIdentities.getOrPut(it) { it } }
                     )
                 }
             }

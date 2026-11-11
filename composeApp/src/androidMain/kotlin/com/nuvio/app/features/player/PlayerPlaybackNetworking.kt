@@ -77,8 +77,16 @@ internal object PlayerPlaybackNetworking {
     fun createHttpDataSourceFactory(
         defaultHeaders: Map<String, String> = emptyMap(),
         useLongReadTimeout: Boolean = false,
+        stalkerMediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null,
     ): DataSource.Factory {
         val requestHeaders = sanitizeHeaders(defaultHeaders)
+        if (stalkerMediaPolicy != null) {
+            val safeHeaders = requestHeaders.filterKeys { !it.equals("Authorization", true) && !it.equals("Cookie", true) }
+            return OkHttpDataSource.Factory(com.nuvio.app.features.livetv.stalker.StalkerMediaHttp.calls(stalkerMediaPolicy)).apply {
+                setDefaultRequestProperties(safeHeaders)
+                if (safeHeaders.headerValue("User-Agent") == null) setUserAgent(DEFAULT_USER_AGENT)
+            }
+        }
         val baseClient = if (useLongReadTimeout) loopbackPlaybackHttpClient else playbackHttpClient
         val client = requestHeaders.headerValue("Authorization")?.let { authorization ->
             baseClient.newBuilder()

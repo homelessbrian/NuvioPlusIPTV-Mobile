@@ -165,9 +165,11 @@ internal fun PlayerScreenRuntime.currentPartyMedia(): PartyMedia = PartyMedia(
         addonId = activeProviderAddonId,
         name = activeStreamTitle,
     ),
-)
+).let { media -> com.nuvio.app.features.livetv.stalker.partyMetadataForTransport(media,
+    com.nuvio.app.features.livetv.stalker.mayUseGenericMediaRequests(activeStalkerMediaPolicy != null, activeStream, activeSourceUrl)) }
 
 internal fun PlayerScreenRuntime.currentPartyStream(): PartyStream? {
+    if (!com.nuvio.app.features.livetv.stalker.mayUseGenericMediaRequests(activeStalkerMediaPolicy != null, activeStream, activeSourceUrl)) return null
     val stream = activeStream ?: return null
     if (!isShareableStreamUrl(activeSourceUrl) || activeSourceAudioUrl != null) return null
     return PartyStream(

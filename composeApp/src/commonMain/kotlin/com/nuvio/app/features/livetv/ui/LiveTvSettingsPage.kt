@@ -1,5 +1,12 @@
 package com.nuvio.app.features.livetv.ui
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.nuvio.stalker.StalkerConfig
+import io.ktor.http.Url
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -83,6 +90,22 @@ import com.nuvio.app.features.settings.SettingsNavigationRow
 import com.nuvio.app.features.settings.SettingsSection
 import com.nuvio.app.features.settings.SettingsSwitchRow
 import com.nuvio.app.features.livetv.calendar.CalendarRepository
+import nuvio.composeapp.generated.resources.livetv_stalker_playback_limits
+import nuvio.composeapp.generated.resources.livetv_add_stalker
+import nuvio.composeapp.generated.resources.livetv_add_stalker_description
+import nuvio.composeapp.generated.resources.livetv_stalker_portal
+import nuvio.composeapp.generated.resources.livetv_stalker_mac
+import nuvio.composeapp.generated.resources.livetv_stalker_load_guide
+import nuvio.composeapp.generated.resources.livetv_stalker_device_options
+import nuvio.composeapp.generated.resources.livetv_stalker_device_options_description
+import nuvio.composeapp.generated.resources.livetv_stalker_serial
+import nuvio.composeapp.generated.resources.livetv_stalker_device_id
+import nuvio.composeapp.generated.resources.livetv_stalker_device_id2
+import nuvio.composeapp.generated.resources.livetv_stalker_signature
+import nuvio.composeapp.generated.resources.livetv_stalker_timezone
+import nuvio.composeapp.generated.resources.livetv_stalker_language
+import nuvio.composeapp.generated.resources.livetv_stalker_optional_login
+import nuvio.composeapp.generated.resources.livetv_stalker_device_binding
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.action_delete
@@ -351,6 +374,7 @@ internal fun hoursLabel(h: Int): String = when {
 private sealed interface LiveDialog {
     data object AddM3u : LiveDialog
     data object AddXtream : LiveDialog
+    data object AddStalker : LiveDialog
     data object AddEpg : LiveDialog
     data class PlaylistActions(val source: PlaylistSource) : LiveDialog
     data class EditPlaylist(val source: PlaylistSource) : LiveDialog
@@ -463,7 +487,7 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
                     SettingsNavigationRow(
                         title = pl.name,
                         description = playlistStatus(pl, accounts[pl.id]),
-                        icon = if (pl.isXtream) Icons.Filled.Login else Icons.Filled.ListAlt,
+                        icon = if (pl.isXtream || pl.isStalker) Icons.Filled.Login else Icons.Filled.ListAlt,
                         isTablet = isTablet,
                         onClick = { dialog = LiveDialog.PlaylistActions(pl) },
                     )
@@ -483,6 +507,14 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
                     icon = Icons.Filled.Add,
                     isTablet = isTablet,
                     onClick = { dialog = LiveDialog.AddXtream },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.livetv_add_stalker),
+                    description = stringResource(Res.string.livetv_add_stalker_description),
+                    icon = Icons.Filled.Add,
+                    isTablet = isTablet,
+                    onClick = { dialog = LiveDialog.AddStalker },
                 )
             }
         }
@@ -1076,32 +1108,38 @@ private fun LiveTvSettingsBody(isTablet: Boolean) {
         null -> Unit
         LiveDialog.AddM3u -> M3uForm(null, onDismiss = close)
         LiveDialog.AddXtream -> XtreamForm(null, onDismiss = close)
+        LiveDialog.AddStalker -> StalkerForm(null, onDismiss = close)
         LiveDialog.AddEpg -> EpgForm(null, onDismiss = close)
-        is LiveDialog.EditPlaylist -> if (d.source.isXtream) XtreamForm(d.source, onDismiss = close) else M3uForm(d.source, onDismiss = close)
+        is LiveDialog.EditPlaylist -> when {
+            d.source.isStalker -> StalkerForm(d.source, onDismiss = close)
+            d.source.isXtream -> XtreamForm(d.source, onDismiss = close)
+            else -> M3uForm(d.source, onDismiss = close)
+        }
         is LiveDialog.EditEpg -> EpgForm(d.source, onDismiss = close)
         is LiveDialog.PlaylistActions -> ActionsDialog(
             title = d.source.name,
             subtitle = playlistStatus(d.source, accounts[d.source.id]),
             onDismiss = close,
-            actions = listOf(
+            actions = listOfNotNull(
                 stringResource(Res.string.action_edit) to { dialog = LiveDialog.EditPlaylist(d.source) },
                 stringResource(Res.string.livetv_update_now) to {
                     LiveTvRepository.updatePlaylistNow(d.source.id)
                     // A login with TV channels off only has On Demand to update.
-                    if (d.source.isXtream && d.source.importVod && d.source.enabled && !d.source.liveEnabled) OnDemandRepository.refreshNow(d.source.id)
+                    if ((d.source.isXtream || d.source.isStalker) && d.source.importVod && d.source.enabled && !d.source.liveEnabled) OnDemandRepository.refreshNow(d.source.id)
                     close()
                 },
-                // Which clock replay links are written in. Automatic: the one the provider's
-                // server reports (or that the app worked out); pick one when that's wrong.
-                stringResource(Res.string.livetv_catchup_zone) + ": " + catchupZoneLabel(d.source) to { dialog = LiveDialog.CatchupZone(d.source) },
-            ) + (if (d.source.liveEnabled) listOf(
+                // Portal archives use provider programme IDs; their date parsing uses the portal configuration's time zone.
+                if (d.source.isStalker) null else
+                    stringResource(Res.string.livetv_catchup_zone) + ": " + catchupZoneLabel(d.source) to { dialog = LiveDialog.CatchupZone(d.source) },
+            ) + (if (d.source.liveEnabled) listOfNotNull(
                 // Time shifts for this playlist: its built-in guide, and its catch-up.
                 stringResource(Res.string.livetv_guide_shift) + ": " + offsetLabel(d.source.guideShiftMinutes, stringResource(Res.string.livetv_catchup_shift_none)) to {
                     dialog = LiveDialog.PlaylistGuideShift(d.source)
                 },
-                stringResource(Res.string.livetv_catchup_shift) + ": " + offsetLabel(d.source.catchupShiftMinutes, stringResource(Res.string.livetv_catchup_shift_none)) to {
-                    dialog = LiveDialog.PlaylistCatchupShift(d.source)
-                },
+                if (d.source.isStalker) null else
+                    stringResource(Res.string.livetv_catchup_shift) + ": " + offsetLabel(d.source.catchupShiftMinutes, stringResource(Res.string.livetv_catchup_shift_none)) to {
+                        dialog = LiveDialog.PlaylistCatchupShift(d.source)
+                    },
             ) else emptyList()) + listOf(
                 stringResource(if (d.source.enabled) Res.string.livetv_disable else Res.string.livetv_enable) to {
                     LiveTvRepository.setPlaylistEnabled(d.source.id, !d.source.enabled); close()
@@ -1355,7 +1393,7 @@ private fun streamFormatLabel(f: String) = when (f) { "ts" -> "MPEG-TS"; "m3u8" 
 private fun playlistStatus(pl: PlaylistSource, account: PlaylistAccount?): String {
     val parts = ArrayList<String>()
     if (!pl.enabled) parts += "Off"
-    if (pl.isXtream && !pl.importLive) {
+    if ((pl.isXtream || pl.isStalker) && !pl.importLive) {
         // TV channels switched off for this login: nothing to update or count on the Live TV side.
         parts += stringResource(if (pl.importVod) Res.string.livetv_xtream_movies_only else Res.string.livetv_xtream_nothing_included)
     } else {
@@ -1493,6 +1531,86 @@ private fun XtreamForm(existing: PlaylistSource?, onDismiss: () -> Unit) {
             )
         }
     }
+}
+
+@Composable
+private fun StalkerForm(existing: PlaylistSource?, onDismiss: () -> Unit) {
+    val tokens = MaterialTheme.nuvio
+    val original = existing?.stalker
+    var name by remember { mutableStateOf(existing?.name.orEmpty()) }
+    var portal by remember { mutableStateOf(original?.portalUrl.orEmpty()) }
+    var mac by remember { mutableStateOf(original?.mac.orEmpty()) }
+    var user by remember { mutableStateOf(original?.username.orEmpty()) }
+    var password by remember { mutableStateOf(original?.password.orEmpty()) }
+    var serial by remember { mutableStateOf(original?.serialNumber.orEmpty()) }
+    var device by remember { mutableStateOf(original?.deviceId.orEmpty()) }
+    var device2 by remember { mutableStateOf(original?.deviceId2.orEmpty()) }
+    var signature by remember { mutableStateOf(original?.signature.orEmpty()) }
+    var timezone by remember { mutableStateOf(original?.timezone ?: "UTC") }
+    var language by remember { mutableStateOf(original?.language ?: "en") }
+    val ua = existing?.userAgent.orEmpty()
+    var embedded by remember { mutableStateOf(existing?.useEmbeddedEpg ?: true) }
+    var includeLive by remember { mutableStateOf(existing?.importLive ?: true) }
+    var includeVod by remember { mutableStateOf(existing?.importVod ?: true) }
+    var advanced by remember { mutableStateOf(false) }
+    val normalizedMac = mac.trim().replace('-', ':').uppercase()
+    val validPortal = runCatching { Url(portal.trim()).let { it.protocol.name in setOf("http", "https") && it.host.isNotBlank() && it.user.isNullOrEmpty() && it.password.isNullOrEmpty() } }.getOrDefault(false)
+    val validMac = Regex("(?:[0-9A-F]{2}:){5}[0-9A-F]{2}").matches(normalizedMac)
+    DialogSurface(onDismissRequest = onDismiss, title = stringResource(if (existing == null) Res.string.livetv_add_stalker else Res.string.action_edit)) {
+        Column(modifier = Modifier.weight(1f, fill = false).heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap)) {
+            NuvioInputField(name, { name = it }, stringResource(Res.string.livetv_field_name))
+            NuvioInputField(portal, { portal = it }, stringResource(Res.string.livetv_stalker_portal))
+            NuvioInputField(mac, { mac = it }, stringResource(Res.string.livetv_stalker_mac))
+            Text(stringResource(Res.string.livetv_stalker_device_binding), style = MaterialTheme.typography.bodySmall, color = tokens.colors.textSecondary)
+            Text(stringResource(Res.string.livetv_stalker_playback_limits), style = MaterialTheme.typography.bodySmall, color = tokens.colors.textSecondary)
+            SettingsSwitchRow(title = stringResource(Res.string.livetv_stalker_load_guide), checked = embedded, isTablet = false, horizontalPadding = 0.dp, onCheckedChange = { embedded = it })
+            SettingsSwitchRow(title = stringResource(Res.string.livetv_xtream_include_channels), checked = includeLive, isTablet = false, horizontalPadding = 0.dp, onCheckedChange = { includeLive = it })
+            SettingsSwitchRow(title = stringResource(Res.string.livetv_xtream_include_vod), checked = includeVod, isTablet = false, horizontalPadding = 0.dp, onCheckedChange = { includeVod = it })
+            SettingsNavigationRow(title = stringResource(Res.string.livetv_stalker_device_options),
+                description = stringResource(Res.string.livetv_stalker_device_options_description), isTablet = false,
+                onClick = { advanced = !advanced })
+            if (advanced) {
+                Text(stringResource(Res.string.livetv_stalker_optional_login), style = MaterialTheme.typography.bodySmall)
+                NuvioInputField(user, { user = it }, stringResource(Res.string.livetv_field_username))
+                StalkerSecretField(password, { password = it }, stringResource(Res.string.livetv_field_password))
+                NuvioInputField(serial, { serial = it }, stringResource(Res.string.livetv_stalker_serial))
+                StalkerSecretField(device, { device = it }, stringResource(Res.string.livetv_stalker_device_id))
+                StalkerSecretField(device2, { device2 = it }, stringResource(Res.string.livetv_stalker_device_id2))
+                StalkerSecretField(signature, { signature = it }, stringResource(Res.string.livetv_stalker_signature))
+                NuvioInputField(timezone, { timezone = it }, stringResource(Res.string.livetv_stalker_timezone))
+                NuvioInputField(language, { language = it }, stringResource(Res.string.livetv_stalker_language))
+            }
+        }
+        DialogButtons {
+            DialogButton(text = stringResource(Res.string.action_cancel), onClick = onDismiss)
+            DialogButton(text = stringResource(Res.string.action_save), style = DialogButtonStyle.Primary,
+                enabled = validPortal && validMac && (includeLive || includeVod), onClick = {
+                    val config = StalkerConfig(portalUrl = portal.trim(), mac = normalizedMac,
+                        username = user.trim(), password = password, serialNumber = serial.trim(), deviceId = device.trim(),
+                        deviceId2 = device2.trim(), signature = signature.trim(), timezone = timezone.trim().ifBlank { "UTC" },
+                        language = language.trim().ifBlank { "en" })
+                    if (existing == null) LiveTvRepository.addStalker(name, config, ua, includeVod, includeLive, embedded)
+                    else LiveTvRepository.updatePlaylist(existing.copy(name = name.ifBlank { "Stalker" }, providerKind = "stalker",
+                        stalker = config, url = "", userAgent = ua.trim(), importVod = includeVod, importLive = includeLive,
+                        useEmbeddedEpg = embedded))
+                    OnDemandRepository.refreshSoon()
+                    onDismiss()
+                })
+        }
+    }
+}
+
+@Composable
+private fun StalkerSecretField(value: String, onChange: (String) -> Unit, placeholder: String) {
+    val tokens = MaterialTheme.nuvio
+    OutlinedTextField(value = value, onValueChange = onChange, modifier = Modifier.fillMaxWidth(), singleLine = true,
+        shape = tokens.shapes.compactCard, visualTransformation = PasswordVisualTransformation(),
+        placeholder = { Text(placeholder, color = tokens.colors.textMuted) },
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = tokens.colors.textPrimary),
+        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = tokens.colors.borderFocus,
+            unfocusedBorderColor = tokens.colors.borderDefault, focusedContainerColor = tokens.colors.surfaceCard,
+            unfocusedContainerColor = tokens.colors.surfaceCard, cursorColor = tokens.colors.accent))
 }
 
 @Composable

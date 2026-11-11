@@ -1,5 +1,11 @@
 package com.nuvio.app.features.livetv.ondemand
 
+import com.nuvio.app.features.livetv.stalker.StalkerGateway
+import com.nuvio.stalker.StalkerStreamRef
+import com.nuvio.stalker.StalkerSeries
+import com.nuvio.stalker.StalkerSeriesVariant
+import com.nuvio.stalker.StalkerException
+import com.nuvio.stalker.StalkerError
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.livetv.data.LiveTvDirs
 import com.nuvio.app.features.livetv.data.LiveTvFiles
@@ -108,6 +114,22 @@ internal object OnDemandRepository {
         scope.launch { refresh(force = true) }
     }
 
+    /** Config changes invalidate metadata and make the next catalog import immediately due. */
+    fun sourceChanged(playlistId: String) {
+        infoCache.keys.removeAll { it.substringAfter(':').substringBefore(':') == playlistId }
+        prefs.setOnDemandImportTime(playlistId, 0L)
+        scope.launch {
+            mutex.withLock {
+                runCatching { withContext(Dispatchers.Default) {
+                    OnDemandStore.removeExcept(importing(prefs.currentPlaylists()).map { it.id }.toSet() - playlistId)
+                    _hasContent.value = OnDemandStore.hasAny()
+                    _version.value++
+                } }
+            }
+            refresh(force = false)
+        }
+    }
+
     /** "Update now" on one playlist: re-imports just that provider's movies and series. */
     fun refreshNow(playlistId: String) {
         scope.launch { delay(500); refresh(force = true, onlyId = playlistId) }
@@ -132,14 +154,19 @@ internal object OnDemandRepository {
             if (!force && now - last < REFRESH_MS) continue
             _status.value = OnDemandStatus(true, "Importing movies and series from ${pl.name}…")
             var problem: String? = null
-            if (pl.isXtream) {
+            if (pl.isStalker) {
+                runCatching { importStalker(pl, VodKind.MOVIE) }
+                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; problem = "Couldn't import movies from ${pl.name}: ${it.message ?: "portal unavailable"}" }
+                runCatching { importStalker(pl, VodKind.SERIES) }
+                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; problem = "Couldn't import series from ${pl.name}: ${it.message ?: "portal unavailable"}" }
+            } else if (pl.isXtream) {
                 // Movies and series import separately, so a problem with one keeps the other.
                 runCatching { importXtream(pl, VodKind.MOVIE) }
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; problem = "Couldn't import movies from ${pl.name}: ${it.message ?: "unknown error"}" }
                 runCatching { importXtream(pl, VodKind.SERIES) }
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; problem = "Couldn't import series from ${pl.name}: ${it.message ?: "unknown error"}" }
             } else {
-                runCatching { importM3u(pl) }
+                runCatching { if (!pl.isM3u) throw StalkerException(StalkerError.UNSUPPORTED); importM3u(pl) }
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; problem = "Couldn't read movies and series from ${pl.name}: ${it.message ?: "unknown error"}" }
             }
             val p = problem
@@ -152,6 +179,50 @@ internal object OnDemandRepository {
         _hasContent.value = runCatching { withContext(Dispatchers.Default) { OnDemandStore.hasAny() } }.getOrDefault(_hasContent.value)
         problemByPlaylist.keys.retainAll(keep)
         _status.value = OnDemandStatus(false, problemByPlaylist.values.joinToString("\n").ifBlank { null })
+    }
+
+    private suspend fun importStalker(pl: PlaylistSource, kind: VodKind) {
+        val client = StalkerGateway.client(pl)
+        val identity = StalkerGateway.sourceIdentity(pl)
+        val latest = VodTitles.latestYear()
+        if (kind == VodKind.MOVIE) {
+            val categoryNames = try { client.vodCategories() } catch (error: StalkerException) {
+                if (error.error != StalkerError.UNSUPPORTED) throw error
+                emptyList()
+            }.associateTo(LinkedHashMap()) { it.id to it.name }
+            val raw = client.movies().filterNot { it.isSeries }
+            raw.forEach { categoryNames.putIfAbsent(it.categoryId.orEmpty(), "Uncategorized") }
+            val categories = categoryNames.toList()
+            val items = raw.asSequence().map { movie ->
+                VodItem(pl.id, kind, movie.id, movie.title, movie.poster, movie.categoryId.orEmpty(),
+                    ext = null, tmdbId = null, year = VodTitles.yearOf(movie.year)?.takeIf { it <= latest }
+                        ?: VodTitles.releaseYearInName(movie.title, latest), rating = movie.rating, addedSec = 0,
+                    genre = movie.genre, stalker = movie.stream.copy(sourceIdentity = identity), plot = movie.plot, durationSecs = movie.durationSeconds)
+            }
+            withContext(Dispatchers.Default) { OnDemandStore.replace(pl.id, kind, categories, items, publication = { commit -> prefs.withCurrentPlaylist(pl, commit) }) }
+        } else {
+            val categoryNames = LinkedHashMap<String, String>()
+            try { client.seriesCategories().forEach { categoryNames["CLASSIC:${it.id}"] = it.name } }
+            catch (error: StalkerException) { if (error.error != StalkerError.UNSUPPORTED) throw error }
+            try {
+                client.vodCategories().forEach { categoryNames["VOD:${it.id}"] = it.name }
+            } catch (error: StalkerException) {
+                if (error.error != StalkerError.UNSUPPORTED) throw error
+            }
+            val raw = client.series()
+            raw.forEach { categoryNames.putIfAbsent("${it.variant.name}:${it.categoryId.orEmpty()}", "Uncategorized") }
+            val categories = categoryNames.toList()
+            val items = raw.asSequence().map { series ->
+                // Classic-series and VOD-series namespaces can reuse the same portal ID.
+                VodItem(pl.id, kind, "${series.variant.name}:${series.id}", series.title, series.poster,
+                    "${series.variant.name}:${series.categoryId.orEmpty()}", ext = null, tmdbId = null,
+                    year = VodTitles.yearOf(series.year)?.takeIf { it <= latest } ?: VodTitles.releaseYearInName(series.title, latest),
+                    rating = series.rating, addedSec = 0, genre = series.genre, stalker = series.stream.copy(sourceIdentity = identity),
+                    stalkerSeriesVariant = series.variant.name, plot = series.plot)
+            }
+            withContext(Dispatchers.Default) { OnDemandStore.replace(pl.id, kind, categories, items, publication = { commit -> prefs.withCurrentPlaylist(pl, commit) }) }
+        }
+        infoCache.keys.removeAll { it.substringAfter(':').substringBefore(':') == pl.id }
     }
 
     private suspend fun importXtream(pl: PlaylistSource, kind: VodKind) {
@@ -290,6 +361,9 @@ internal object OnDemandRepository {
         val episodeTag: String? = null,
         /** The provider's full title, tags included ("4K-D+ - …"): where the quality is read from. */
         val providerTitle: String = "",
+        /** A fresh portal link is requested only when this source is actually selected. */
+        val stalkerSourceId: String? = null,
+        val stalkerStream: StalkerStreamRef? = null,
     )
 
     /**
@@ -332,6 +406,9 @@ internal object OnDemandRepository {
             val user = prefs.currentUserState()
             val settings = prefs.currentSettings()
             val allowed = candidates.values.filter { item ->
+                val source = playlist(item.playlistId) ?: return@filter false
+                if (!source.enabled || !source.importVod) return@filter false
+                if (source.isStalker && item.stalker?.sourceIdentity != StalkerGateway.sourceIdentity(source)) return@filter false
                 val uid = "${item.kind.key}:${item.playlistId}:${item.categoryId}"
                 if (uid in user.vodHiddenCategories) return@filter false
                 val name = runCatching { OnDemandStore.categoryNames(item.playlistId, item.kind)[item.categoryId] }.getOrNull().orEmpty()
@@ -342,20 +419,25 @@ internal object OnDemandRepository {
             // the full name, since the shown title drops tags like "4K-D+ - "). Copies with no
             // hint keep their order, last. Sorted before the limit so a 4K copy isn't cut.
             for (item in allowed.sortedByDescending { qualityRank(VodTitles.qualityOf(it.name).orEmpty()) }.take(6)) {
-                val pl = playlist(item.playlistId) ?: continue
+                val pl = playlist(item.playlistId)?.takeIf { it.enabled && it.importVod } ?: continue
                 val headers = headersFor(item)
                 if (kind == VodKind.MOVIE) {
                     val url = movieUrl(item) ?: continue
-                    out += OnDemandSource("${pl.name} · ${(item.ext ?: "mp4").uppercase()}", url, headers, item.displayTitle, item.year, pl.name, item.ext ?: "mp4", providerTitle = item.name)
+                    val ext = if (pl.isStalker) item.ext.orEmpty() else item.ext ?: "mp4"
+                    out += OnDemandSource(pl.name + if (ext.isNotBlank()) " · ${ext.uppercase()}" else "", url, headers,
+                        item.displayTitle, item.year, pl.name, ext, providerTitle = item.name,
+                        stalkerSourceId = pl.id.takeIf { pl.isStalker }, stalkerStream = item.stalker)
                 } else if (season != null && episode != null) {
-                    val episodes = info(item)?.episodes.orEmpty()
+                    val episodes = runCatching { info(item) }
+                        .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()?.episodes.orEmpty()
                     val ep = episodes.firstOrNull { it.season == season && it.episode == episode }
                         ?: episodes.takeIf { list -> list.map { it.season }.distinct().size == 1 }?.firstOrNull { it.episode == episode }
                         ?: continue
                     out += OnDemandSource(
-                        "${pl.name} · S${season}E${episode} · ${ep.ext.uppercase()}", ep.url, headers, item.displayTitle, item.year, pl.name, ep.ext,
+                        "${pl.name} · S${season}E${episode}" + if (ep.ext.isNotBlank()) " · ${ep.ext.uppercase()}" else "", ep.url, headers, item.displayTitle, item.year, pl.name, ep.ext,
                         episodeTag = "S" + season.toString().padStart(2, '0') + "E" + episode.toString().padStart(2, '0'),
                         providerTitle = item.name,
+                        stalkerSourceId = pl.id.takeIf { pl.isStalker }, stalkerStream = ep.stalker,
                     )
                 }
             }
@@ -377,7 +459,9 @@ internal object OnDemandRepository {
         WatchProgressRepository.continueWatching()
             .filter { it.videoId.startsWith(prefix) }
             .forEach { entry ->
-                val uid = entry.videoId.removePrefix(prefix).split(':').take(3).joinToString(":")
+                val raw = entry.videoId.removePrefix(prefix)
+                val suffix = if (entry.seasonNumber != null && entry.episodeNumber != null) ":${entry.seasonNumber}:${entry.episodeNumber}" else ""
+                val uid = if (raw.startsWith("series:") && suffix.isNotEmpty()) raw.removeSuffix(suffix) else raw
                 val adult = checked.getOrPut(uid) { itemByUid(uid)?.let { isAdult(it) } ?: false }
                 if (adult) {
                     WatchProgressRepository.removeProgress(entry.parentMetaId, entry.seasonNumber, entry.episodeNumber)
@@ -403,8 +487,10 @@ internal object OnDemandRepository {
 
     /** Movie link: the M3U entry's own, or Xtream's /movie/user/pass/<id>.<ext>. */
     fun movieUrl(item: VodItem): String? {
-        item.url?.let { return it }
         val pl = playlist(item.playlistId) ?: return null
+        if (pl.isStalker) return item.stalker?.let { StalkerGateway.locator(pl.id, it) }
+        item.url?.let { return it }
+        if (!pl.isXtream) return null
         return "${pl.xtreamBase()}/movie/${enc(pl.xtreamUsername)}/${enc(pl.xtreamPassword)}/${item.id}.${item.ext ?: "mp4"}"
     }
 
@@ -413,8 +499,9 @@ internal object OnDemandRepository {
     /** Provider details for a movie or series (series include every episode). Cached. */
     suspend fun info(item: VodItem): VodInfo? = withContext(Dispatchers.Default) {
         infoCache[item.uid]?.let { return@withContext it }
-        if (item.url != null) return@withContext null
         val pl = playlist(item.playlistId) ?: return@withContext null
+        if (pl.isStalker) return@withContext stalkerInfo(pl, item).also { infoCache[item.uid] = it }
+        if (item.url != null || !pl.isXtream) return@withContext null
         val json = runCatching { xtream.vodInfo(pl, item.kind == VodKind.SERIES, item.id) }.getOrNull() ?: return@withContext null
         val info = json.optJSONObject("info") ?: JsonObject(emptyMap())
         val episodes = ArrayList<VodEpisode>()
@@ -454,6 +541,33 @@ internal object OnDemandRepository {
         )
         infoCache[item.uid] = result
         result
+    }
+
+    private suspend fun stalkerInfo(pl: PlaylistSource, item: VodItem): VodInfo {
+        val ref = item.stalker ?: throw StalkerException(StalkerError.INVALID_CONFIG)
+        val episodes = ArrayList<VodEpisode>()
+        val identity = StalkerGateway.sourceIdentity(pl)
+        if (ref.sourceIdentity != identity) throw StalkerException(StalkerError.STALE_SESSION)
+        if (item.kind == VodKind.SERIES) {
+            val variant = StalkerSeriesVariant.entries.firstOrNull { it.name == item.stalkerSeriesVariant }
+                ?: throw StalkerException(StalkerError.INVALID_CONFIG)
+            val client = StalkerGateway.client(pl)
+            val series = StalkerSeries(ref.providerId, item.name, ref, variant = variant, categoryId = item.categoryId.substringAfter(':'),
+                poster = item.icon, plot = item.plot, genre = item.genre, rating = item.rating)
+            // Series structure is queried only when details are opened, never during catalog import.
+            client.seasons(series).forEachIndexed { index, season ->
+                client.episodes(season).forEachIndexed { episodeIndex, episode ->
+                    episodes += VodEpisode(season = episode.seasonNumber ?: season.number ?: index + 1,
+                        episode = episode.number ?: episodeIndex + 1,
+                        id = "${variant.name}:${season.id.encodeURLParameter()}:${episode.id.encodeURLParameter()}", ext = "",
+                        title = episode.title, plot = episode.plot, image = episode.poster,
+                        url = StalkerGateway.locator(pl.id, episode.stream),
+                        durationSecs = episode.durationSeconds?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(), stalker = episode.stream.copy(sourceIdentity = identity))
+                }
+            }
+        }
+        return VodInfo(item.plot, item.icon, null, item.genre, item.year?.toString(),
+            item.durationSecs?.let { "${it / 60} min" }, episodes = episodes.sortedWith(compareBy({ it.season }, { it.episode })))
     }
 
     // ------------------------------------------------------------------ posters (TMDB)

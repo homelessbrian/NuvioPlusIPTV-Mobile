@@ -16,6 +16,23 @@ actual object ProfileStorage {
         }
     }
 
+    /** Read-only bootstrap for alarm/service networking, without loading profile UI or caches. */
+    internal fun savedActiveProfileForBackground(context: Context): Int {
+        val stored = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).getString(payloadKey, null)
+            ?.takeIf { it.isNotBlank() } ?: return 1
+        try {
+            val payload = org.json.JSONObject(stored)
+            val requested = payload.optInt("activeProfileIndex", 1)
+            val profiles = payload.optJSONArray("profiles")
+            if (profiles != null && profiles.length() > 0) {
+                val ids = (0 until profiles.length()).mapNotNull { profiles.optJSONObject(it)?.optInt("profileIndex")?.takeIf { id -> id > 0 } }
+                return requested.takeIf { it in ids } ?: ids.firstOrNull()
+                    ?: throw IllegalStateException("The saved active profile is unavailable.")
+            }
+            return requested.takeIf { it > 0 } ?: throw IllegalStateException("The saved active profile is unavailable.")
+        } catch (_: Exception) { throw IllegalStateException("The saved active profile is unavailable.") }
+    }
+
     actual fun onActiveProfileChanged(id: Int) {
         if (preferences != null) com.nuvio.vpn.android.VpnPlaybackProtection.setActiveUserProfile(id)
     }

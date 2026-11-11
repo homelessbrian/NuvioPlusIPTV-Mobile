@@ -205,6 +205,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                     sourceUrl = playerSurfaceSourceUrl,
                     sourceAudioUrl = activeSourceAudioUrl,
                     sourceHeaders = activeSourceHeaders,
+                    stalkerMediaPolicy = activeStalkerMediaPolicy,
                     sourceResponseHeaders = activeSourceResponseHeaders,
                     externalSubtitles = externalSubtitles,
                     streamType = activeStreamType,
@@ -417,7 +418,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
             chapters = chapters,
             onChaptersClick = if (chapters.isNotEmpty()) { { openChaptersPanel() } } else null,
             onOpenInExternalPlayer = args.onOpenInExternalPlayer
-                ?.takeUnless { ServerStreams.isServerSourceId(activeProviderAddonId) }
+                ?.takeUnless { activeStalkerMediaPolicy != null || ServerStreams.isServerSourceId(activeProviderAddonId) }
                 ?.let { openExternal ->
                 {
                     val loadedSubtitles = addonSubtitles

@@ -12,6 +12,7 @@ internal object PlatformPlaybackDataSourceFactory {
         defaultResponseHeaders: Map<String, String>,
         useYoutubeChunkedPlayback: Boolean,
         useLongReadTimeout: Boolean = false,
+        stalkerMediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null,
         externalSubtitles: List<com.nuvio.app.features.streams.StreamSubtitle> = emptyList(),
     ): DataSource.Factory {
         val networkFactory: DataSource.Factory = if (useYoutubeChunkedPlayback) {
@@ -20,6 +21,7 @@ internal object PlatformPlaybackDataSourceFactory {
             PlayerPlaybackNetworking.createHttpDataSourceFactory(
                 defaultRequestHeaders,
                 useLongReadTimeout,
+                stalkerMediaPolicy,
             )
         }
         val subtitleHeaderFactory = SubtitleRequestHeaderDataSourceFactory(

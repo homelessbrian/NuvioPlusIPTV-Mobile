@@ -36,13 +36,13 @@ internal expect object RecordingPlatform {
      * Throws [RecordingHttpError] for an HTTP error, or another exception with a plain-English
      * message when the connection fails.
      */
-    suspend fun download(url: String, headers: Map<String, String>, path: String, append: Boolean, shouldStop: () -> Boolean, onProgress: (Long) -> Unit)
+    suspend fun download(url: String, headers: Map<String, String>, path: String, append: Boolean, shouldStop: () -> Boolean, mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null, onProgress: (Long) -> Unit)
 
     /** Reads a small text resource (an HLS playlist) over HTTP. */
-    suspend fun fetchText(url: String, headers: Map<String, String>): String
+    suspend fun fetchText(url: String, headers: Map<String, String>, mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null): String
 
     /** Like [fetchText], also giving the address it ended up at after redirects (what relative links are measured from). */
-    suspend fun fetchTextAt(url: String, headers: Map<String, String>): Pair<String, String>
+    suspend fun fetchTextAt(url: String, headers: Map<String, String>, mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null): Pair<String, String>
 
     /** Keeps the app running (a foreground service with a notice) while anything records. */
     fun keepAlive(active: Boolean)

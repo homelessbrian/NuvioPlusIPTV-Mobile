@@ -115,6 +115,7 @@ actual fun PlatformPlayerSurface(
     sourceAudioUrl: String?,
     sourceHeaders: Map<String, String>,
     sourceResponseHeaders: Map<String, String>,
+    stalkerMediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy?,
     externalSubtitles: List<com.nuvio.app.features.streams.StreamSubtitle>,
     streamType: String?,
     useYoutubeChunkedPlayback: Boolean,
@@ -146,6 +147,12 @@ actual fun PlatformPlayerSurface(
     val requestedEngine = playbackEngine ?: playerSettings.androidPlaybackEngine
     val activeEngine by remember(playerSourceKey, requestedEngine) {
         mutableStateOf(requestedEngine.initialAndroidEngine())
+    }
+
+    if (stalkerMediaPolicy != null && activeEngine != ResolvedAndroidPlaybackEngine.ExoPlayer) {
+        LaunchedEffect(sourceUrl, activeEngine) { onError(com.nuvio.app.features.livetv.stalker.StalkerPlaybackSupport.ENGINE) }
+        Box(modifier)
+        return
     }
 
     val vpnContext = LocalContext.current
@@ -194,6 +201,7 @@ actual fun PlatformPlayerSurface(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = sourceHeaders,
+            stalkerMediaPolicy = stalkerMediaPolicy,
             sourceResponseHeaders = sourceResponseHeaders,
             externalSubtitles = externalSubtitles,
             streamType = streamType,
@@ -254,6 +262,7 @@ private fun ExoPlayerSurface(
     sourceUrl: String,
     sourceAudioUrl: String?,
     sourceHeaders: Map<String, String>,
+    stalkerMediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy?,
     sourceResponseHeaders: Map<String, String>,
     externalSubtitles: List<com.nuvio.app.features.streams.StreamSubtitle>,
     streamType: String?,
@@ -356,13 +365,13 @@ private fun ExoPlayerSurface(
         resolvedMediaItem.isLocalFileSource()
     }
 
-    val extractorsFactory = remember(sourceUrl) {
+    val extractorsFactory = remember(sourceUrl, stalkerMediaPolicy) {
         DefaultExtractorsFactory()
             .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS)
             .setTsExtractorTimestampSearchBytes(1500 * TsExtractor.TS_PACKET_SIZE)
             .let { factory -> // AutoSync hook: no observation while disabled.
                 AutoSyncPreferencesRepository.ensureLoaded()
-                if (AutoSyncPreferencesRepository.preferredSubtitleAutoSyncOnStart.value) {
+                if (stalkerMediaPolicy == null && AutoSyncPreferencesRepository.preferredSubtitleAutoSyncOnStart.value) {
                     AutoSyncExtractorsFactory(factory, sourceUrl)
                 } else factory
             }
@@ -371,6 +380,7 @@ private fun ExoPlayerSurface(
         context,
         sourceUrl,
         sanitizedSourceHeaders,
+        stalkerMediaPolicy,
         sanitizedSourceResponseHeaders,
         useYoutubeChunkedPlayback,
         externalSubtitles,
@@ -383,6 +393,7 @@ private fun ExoPlayerSurface(
         val upstream = PlatformPlaybackDataSourceFactory.create(
             context = context,
             defaultRequestHeaders = sanitizedSourceHeaders,
+            stalkerMediaPolicy = stalkerMediaPolicy,
             defaultResponseHeaders = sanitizedSourceResponseHeaders,
             useYoutubeChunkedPlayback = useYoutubeChunkedPlayback,
             useLongReadTimeout = loopbackSource,
@@ -402,7 +413,7 @@ private fun ExoPlayerSurface(
             Log.i(TAG, "Skipping VOD cache for loopback playback")
         }
         val media = if (
-            !useVodCacheForSource(
+            stalkerMediaPolicy != null || !useVodCacheForSource(
                 vodCacheEnabled = playerSettings.vodCacheEnabled,
                 youtubeChunked = useYoutubeChunkedPlayback,
                 adaptive = adaptive,
@@ -448,6 +459,7 @@ private fun ExoPlayerSurface(
 
     val exoPlayer = remember(
         sourceUrl,
+        stalkerMediaPolicy,
         sourceAudioUrl,
         sanitizedSourceHeaders,
         sanitizedSourceResponseHeaders,
@@ -662,7 +674,7 @@ private fun ExoPlayerSurface(
         Log.i(
             PLAYER_DIAGNOSTIC_TAG,
             "prepare begin attempt=${playbackDiagnostics.attempt} " +
-                "source=${diagnosticPlaybackSource(sourceUrl)} audioSource=${!sourceAudioUrl.isNullOrBlank()} " +
+                "source=${if (stalkerMediaPolicy != null) "Stalker" else diagnosticPlaybackSource(sourceUrl)} audioSource=${!sourceAudioUrl.isNullOrBlank()} " +
                 "mime=${mediaItem.localConfiguration?.mimeType ?: "auto"} " +
                 "startPositionMs=${requestedStartPositionMs ?: 0L}",
         )
@@ -698,7 +710,7 @@ private fun ExoPlayerSurface(
         ).also { sidecarControllerRef = it }
     }
 
-    val autoSyncCoordinator = rememberAutoSyncCoordinator( // AutoSync hook
+    val autoSyncCoordinator = if (stalkerMediaPolicy == null) rememberAutoSyncCoordinator( // AutoSync hook
         scope = coroutineScope,
         player = exoPlayer,
         sidecar = sidecarController,
@@ -710,7 +722,7 @@ private fun ExoPlayerSurface(
         preferredSubtitleLanguage = playerSettings.preferredSubtitleLanguage,
         onMimeTypeSelected = { selectedExternalSubtitleMimeType = it },
         onSubtitleDelayChanged = { subtitleDelayMs = it },
-    )
+    ) else null
 
     fun syncPlayerViewKeepScreenOn() {
         playerViewRef?.keepScreenOn = exoPlayer.shouldKeepPlayerScreenOn()
@@ -747,14 +759,14 @@ private fun ExoPlayerSurface(
                 Log.w(
                     TAG,
                     "Decoder failure (${error.errorCodeName}); retrying with app decoders",
-                    error,
+                    if (stalkerMediaPolicy == null) error else null,
                 )
                 fallbackStartPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
                 decoderPriorityOverride = DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
                 latestOnError.value(null)
                 return
             }
-            latestOnError.value(error.localizedMessage ?: runBlocking { getString(Res.string.player_unable_to_play_stream) })
+            latestOnError.value(if (stalkerMediaPolicy != null) "The Stalker stream could not be played." else error.localizedMessage ?: runBlocking { getString(Res.string.player_unable_to_play_stream) })
         }
 
         val listener = object : Player.Listener {
@@ -768,9 +780,9 @@ private fun ExoPlayerSurface(
                         "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)} " +
                         "bufferedMs=${exoPlayer.bufferedPosition.coerceAtLeast(0L)} " +
                         "durationMs=${exoPlayer.duration.coerceAtLeast(0L)} " +
-                        "message=${diagnosticPlayerMessage(error.message)} " +
-                        "causeChain=${diagnosticThrowableChain(error)}",
-                    error,
+                        "message=${if (stalkerMediaPolicy != null) "Stalker playback failed" else diagnosticPlayerMessage(error.message)} " +
+                        "causeChain=${if (stalkerMediaPolicy != null) error.javaClass.simpleName else diagnosticThrowableChain(error)}",
+                    if (stalkerMediaPolicy == null) error else null,
                 )
 
                 val positionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
@@ -802,7 +814,7 @@ private fun ExoPlayerSurface(
                     stallSession.markMimeProbe()
                     coroutineScope.launch {
                         val probedMime = withContext(Dispatchers.IO) {
-                            probeMimeType(sourceUrl, sanitizedSourceHeaders)
+                            probeMimeType(sourceUrl, sanitizedSourceHeaders, stalkerMediaPolicy)
                         }
                         if (probedMime != null) {
                             Log.d(TAG, "Playback failed with source error. Probed MIME type: $probedMime. Retrying...")
@@ -1022,7 +1034,7 @@ private fun ExoPlayerSurface(
     val latestChapterSourceHeaders = rememberUpdatedState(sanitizedSourceHeaders)
     LaunchedEffect(exoPlayer) {
         onControllerReady(
-            autoSyncCoordinator.wrap(object : PlayerEngineController { // AutoSync hook
+            object : PlayerEngineController { // AutoSync only when the media transport supports it.
                 override val playbackEngine = AndroidPlaybackEngine.ExoPlayer
 
                 private val audioTrackCache = AudioTrackCache()
@@ -1034,7 +1046,7 @@ private fun ExoPlayerSurface(
 
                 // Media3's Matroska extractor skips chapters; read them from the file, if allowed.
                 override suspend fun getChapters(): List<PlayerChapter> {
-                    if (!PlayerSettingsRepository.uiState.value.androidExoChaptersEnabled) return emptyList()
+                    if (stalkerMediaPolicy != null || !PlayerSettingsRepository.uiState.value.androidExoChaptersEnabled) return emptyList()
                     return MatroskaChapterLoader.load(latestChapterSourceUrl.value, latestChapterSourceHeaders.value)
                 }
 
@@ -1290,7 +1302,7 @@ private fun ExoPlayerSurface(
                     centerMixLevelDb.set(clamped)
                     ffmpegAudioRenderer.get()?.setCenterMixLevelDb(clamped)
                 }
-            }),
+            }.let { controller -> autoSyncCoordinator?.wrap(controller) ?: controller },
         )
     }
 

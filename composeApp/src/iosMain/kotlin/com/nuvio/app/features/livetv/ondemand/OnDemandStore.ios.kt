@@ -9,13 +9,17 @@ internal actual object OnDemandStore {
 
     private fun key(pl: String, kind: VodKind) = "$pl|${kind.key}"
 
-    actual fun replace(playlistId: String, kind: VodKind, categories: List<Pair<String, String>>, items: Sequence<VodItem>): Int {
-        this.items.keys.removeAll { k -> k.startsWith(key(playlistId, kind) + "|") }
-        var n = 0
-        items.forEach { this.items[key(playlistId, kind) + "|" + it.id] = it; n++ }
-        this.categories[key(playlistId, kind)] = categories.map { (id, name) ->
-            VodCategory(playlistId, kind, id, name, this.items.values.count { it.playlistId == playlistId && it.kind == kind && it.categoryId == id })
+    actual fun replace(playlistId: String, kind: VodKind, categories: List<Pair<String, String>>, items: Sequence<VodItem>, publication: ((() -> Unit) -> Unit)?): Int {
+        val incoming = items.toList()
+        val publish = {
+            this.items.keys.removeAll { k -> k.startsWith(key(playlistId, kind) + "|") }
+            incoming.forEach { this.items[key(playlistId, kind) + "|" + it.id] = it }
+            this.categories[key(playlistId, kind)] = categories.map { (id, name) ->
+                VodCategory(playlistId, kind, id, name, incoming.count { it.categoryId == id })
+            }
         }
+        if (publication != null) publication(publish) else publish()
+        val n = incoming.size
         return n
     }
 

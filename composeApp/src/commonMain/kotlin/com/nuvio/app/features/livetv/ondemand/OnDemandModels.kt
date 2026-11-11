@@ -1,5 +1,6 @@
 package com.nuvio.app.features.livetv.ondemand
 
+import com.nuvio.stalker.StalkerStreamRef
 import com.nuvio.app.features.livetv.data.CivilTime
 import com.nuvio.app.features.livetv.model.LiveTvClock
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -72,6 +73,11 @@ data class VodItem(
     val url: String? = null,
     /** With duplicates merged: how many copies of this title there are (qualities, providers). */
     val copies: Int = 1,
+    val stalker: StalkerStreamRef? = null,
+    /** CLASSIC or VOD: the portal API to query for this series. */
+    val stalkerSeriesVariant: String? = null,
+    val plot: String? = null,
+    val durationSecs: Long? = null,
 ) {
     val uid: String get() = "${kind.key}:$playlistId:$id"
 
@@ -101,6 +107,7 @@ data class VodEpisode(
     val image: String?,
     val url: String,
     val durationSecs: Int? = null,
+    val stalker: StalkerStreamRef? = null,
 )
 
 /** What the provider says about a movie or series. */

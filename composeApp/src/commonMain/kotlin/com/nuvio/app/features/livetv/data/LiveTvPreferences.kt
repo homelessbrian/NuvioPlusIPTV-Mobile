@@ -1,5 +1,8 @@
 package com.nuvio.app.features.livetv.data
 
+import com.nuvio.stalker.StalkerConfig
+import com.nuvio.stalker.StalkerException
+import com.nuvio.stalker.StalkerError
 import com.nuvio.app.features.livetv.model.ChannelGroup
 import com.nuvio.app.features.livetv.model.ChannelSort
 import com.nuvio.app.features.livetv.model.CustomGroup
@@ -330,8 +333,8 @@ internal object LiveTvCodec {
     fun decodePlaylists(raw: String?): List<PlaylistSource> {
         if (raw.isNullOrBlank()) return emptyList()
         return runCatching {
-            parseArray(raw).map { e ->
-                val o = e as JsonObject
+            parseArray(raw).mapNotNull { e ->
+                val o = e as? JsonObject ?: return@mapNotNull null
                 PlaylistSource(
                     id = o.optString("id"),
                     name = o.optString("name"),
@@ -354,7 +357,11 @@ internal object LiveTvCodec {
                     catchupNoHlsSince = o.optLong("catchupNoHlsSince", 0L),
                     logoSource = o.optString("logoSource").ifBlank { "playlist" },
                     guideShiftMinutes = o.optInt("guideShiftMinutes"),
-                    catchupShiftMinutes = o.optInt("catchupShiftMinutes")
+                    catchupShiftMinutes = o.optInt("catchupShiftMinutes"),
+                    providerKind = o.optString("sourceType").ifBlank { o.optString("providerKind") }.ifBlank {
+                        if ((o["stalkerConfig"] != null && o["stalkerConfig"] !is JsonNull) || (o["stalker"] != null && o["stalker"] !is JsonNull)) "stalker" else ""
+                    },
+                    stalker = ((o["stalkerConfig"] ?: o["stalker"]) as? JsonObject)?.let(StalkerConfig::fromJson)
                 )
             }
         }.getOrDefault(emptyList())
@@ -379,6 +386,8 @@ internal object LiveTvCodec {
                 put("logoSource", s.logoSource)
                 put("guideShiftMinutes", s.guideShiftMinutes)
                 put("catchupShiftMinutes", s.catchupShiftMinutes)
+                if (s.isStalker || s.providerKind.isNotBlank()) put("sourceType", if (s.isStalker) "stalker" else s.providerKind)
+                s.stalker?.let { put("stalkerConfig", it.toJson()) }
             })
         }
     }.toString()
@@ -914,6 +923,15 @@ internal open class LiveTvPreferencesStore {
     }
 
     // ---------- sources ----------
+
+    /** Serializes a completed snapshot's publication with every source edit or restore. */
+    fun <T> withCurrentPlaylist(source: PlaylistSource, publish: () -> T): T = synchronized(lock) {
+        val current = currentPlaylists().firstOrNull { it.id == source.id }
+        if (current == null || !current.enabled || !current.sameConnection(source) ||
+            current.importLive != source.importLive || current.importVod != source.importVod ||
+            current.useEmbeddedEpg != source.useEmbeddedEpg) throw StalkerException(StalkerError.STALE_SESSION)
+        publish()
+    }
 
     fun updatePlaylists(transform: (List<PlaylistSource>) -> List<PlaylistSource>) {
         var removed = emptySet<String>()

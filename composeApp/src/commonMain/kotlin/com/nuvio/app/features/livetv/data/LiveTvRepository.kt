@@ -1,5 +1,12 @@
 package com.nuvio.app.features.livetv.data
 
+import com.nuvio.app.features.livetv.model.CatchupInfo
+import com.nuvio.app.features.livetv.stalker.StalkerGateway
+import com.nuvio.app.features.livetv.stalker.StalkerCatalogCache
+import com.nuvio.stalker.StalkerConfig
+import com.nuvio.stalker.StalkerError
+import com.nuvio.stalker.StalkerException
+import io.ktor.http.encodeURLParameter
 import com.nuvio.app.features.livetv.model.ChannelNameEditor
 import com.nuvio.app.features.livetv.model.EpgAssignment
 import com.nuvio.app.features.livetv.model.EpgChannelEntry
@@ -145,7 +152,16 @@ internal object LiveTvRepository {
     /** After a restore from Google Drive: rebuild from the new sources, downloading what's missing. */
     fun reloadAfterSync(changedPlaylists: Set<String> = emptySet()) {
         scope.launch {
-            runCatching { mutex.withLock { rebuildLocked() } }
+            runCatching { mutex.withLock {
+                changedPlaylists.forEach { id ->
+                    if (prefs.currentPlaylists().firstOrNull { it.id == id }?.isStalker == true) {
+                        StalkerGateway.sourceChanged(id)
+                        discardStalkerSnapshots(id)
+                        com.nuvio.app.features.livetv.ondemand.OnDemandRepository.sourceChanged(id)
+                    }
+                }
+                rebuildLocked()
+            } }
             runCatching { refreshInternal(forcePlaylists = false, forceEpg = false, forceIds = changedPlaylists) }
         }
     }
@@ -179,6 +195,16 @@ internal object LiveTvRepository {
         return id
     }
 
+    fun addStalker(name: String, config: StalkerConfig, userAgent: String = "", importVod: Boolean = true,
+        importLive: Boolean = true, useEmbeddedEpg: Boolean = true): String {
+        val id = newId()
+        prefs.updatePlaylists { it + PlaylistSource(id = id, name = name.ifBlank { "Stalker" }, url = "",
+            providerKind = "stalker", stalker = config, userAgent = userAgent.trim(), importVod = importVod,
+            importLive = importLive, useEmbeddedEpg = useEmbeddedEpg) }
+        scope.launch { runCatching { refreshInternal(false, false, setOf(id)) } }
+        return id
+    }
+
     fun updatePlaylist(input: PlaylistSource) {
         val source = if (input.isXtream) {
             val fromLink = PlaylistSource.credentialsFromLink(input.xtreamServer)
@@ -190,16 +216,24 @@ internal object LiveTvRepository {
         } else input
         val before = prefs.currentPlaylists().firstOrNull { it.id == source.id }
         prefs.updatePlaylists { list -> list.map { if (it.id == source.id) source else it } }
+        if (before == null || !before.sameConnection(source)) scope.launch {
+            StalkerGateway.sourceChanged(source.id)
+            if (before?.isStalker == true || source.isStalker) com.nuvio.app.features.livetv.ondemand.OnDemandRepository.sourceChanged(source.id)
+        }
         if (!source.liveEnabled) {
             dropPlaylistNow(source.id)
+            if (before != null && !before.sameConnection(source) && (before.isStalker || source.isStalker)) {
+                scope.launch { mutex.withLock { discardStalkerSnapshots(source.id) } }
+            }
             if (before?.liveEnabled == true) scope.launch { runCatching { mutex.withLock { rebuildLocked() } } }
             return
         }
-        val credentialsChanged = before == null || before.url != source.url || before.xtreamServer != source.xtreamServer ||
-            before.xtreamUsername != source.xtreamUsername || before.xtreamPassword != source.xtreamPassword ||
-            before.userAgent != source.userAgent || before.streamFormat != source.streamFormat
+        val credentialsChanged = before == null || !before.sameConnection(source)
         scope.launch {
-            runCatching { mutex.withLock { rebuildLocked() } }
+            runCatching { mutex.withLock {
+                if (credentialsChanged && (before?.isStalker == true || source.isStalker)) discardStalkerSnapshots(source.id)
+                rebuildLocked()
+            } }
             runCatching { refreshInternal(forcePlaylists = false, forceEpg = false, forceIds = if (credentialsChanged) setOf(source.id) else emptySet()) }
         }
     }
@@ -214,6 +248,8 @@ internal object LiveTvRepository {
         LiveTvFiles.delete(LiveTvDirs.PLAYLISTS, "$id.m3u")
         LiveTvFiles.delete(LiveTvDirs.PLAYLISTS, groupOrderFile(id))
         embeddedEpgUrls.remove(id)
+        discardStalkerSnapshots(id)
+        scope.launch { StalkerGateway.invalidateSource(id) }
         dropPlaylistNow(id)
         scope.launch { runCatching { mutex.withLock { rebuildLocked() } } }
     }
@@ -335,12 +371,14 @@ internal object LiveTvRepository {
             if (!(forcePlaylists || stale || pl.id in forceIds)) continue
             setStatus(loading = true, message = "Updating playlist \"${pl.name}\"…")
             val result = runCatching {
-                if (pl.isXtream) downloadXtream(pl, file)
+                if (pl.isStalker) downloadStalker(pl, file)
+                else if (pl.isXtream) downloadXtream(pl, file)
+                else if (!pl.isM3u) throw StalkerException(StalkerError.UNSUPPORTED)
                 else LiveTvFiles.download(pl.resolvedUrl(), LiveTvDirs.PLAYLISTS, file, pl.userAgent) { bytes ->
                     setStatus(loading = true, message = "Downloading playlist \"${pl.name}\" (${sizeLabel(bytes)})…")
                 }
             }
-            if (!pl.isXtream) runCatching { refreshM3uAccount(pl) }
+            if (pl.isM3u) runCatching { refreshM3uAccount(pl) }
             val err = result.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it else it.message ?: "Download failed" }
             prefs.updatePlaylists { list ->
                 list.map { if (it.id == pl.id) it.copy(lastUpdatedMs = if (err == null) now else it.lastUpdatedMs, lastError = err) else it }
@@ -363,7 +401,16 @@ internal object LiveTvRepository {
             if (!(forceEpg || stale || forcedHere)) continue
             setStatus(loading = true, message = "Downloading guide \"${target.name}\"…")
             val result = runCatching {
-                LiveTvFiles.download(target.url, LiveTvDirs.EPG, file, target.userAgent) { bytes ->
+                if (target.stalkerSource != null) {
+                    val client = StalkerGateway.client(target.stalkerSource)
+                    // Request the full configured display horizon; the portal decides its available archive/future coverage.
+                    val hours = (settings.epgPastHours.coerceAtLeast(1) + settings.epgFutureDays.coerceAtLeast(1) * 24)
+                    val identity = StalkerGateway.sourceIdentity(target.stalkerSource)
+                    LiveTvFiles.writeTextStream(LiveTvDirs.EPG, file,
+                        publish = { commit -> prefs.withCurrentPlaylist(target.stalkerSource, commit) }) { emit ->
+                        client.forEachProgramme(hours) { programme -> emit(StalkerCatalogCache.guideLine(programme, identity)) }
+                    }
+                } else LiveTvFiles.download(target.url, LiveTvDirs.EPG, file, target.userAgent) { bytes ->
                     setStatus(loading = true, message = "Downloading guide \"${target.name}\" (${sizeLabel(bytes)})…")
                 }
             }
@@ -404,6 +451,9 @@ internal object LiveTvRepository {
         val oldEnough = now - 14L * 24 * HOUR
         val guideIds = collectEpgTargets().mapTo(HashSet()) { it.fileId }
         prefs.currentEpgSources().forEach { guideIds += it.id }
+        val stalkerIds = prefs.currentPlaylists().filter { it.isStalker }.map { it.id }
+        LiveTvFiles.list(LiveTvDirs.EPG).filter { name -> stalkerIds.any { name.startsWith("auto_stalker_${it}_") && name.contains("_archive_") } }
+            .forEach { guideIds += it.substringBefore(".xml") }
         val playlistIds = prefs.currentPlaylists().mapTo(HashSet()) { it.id }
         fun sweep(dir: String, idOf: (String) -> String, keep: Set<String>) {
             LiveTvFiles.list(dir).forEach { name ->
@@ -418,6 +468,26 @@ internal object LiveTvRepository {
 
     // ---------------------------------------------------------------- downloads
 
+    private fun discardStalkerSnapshots(id: String) {
+        LiveTvFiles.delete(LiveTvDirs.PLAYLISTS, playlistFile(id))
+        LiveTvFiles.list(LiveTvDirs.EPG).filter { it.startsWith("auto_stalker_${id}_") || it.startsWith("stalker_${id}.") || it.startsWith("stalker_${id}_archive_") }
+            .forEach { LiveTvFiles.delete(LiveTvDirs.EPG, it) }
+    }
+
+    private fun stalkerGuideId(source: PlaylistSource): String = "auto_stalker_${source.id}_${StalkerGateway.sourceIdentity(source)}"
+
+    private suspend fun downloadStalker(pl: PlaylistSource, file: String): Boolean {
+        val client = StalkerGateway.client(pl)
+        val groups = client.liveGroups()
+        val identity = StalkerGateway.sourceIdentity(pl)
+        val channels = client.liveChannels().map { it.copy(stream = it.stream.copy(sourceIdentity = identity)) }
+        // Both paginated calls finish before replacing the working snapshot.
+        return LiveTvFiles.writeTextStream(LiveTvDirs.PLAYLISTS, file,
+            publish = { commit -> prefs.withCurrentPlaylist(pl, commit) }) { emit ->
+            StalkerCatalogCache.channelLines(groups, channels).forEach(emit)
+        }
+    }
+
     private fun playlistFile(id: String) = "$id.m3u"
     /** An Xtream login's group names in the provider's order (see [PlaylistGroupOrder]). */
     private fun groupOrderFile(id: String) = "$id.groups"
@@ -428,6 +498,12 @@ internal object LiveTvRepository {
             val multi = playlists.size > 1
             val ranks = HashMap<String, Int>()
             for (pl in playlists) {
+                if (pl.isStalker) {
+                    runCatching { StalkerCatalogCache.channels(pl.id).first }.getOrDefault(emptyList()).forEachIndexed { index, group ->
+                        ranks["${pl.id}::stalker::${group.id.encodeURLParameter()}"] = index
+                    }
+                    continue
+                }
                 val text = LiveTvFiles.readSmall(LiveTvDirs.PLAYLISTS, groupOrderFile(pl.id)) ?: continue
                 text.lines().filter { it.isNotBlank() }.forEachIndexed { i, name ->
                     if ((if (multi) "${pl.id}::$name" else name) !in ranks) ranks[if (multi) "${pl.id}::$name" else name] = i
@@ -506,6 +582,26 @@ internal object LiveTvRepository {
             val file = playlistFile(pl.id)
             if (!LiveTvFiles.exists(LiveTvDirs.PLAYLISTS, file)) continue
             setStatus(loading = true, message = "Reading channels from \"${pl.name}\"" + (if (multi) " (${plIndex + 1} of ${playlists.size})" else "") + "…")
+            if (pl.isStalker) {
+                val (groups, raw) = runCatching { StalkerCatalogCache.channels(pl.id) }.getOrNull() ?: continue
+                val titles = groups.associate { it.id to it.name }
+                for (c in raw) {
+                    val key = StalkerCatalogCache.channelKey(pl.id, c.id)
+                    if (!usedKeys.add(key)) continue
+                    val group = titles[c.groupId] ?: "Uncategorized"
+                    val number = c.number?.toIntOrNull()?.takeIf { it > 0 } ?: counter
+                    counter = maxOf(counter, number) + 1
+                    out += LiveChannel(key, pl.id, pl.name, c.name, c.epgId, c.name, c.logo,
+                        groupId = "${pl.id}::stalker::${c.groupId.orEmpty().encodeURLParameter()}", group = group,
+                        number = number, url = StalkerGateway.locator(pl.id, c.stream),
+                        headers = pl.userAgent.takeIf { it.isNotBlank() }?.let { mapOf("User-Agent" to it) }.orEmpty(),
+                        catchup = if (c.archiveEnabled && c.archiveDays > 0) CatchupInfo("stalker", null, c.archiveDays) else null,
+                        stalker = c.stream)
+                }
+                if (raw.size != pl.channelCount) prefs.updatePlaylists { list -> list.map { if (it.id == pl.id) it.copy(channelCount = raw.size) else it } }
+                continue
+            }
+            if (!pl.isM3u && !pl.isXtream) continue
             val parsed = runCatching {
                 LiveTvFiles.readChunks(LiveTvDirs.PLAYLISTS, file) { chunks -> M3uParser.parse(linesOf(chunks)) }
             }.getOrNull() ?: continue
@@ -579,6 +675,7 @@ internal object LiveTvRepository {
         val playlistId: String? = null,
         /** How far this guide's listings are moved (its own time shift), in ms. */
         val shiftMs: Long = 0L,
+        val stalkerSource: PlaylistSource? = null,
     )
 
     /** Each guide file's time shift (ms), as last collected. */
@@ -643,6 +740,12 @@ internal object LiveTvRepository {
             targets += EpgTarget(src.id, src.id, src.name, src.url, ua, shiftMs = src.shiftMinutes * MINUTE)
         }
         for (pl in allPlaylists.filter { it.liveEnabled && it.useEmbeddedEpg }) {
+            if (pl.isStalker) {
+                if (pl.stalker == null) continue
+                targets += EpgTarget(stalkerGuideId(pl), null, "${pl.name} (built-in)", "", pl.userAgent,
+                    playlistId = pl.id, shiftMs = pl.guideShiftMinutes * MINUTE, stalkerSource = pl)
+                continue
+            }
             val urls = mutableListOf<String>()
             pl.xtreamEpgUrl()?.let { urls += it }
             urls += embeddedEpgUrls[pl.id].orEmpty()
@@ -711,7 +814,7 @@ internal object LiveTvRepository {
 
         for ((order, target) in targets.withIndex()) {
             val file = epgFile(target.fileId)
-            if (!LiveTvFiles.exists(LiveTvDirs.EPG, file)) continue
+            if (!LiveTvFiles.exists(LiveTvDirs.EPG, file) && target.stalkerSource == null) continue
             setStatus(loading = true, message = "Matching guide \"${target.name}\"" + (if (targets.size > 1) " (${order + 1} of ${targets.size})" else "") + "…")
             val src = target.fileId
             val pinnedHere = overrides.filterValues { it.sourceId == src }.entries.groupBy({ it.value.xmltvId }, { it.key })
@@ -722,6 +825,40 @@ internal object LiveTvRepository {
                 (names.map { normalize(it) } + normalize(id) + idName(id)).distinct().forEach { k ->
                     if (k.isNotEmpty()) byName[k]?.let { nameHits.getOrPut(id) { LinkedHashSet() }.addAll(it) }
                 }
+            }
+            if (target.stalkerSource != null) {
+                val portal = target.stalkerSource
+                val raw = runCatching { StalkerCatalogCache.channels(portal.id).second }.getOrDefault(emptyList())
+                val native = runCatching {
+                    val base = StalkerCatalogCache.guide(file, windowStart - target.shiftMs, windowEnd - target.shiftMs)
+                    val archives = LiveTvFiles.list(LiveTvDirs.EPG).filter { it.startsWith("${target.fileId}_archive_") && it.endsWith(".xml") }
+                    if (archives.isEmpty()) base else base.toMutableMap().apply {
+                        archives.forEach { snapshot ->
+                            StalkerCatalogCache.guide(snapshot, windowStart - target.shiftMs, windowEnd - target.shiftMs).forEach { (id, list) ->
+                                this[id] = (this[id].orEmpty() + list).associateBy { it.startMs to it.stopMs }.values.toList()
+                            }
+                        }
+                    }
+                }.getOrDefault(emptyMap())
+                val used = HashSet<String>()
+                val directById = channels.filter { it.sourceId == portal.id && it.stalker != null && it.key !in overrides }.groupBy { it.stalker!!.providerId }
+                val channelsByKey = channels.associateBy { it.key }
+                raw.forEach { remote ->
+                    val list = native[remote.id]?.let { cleanListings(it).shiftedBy(target.shiftMs) } ?: return@forEach
+                    if (list.isEmpty()) return@forEach
+                    val direct = directById[remote.id].orEmpty()
+                    val pinned = pinnedHere[remote.id].orEmpty().mapNotNull { channelsByKey[it] }
+                    (direct + pinned).forEach { channel ->
+                        val score = (if (channel.key in overrides) 8 else 0) + (if (!isPlaceholderListing(list)) 2 else 0) + 1
+                        if (best[channel.key]?.score?.let { it >= score } != true) {
+                            best[channel.key] = Candidate(score, src, remote.id, list, remote.logo)
+                            used += remote.id
+                        }
+                    }
+                }
+                sourceLists += EpgSourceChannels(src, target.name, target.name,
+                    raw.map { EpgChannelEntry(it.id, listOf(it.name), it.logo) }, used)
+                continue
             }
             val collected = HashMap<String, MutableList<EpgProgram>>()
             var listed: Map<String, XmltvChannel> = emptyMap()
@@ -830,7 +967,9 @@ internal object LiveTvRepository {
                     val file = epgFile(t.fileId)
                     if (!LiveTvFiles.exists(LiveTvDirs.EPG, file)) continue
                     val listed = withContext(Dispatchers.Default) {
-                        LiveTvFiles.readChunks(LiveTvDirs.EPG, file) { chunks ->
+                        if (t.stalkerSource != null) StalkerCatalogCache.channels(t.stalkerSource.id).second.associate {
+                            it.id to XmltvChannel(it.id, listOf(it.name), it.logo)
+                        } else LiveTvFiles.readChunks(LiveTvDirs.EPG, file) { chunks ->
                             var found: Map<String, XmltvChannel> = emptyMap()
                             // Only the channel list is needed: stop at the first show.
                             XmltvParser.parse(chunks, 0L, 1L, selectChannels = { chans -> found = chans; throw ChannelListRead() })
@@ -890,9 +1029,75 @@ internal object LiveTvRepository {
         withContext(Dispatchers.Default) { EpgStore.program(channelKey, startMs) }
             ?: _programs.value[channelKey]?.firstOrNull { it.startMs == startMs }
 
+    /** A retained UI row must still belong to the currently configured portal identity. */
+    fun isCurrentStalkerChannel(channel: LiveChannel): Boolean {
+        val ref = channel.stalker ?: return false
+        val source = prefs.currentPlaylists().firstOrNull { it.id == channel.sourceId && it.liveEnabled && it.isStalker } ?: return false
+        return ref.sourceIdentity != null && ref.sourceIdentity == StalkerGateway.sourceIdentity(source)
+    }
+
     /** A channel's whole schedule for the days the guide keeps. */
-    suspend fun channelSchedule(channelKey: String, fromMs: Long, toMs: Long): List<EpgProgram> =
-        withContext(Dispatchers.Default) { EpgStore.channelRange(channelKey, fromMs, toMs) }
+    suspend fun channelSchedule(channelKey: String, fromMs: Long, toMs: Long): List<EpgProgram> {
+        ensureArchives(listOf(channelKey), fromMs, toMs)
+        return withContext(Dispatchers.Default) { EpgStore.channelRange(channelKey, fromMs, toMs) }
+    }
+
+    /** Some portals expose historical listings only through a channel/day archive API. */
+    private suspend fun ensureArchives(keys: Collection<String>, fromMs: Long, toMs: Long) {
+        val now = LiveTvClock.nowMs()
+        if (fromMs >= now || fromMs >= toMs) return
+        val wanted = keys.toHashSet()
+        val selected = _channels.value.filter { it.key in wanted && it.stalker != null && it.catchup != null }
+        if (selected.isEmpty()) return
+        mutex.withLock {
+            for (channel in selected) {
+                val source = prefs.currentPlaylists().firstOrNull { it.id == channel.sourceId && it.liveEnabled && it.useEmbeddedEpg } ?: continue
+                val config = source.stalker ?: continue
+                if (channel.stalker?.sourceIdentity != StalkerGateway.sourceIdentity(source)) continue
+                val override = prefs.currentUserState().epgOverrides[channel.key]
+                if (override != null && (override.isNone || override.sourceId != stalkerGuideId(source))) continue
+                val assigned = _autoMatches.value[channel.key]
+                if (override == null && assigned != null && assigned.sourceId != stalkerGuideId(source)) continue
+                val shift = guideShiftMs(channel)
+                val start = maxOf(fromMs - shift, now - channel.catchup!!.days * 24L * HOUR)
+                val end = minOf(toMs - shift, now)
+                if (start >= end) continue
+                val first = CivilTime.at(start, config.timezone)
+                val last = CivilTime.at(end - 1, config.timezone)
+                val firstDay = CivilTime.daysFromCivil(first.year, first.month, first.day)
+                val lastDay = CivilTime.daysFromCivil(last.year, last.month, last.day)
+                for (day in firstDay..lastDay) {
+                    val date = CivilTime.atUtc(day * 24 * HOUR).let { "${it.year.toString().padStart(4, '0')}-${it.month.toString().padStart(2, '0')}-${it.day.toString().padStart(2, '0')}" }
+                    val file = "${stalkerGuideId(source)}_archive_${channel.stalker!!.providerId.encodeURLParameter()}_$date.xml"
+                    // Archive listings may be corrected by the provider, including on closed dates.
+                    val fresh = LiveTvFiles.exists(LiveTvDirs.EPG, file) && now - LiveTvFiles.lastModified(LiveTvDirs.EPG, file) < HOUR
+                    if (fresh) continue
+                    try {
+                        val identity = StalkerGateway.sourceIdentity(source)
+                        val rows = StalkerGateway.client(source).archiveGuide(channel.stalker.providerId, date)
+                        LiveTvFiles.writeTextStream(LiveTvDirs.EPG, file,
+                            publish = { commit -> prefs.withCurrentPlaylist(source, commit) }) { emit -> rows.forEach { emit(StalkerCatalogCache.guideLine(it, identity)) } }
+                        val incoming = rows.filter { it.channelId == channel.stalker.providerId }.map { p ->
+                            EpgProgram(p.startMillis + shift, p.stopMillis + shift, p.title, p.description, p.category,
+                                stalkerProgramId = p.archiveProgramId, stalkerArchiveAvailable = p.archiveAvailable,
+                                stalkerSourceIdentity = identity.takeIf { p.archiveProgramId != null })
+                        }
+                        withContext(Dispatchers.Default) {
+                            val previous = EpgStore.channelRange(channel.key, 0L, Long.MAX_VALUE)
+                            val merged = cleanListings((previous + incoming).associateBy { it.startMs to it.stopMs }.values.toList())
+                            prefs.withCurrentPlaylist(source) {
+                                EpgStore.replaceChannels(EpgStore.fingerprint().orEmpty(), setOf(channel.key), mapOf(channel.key to merged),
+                                    _autoMatches.value[channel.key]?.let { mapOf(channel.key to it) }.orEmpty())
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        // The existing guide remains usable if the portal archive is unavailable.
+                    }
+                }
+            }
+        }
+    }
 
     /** Moves the in-memory window along (called now and then while Live TV is open). */
     fun refreshWindow() {

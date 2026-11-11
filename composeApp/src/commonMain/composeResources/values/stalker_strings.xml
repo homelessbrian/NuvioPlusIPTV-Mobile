@@ -1,0 +1,18 @@
+<resources>
+    <string name="livetv_add_stalker">Add Stalker portal</string>
+    <string name="livetv_add_stalker_description">Stalker / Ministra portal and registered MAC address</string>
+    <string name="livetv_stalker_portal">Portal URL</string>
+    <string name="livetv_stalker_mac">Registered MAC address</string>
+    <string name="livetv_stalker_load_guide">Load portal guide</string>
+    <string name="livetv_stalker_device_options">Provider device options</string>
+    <string name="livetv_stalker_device_options_description">Only enter identity details supplied by your provider.</string>
+    <string name="livetv_stalker_serial">Serial number (optional)</string>
+    <string name="livetv_stalker_device_id">Device ID (optional)</string>
+    <string name="livetv_stalker_device_id2">Device ID 2 (optional)</string>
+    <string name="livetv_stalker_signature">Signature (optional)</string>
+    <string name="livetv_stalker_timezone">Portal time zone (for example, Europe/London)</string>
+    <string name="livetv_stalker_language">Language code</string>
+    <string name="livetv_stalker_optional_login">Provider login (optional)</string>
+    <string name="livetv_stalker_device_binding">Use an account and MAC address authorized by your provider. Some portals require provider activation or additional device details.</string>
+    <string name="livetv_stalker_playback_limits">Stalker playback uses the internal ExoPlayer. When automatic VPN protection is enabled, choose HTTP + HTTPS or Full app; HTTP-only protection is not supported for portal sessions.</string>
+</resources>

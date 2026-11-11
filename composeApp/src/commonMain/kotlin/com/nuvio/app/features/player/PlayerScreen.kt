@@ -48,6 +48,7 @@ fun PlayerScreen(
     launchId: Long? = null,
     sourceFilename: String? = null,
     stream: com.nuvio.app.features.streams.StreamItem? = null,
+    stalkerMediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null,
 ) {
     DisposableEffect(Unit) {
         com.nuvio.app.features.livetv.data.VideoPlaying.opened()
@@ -60,6 +61,7 @@ fun PlayerScreen(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = sourceHeaders,
+            stalkerMediaPolicy = stalkerMediaPolicy,
             sourceResponseHeaders = sourceResponseHeaders,
             externalSubtitles = externalSubtitles,
             streamType = streamType,

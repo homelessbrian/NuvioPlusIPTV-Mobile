@@ -485,6 +485,7 @@ kotlin {
 
             dependencies {
                 implementation(project(":vpn-android"))
+                implementation(project(":vpn-core"))
                 implementation(libs.compose.uiToolingPreview)
                 implementation(libs.androidx.appcompat)
                 implementation(libs.androidx.activity.compose)

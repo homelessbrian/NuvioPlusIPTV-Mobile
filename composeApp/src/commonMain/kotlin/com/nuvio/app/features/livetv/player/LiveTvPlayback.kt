@@ -11,6 +11,11 @@ import com.nuvio.app.features.livetv.model.LiveTvClock
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
+import com.nuvio.app.features.livetv.stalker.StalkerGateway
+import com.nuvio.stalker.StalkerContentKind
+import com.nuvio.stalker.StalkerStreamRef
+import com.nuvio.stalker.StalkerException
+import com.nuvio.stalker.StalkerError
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.withTimeoutOrNull
@@ -21,7 +26,10 @@ internal data class LivePlayRequest(
     val headers: Map<String, String>,
     /** "hls" for .m3u8 links, null for anything else (the player sniffs it). */
     val streamType: String?,
-)
+    val mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null,
+) {
+    override fun toString(): String = "LivePlayRequest(streamType=$streamType, <redacted>)"
+}
 
 /** What to play instead when a live stream fails: another link for the same channel, or another channel. */
 internal data class LiveFallback(
@@ -54,13 +62,14 @@ internal object LiveTvPlayback {
 
     /** The channel behind each source URL handed to the player (fallbacks included). */
     private val playing = HashMap<String, LiveChannel>()
+    private val portalRetried = HashSet<String>()
 
     /** Channels by their "backup name", so a failed channel's stand-ins are found quickly. */
     private var backupIndex: Map<String, List<LiveChannel>> = emptyMap()
     private var backupIndexFor: List<LiveChannel> = emptyList()
 
     /** A catch-up replay the player was handed: the show, and the other links still to try. */
-    private class CatchupContext(val channel: LiveChannel, val program: EpgProgram, val remaining: ArrayDeque<String>, val primary: String)
+    private class CatchupContext(val channel: LiveChannel, val program: EpgProgram, val remaining: ArrayDeque<String>, val primary: String, val portal: StalkerStreamRef? = null)
 
     /** Playlist id -> the kind of catch-up link that last worked there (this run only; see [CatchupUrlBuilder.linkForm]). */
     private val catchupForms = HashMap<String, String>()
@@ -89,16 +98,21 @@ internal object LiveTvPlayback {
         private set
 
     /** The request for a channel, with its HLS→TS memory applied. */
-    fun requestFor(channel: LiveChannel): LivePlayRequest {
+    suspend fun requestFor(channel: LiveChannel): LivePlayRequest {
+        channel.stalker?.let { ref ->
+            val resolved = StalkerGateway.resolve(channel.sourceId, ref)
+            return request(channel, resolved.url, resolved.headers, resolved.mediaPolicy, resolved.streamType)
+        }
+        if (StalkerGateway.isLocator(channel.url)) throw StalkerException(StalkerError.LINK_UNAVAILABLE)
         val url = synchronized(lock) { if (channel.key in tsInstead) tsLinkFor(channel.url) ?: channel.url else channel.url }
         return request(channel, url)
     }
 
-    private fun request(channel: LiveChannel, url: String): LivePlayRequest {
+    private fun request(channel: LiveChannel, url: String, portalHeaders: Map<String, String> = emptyMap(), policy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null, portalStreamType: String? = null): LivePlayRequest {
         val headers = LinkedHashMap<String, String>()
-        channel.headers.forEach { (k, v) -> if (k.isNotBlank() && v.isNotBlank()) headers[k] = v }
+        (if (channel.stalker == null) channel.headers else portalHeaders).forEach { (k, v) -> if (k.isNotBlank() && v.isNotBlank()) headers[k] = v }
         if (headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) headers["User-Agent"] = XtreamClient.DEFAULT_UA
-        return LivePlayRequest(url = url, headers = headers, streamType = streamTypeOf(url, channel))
+        return LivePlayRequest(url = url, headers = headers, streamType = portalStreamType ?: streamTypeOf(url, channel), mediaPolicy = policy)
     }
 
     /** "hls" for .m3u8 links; null otherwise, so the player works the format out itself. */
@@ -115,11 +129,13 @@ internal object LiveTvPlayback {
      * The player launch for a channel, as the rest of the app opens streams. [profileId] is the
      * active profile. [nowTitle] is what's on, shown under the channel's name.
      */
-    fun launchFor(channel: LiveChannel, profileId: Int, nowTitle: String? = null): PlayerLaunch {
+    suspend fun launchFor(channel: LiveChannel, profileId: Int, nowTitle: String? = null): PlayerLaunch {
         val req = requestFor(channel)
         synchronized(lock) {
             // A channel you picked yourself: the backup list starts afresh.
             backupTried.clear()
+            portalRetried.clear()
+            playing.clear(); catchups.clear()
             playing[req.url] = channel
         }
         currentKey = channel.key
@@ -128,6 +144,7 @@ internal object LiveTvPlayback {
             title = channel.name,
             sourceUrl = req.url,
             sourceHeaders = req.headers,
+            stalkerMediaPolicy = req.mediaPolicy,
             streamType = req.streamType,
             logo = channel.logo,
             poster = channel.logo,
@@ -144,21 +161,24 @@ internal object LiveTvPlayback {
     }
 
     /** Puts the launch in the store and returns its id, for a PlayerRoute. */
-    fun prepare(channel: LiveChannel, profileId: Int, nowTitle: String? = null): Long {
+    suspend fun prepare(channel: LiveChannel, profileId: Int, nowTitle: String? = null): Long {
+        val launch = launchFor(channel, profileId, nowTitle)
         // Adult channels never go in Recently watched.
         LiveTvPreferences.recordWatched(channel.key, addToRecent = !com.nuvio.app.features.livetv.parental.ParentalControls.isAdultChannel(channel))
-        return PlayerLaunchStore.put(launchFor(channel, profileId, nowTitle))
+        return PlayerLaunchStore.put(launch)
     }
 
     /**
      * Changing channel inside the player (its channel panel or a swipe on the video): the same
      * bookkeeping as picking the channel from a list, minus the new player screen.
      */
-    fun switchTo(channel: LiveChannel): LivePlayRequest {
-        LiveTvPreferences.recordWatched(channel.key, addToRecent = !com.nuvio.app.features.livetv.parental.ParentalControls.isAdultChannel(channel))
+    suspend fun switchTo(channel: LiveChannel): LivePlayRequest {
         val req = requestFor(channel)
+        LiveTvPreferences.recordWatched(channel.key, addToRecent = !com.nuvio.app.features.livetv.parental.ParentalControls.isAdultChannel(channel))
         synchronized(lock) {
             backupTried.clear()
+            portalRetried.clear()
+            playing.clear(); catchups.clear()
             playing[req.url] = channel
         }
         currentKey = channel.key
@@ -172,6 +192,8 @@ internal object LiveTvPlayback {
     /** Whether this provider id is Live TV's (the player asks before trying a fallback). */
     fun owns(providerAddonId: String?): Boolean = providerAddonId == PROVIDER_ID
 
+    fun isPortalReplay(url: String): Boolean = synchronized(lock) { catchups[url]?.portal != null }
+
     // ---------------------------------------------------------------- catch-up
 
     /**
@@ -183,6 +205,26 @@ internal object LiveTvPlayback {
      * asked again on later replays.
      */
     suspend fun prepareCatchup(channel: LiveChannel, program: EpgProgram, profileId: Int, offsetMs: Long = 0L): Long? {
+        channel.stalker?.let { channelRef ->
+            if (!LiveTvCatchup.isReplayable(channel, program, LiveTvClock.nowMs())) return null
+            val ref = channelRef.copy(kind = StalkerContentKind.ARCHIVE, command = "", programId = program.stalkerProgramId,
+                sourceIdentity = program.stalkerSourceIdentity)
+            val stream = StalkerGateway.resolve(channel.sourceId, ref)
+            val req = request(channel, stream.url, stream.headers, stream.mediaPolicy, stream.streamType)
+            synchronized(lock) {
+                backupTried.clear(); portalRetried.clear(); playing.clear(); catchups.clear(); playing[req.url] = channel
+                catchups[req.url] = CatchupContext(channel, program, ArrayDeque(), req.url, ref)
+            }
+            prefsRecordWatched(channel)
+            return PlayerLaunchStore.put(PlayerLaunch(
+                profileId = profileId, title = program.title, sourceUrl = req.url, sourceHeaders = req.headers, stalkerMediaPolicy = req.mediaPolicy,
+                streamType = req.streamType, logo = channel.logo, poster = program.icon ?: channel.logo,
+                streamTitle = program.title, streamSubtitle = channel.name, pauseDescription = program.description,
+                providerName = channel.sourceName, providerAddonId = PROVIDER_ID, contentType = CONTENT_TYPE,
+                videoId = channel.key, parentMetaId = channel.key, parentMetaType = CONTENT_TYPE,
+                initialPositionMs = offsetMs.coerceAtLeast(0),
+            ))
+        }
         val prefs = LiveTvPreferences
         val stored = prefs.currentPlaylists().firstOrNull { it.id == channel.sourceId }
         var playlist = stored
@@ -203,6 +245,7 @@ internal object LiveTvPlayback {
         val req = request(channel, links.first())
         synchronized(lock) {
             backupTried.clear()
+            portalRetried.clear(); playing.clear(); catchups.clear()
             playing[req.url] = channel
             catchups[req.url] = CatchupContext(channel, program, ArrayDeque(links.drop(1)), plan.url)
         }
@@ -286,12 +329,24 @@ internal object LiveTvPlayback {
      * request; for a live channel, the TS link for an HLS one, then a backup channel; or null
      * when nothing is left (the player shows the error).
      */
-    fun fallbackFor(failedUrl: String): LiveFallback? {
-        synchronized(lock) { catchups[failedUrl] }?.let { return catchupFallback(failedUrl, it) }
+    suspend fun fallbackFor(failedUrl: String): LiveFallback? {
+        synchronized(lock) { catchups[failedUrl] }?.let { ctx ->
+            if (ctx.portal == null) return catchupFallback(failedUrl, ctx)
+            if (!synchronized(lock) { portalRetried.add("archive:${ctx.channel.key}:${ctx.program.startMs}") }) return null
+            val stream = StalkerGateway.resolve(ctx.channel.sourceId, ctx.portal)
+            val req = request(ctx.channel, stream.url, stream.headers, stream.mediaPolicy, stream.streamType)
+            synchronized(lock) { playing[req.url] = ctx.channel; catchups[req.url] = ctx }
+            return LiveFallback(ctx.channel, req)
+        }
         val channel = synchronized(lock) { playing[failedUrl] } ?: return null
+        if (channel.stalker != null && synchronized(lock) { portalRetried.add(channel.key) }) {
+            val req = requestFor(channel)
+            synchronized(lock) { playing[req.url] = channel }
+            return LiveFallback(channel, req)
+        }
         // 1. Xtream HLS that won't play: the same channel as TS, once.
         val ts = synchronized(lock) {
-            if (channel.key in tsInstead) null
+            if (channel.stalker != null || channel.key in tsInstead) null
             else tsLinkFor(failedUrl)?.takeIf { it != failedUrl }?.also { tsInstead += channel.key }
         }
         if (ts != null) {
@@ -307,6 +362,9 @@ internal object LiveTvPlayback {
         LiveTvPreferences.recordWatched(next.key, addToRecent = false)
         return LiveFallback(next, req, switchedFrom = channel)
     }
+
+    private fun prefsRecordWatched(channel: LiveChannel) = LiveTvPreferences.recordWatched(channel.key,
+        addToRecent = !com.nuvio.app.features.livetv.parental.ParentalControls.isAdultChannel(channel))
 
     private fun backupFor(failed: LiveChannel): LiveChannel? {
         if (!LiveTvPreferences.currentSettings().autoBackupChannel) return null

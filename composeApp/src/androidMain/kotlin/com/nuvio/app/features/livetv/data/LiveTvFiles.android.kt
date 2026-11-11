@@ -162,6 +162,24 @@ internal actual object LiveTvFiles {
         return changed
     }
 
+    actual suspend fun writeTextStream(dir: String, name: String,
+        publish: (() -> Unit) -> Unit, producer: suspend ((String) -> Unit) -> Unit): Boolean = withContext(Dispatchers.IO) {
+        val target = file(dir, name)
+        val tmp = File(target.parentFile, "$name.stalker.tmp")
+        try {
+            GZIPOutputStream(tmp.outputStream().buffered(64 * 1024), 64 * 1024).bufferedWriter(Charsets.UTF_8).use { writer ->
+                producer { writer.write(it) }
+            }
+            val changed = !target.isFile || !sameDecoded(target, tmp)
+            publish {
+                // POSIX rename is an atomic replacement on Android; failures leave the previous snapshot intact.
+                android.system.Os.rename(tmp.absolutePath, target.absolutePath)
+                target.setLastModified(System.currentTimeMillis())
+            }
+            changed
+        } finally { tmp.delete() }
+    }
+
     actual fun <T> readChunks(dir: String, name: String, block: (Sequence<String>) -> T): T? {
         val f = file(dir, name)
         if (!f.isFile) return null

@@ -99,7 +99,7 @@ internal val PlayerScreenRuntime.playbackSession: WatchProgressPlaybackSession
         lastStreamTitle = activeStreamTitle,
         lastStreamSubtitle = activeStreamSubtitle,
         pauseDescription = activePauseDescription,
-        lastSourceUrl = activeSourceUrl.takeUnless { ServerStreams.isServerSourceId(activeProviderAddonId) },
+        lastSourceUrl = activeSourceUrl.takeUnless { activeStalkerMediaPolicy != null || ServerStreams.isServerSourceId(activeProviderAddonId) },
     )
 
 internal fun PlayerScreenRuntime.currentLaunch(launch: PlayerLaunch): PlayerLaunch {
@@ -110,6 +110,7 @@ internal fun PlayerScreenRuntime.currentLaunch(launch: PlayerLaunch): PlayerLaun
         sourceUrl = activeSourceUrl,
         sourceAudioUrl = activeSourceAudioUrl,
         sourceHeaders = activeSourceHeaders,
+        stalkerMediaPolicy = activeStalkerMediaPolicy,
         sourceResponseHeaders = activeSourceResponseHeaders,
         externalSubtitles = externalSubtitles,
         streamType = activeStreamType,

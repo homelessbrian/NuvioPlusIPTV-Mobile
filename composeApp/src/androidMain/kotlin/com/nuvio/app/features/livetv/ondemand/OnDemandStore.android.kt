@@ -1,5 +1,6 @@
 package com.nuvio.app.features.livetv.ondemand
 
+import com.nuvio.stalker.StalkerStreamRef
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
@@ -8,7 +9,7 @@ import android.database.sqlite.SQLiteOpenHelper
 
 internal actual object OnDemandStore {
     private const val DB_NAME = "livetv_on_demand.db"
-    private const val DB_VERSION = 1
+    private const val DB_VERSION = 2
 
     private var helper: Helper? = null
 
@@ -28,7 +29,7 @@ internal actual object OnDemandStore {
                     pl TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL,
                     name TEXT NOT NULL, norm TEXT NOT NULL, icon TEXT, cat TEXT NOT NULL,
                     ext TEXT, tmdb TEXT, year INTEGER, rating TEXT, added INTEGER NOT NULL DEFAULT 0,
-                    genre TEXT, h INTEGER, url TEXT,
+                    genre TEXT, h INTEGER, url TEXT, stalker TEXT, stalker_variant TEXT, plot TEXT, duration INTEGER,
                     PRIMARY KEY (pl, kind, id))"""
             )
             createIndices(db)
@@ -41,7 +42,14 @@ internal actual object OnDemandStore {
             db.execSQL("CREATE TABLE prefixes (pl TEXT NOT NULL, prefix TEXT NOT NULL, PRIMARY KEY (pl, prefix))")
         }
 
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 2) {
+                db.execSQL("ALTER TABLE items ADD COLUMN stalker TEXT")
+                db.execSQL("ALTER TABLE items ADD COLUMN stalker_variant TEXT")
+                db.execSQL("ALTER TABLE items ADD COLUMN plot TEXT")
+                db.execSQL("ALTER TABLE items ADD COLUMN duration INTEGER")
+            }
+        }
     }
 
     private fun createIndices(db: SQLiteDatabase) {
@@ -54,25 +62,33 @@ internal actual object OnDemandStore {
     private val writable: SQLiteDatabase get() = (helper ?: error("OnDemandStore not initialized")).writableDatabase
     private val readable: SQLiteDatabase? get() = helper?.readableDatabase
 
-    private inline fun <T> tx(db: SQLiteDatabase, block: () -> T): T {
+    private fun <T> tx(db: SQLiteDatabase, publication: ((() -> Unit) -> Unit)? = null, block: () -> T): T {
         db.beginTransaction()
+        var ended = false
         try {
-            return block().also { db.setTransactionSuccessful() }
+            val result = block()
+            val commit = {
+                db.setTransactionSuccessful()
+                ended = true
+                db.endTransaction()
+            }
+            if (publication != null) publication(commit) else commit()
+            return result
         } finally {
-            db.endTransaction()
+            if (!ended) db.endTransaction()
         }
     }
 
     /** A title's details as one number: the same number means nothing to write. */
     private fun fingerprint(it: VodItem): Long {
         var h = 1125899906842597L
-        for (s in arrayOf(it.name, it.icon, it.categoryId, it.ext, it.tmdbId, it.year?.toString(), it.rating, it.addedSec.toString(), it.genre, it.url)) {
+        for (s in arrayOf(it.name, it.icon, it.categoryId, it.ext, it.tmdbId, it.year?.toString(), it.rating, it.addedSec.toString(), it.genre, it.url, it.stalker?.encode(), it.stalkerSeriesVariant, it.plot, it.durationSecs?.toString())) {
             h = 31 * h + (s?.hashCode() ?: 7)
         }
         return if (h == 0L) 1L else h
     }
 
-    actual fun replace(playlistId: String, kind: VodKind, categories: List<Pair<String, String>>, items: Sequence<VodItem>): Int {
+    actual fun replace(playlistId: String, kind: VodKind, categories: List<Pair<String, String>>, items: Sequence<VodItem>, publication: ((() -> Unit) -> Unit)?): Int {
         val db = writable
         val existing = HashMap<String, Long>()
         db.rawQuery("SELECT id, h FROM items WHERE pl = ? AND kind = ?", arrayOf(playlistId, kind.key)).use { c ->
@@ -82,7 +98,7 @@ internal actual object OnDemandStore {
         // at the end, much quicker than keeping them up to date title by title.
         val bulk = existing.isEmpty()
         var count = 0
-        tx(db) {
+        tx(db, publication) {
             if (bulk) {
                 db.execSQL("DROP INDEX IF EXISTS items_cat")
                 db.execSQL("DROP INDEX IF EXISTS items_norm")
@@ -96,7 +112,7 @@ internal actual object OnDemandStore {
                 }, SQLiteDatabase.CONFLICT_REPLACE)
             }
             val stmt = db.compileStatement(
-                "INSERT OR REPLACE INTO items (pl, kind, id, name, norm, icon, cat, ext, tmdb, year, rating, added, genre, h, url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                "INSERT OR REPLACE INTO items (pl, kind, id, name, norm, icon, cat, ext, tmdb, year, rating, added, genre, h, url, stalker, stalker_variant, plot, duration) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             )
             val seen = HashSet<String>(maxOf(16, existing.size))
             items.forEach { it ->
@@ -120,6 +136,10 @@ internal actual object OnDemandStore {
                 it.genre?.let { v -> stmt.bindString(13, v) } ?: stmt.bindNull(13)
                 stmt.bindLong(14, h)
                 it.url?.let { v -> stmt.bindString(15, v) } ?: stmt.bindNull(15)
+                it.stalker?.let { v -> stmt.bindString(16, v.encode()) } ?: stmt.bindNull(16)
+                it.stalkerSeriesVariant?.let { v -> stmt.bindString(17, v) } ?: stmt.bindNull(17)
+                it.plot?.let { v -> stmt.bindString(18, v) } ?: stmt.bindNull(18)
+                it.durationSecs?.let { v -> stmt.bindLong(19, v) } ?: stmt.bindNull(19)
                 stmt.executeInsert()
                 existing[it.id] = h
             }
@@ -348,6 +368,10 @@ internal actual object OnDemandStore {
         addedSec = getLong(getColumnIndexOrThrow("added")),
         genre = getStringOrNull("genre"),
         url = getStringOrNull("url"),
+        stalker = getStringOrNull("stalker")?.let(StalkerStreamRef::decode),
+        stalkerSeriesVariant = getStringOrNull("stalker_variant"),
+        plot = getStringOrNull("plot"),
+        durationSecs = getColumnIndexOrThrow("duration").let { i -> if (isNull(i)) null else getLong(i) },
         copies = getColumnIndex("copies").takeIf { it >= 0 }?.let { i -> getInt(i) } ?: 1,
     )
 

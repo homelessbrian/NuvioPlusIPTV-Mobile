@@ -286,8 +286,18 @@ private fun inferMimeTypeFromDelimitedToken(value: String): String? =
         else -> null
     }
 
-internal fun probeMimeType(url: String, headers: Map<String, String>): String? {
+internal fun probeMimeType(url: String, headers: Map<String, String>, stalkerMediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null): String? {
     if (!url.startsWith("http://") && !url.startsWith("https://")) return null
+    if (stalkerMediaPolicy != null) {
+        return runCatching {
+            val request = okhttp3.Request.Builder().url(url).head().apply {
+                headers.filterKeys { !it.equals("Authorization", true) && !it.equals("Cookie", true) }.forEach { (name, value) -> header(name, value) }
+            }.build()
+            com.nuvio.app.features.livetv.stalker.StalkerMediaHttp.calls(stalkerMediaPolicy).newCall(request).execute().use { response ->
+                if (response.isSuccessful) normalizeMimeType(response.header("Content-Type")) else null
+            }
+        }.getOrNull()
+    }
     val methods = listOf("HEAD", "GET")
     methods.forEach { method ->
         runCatching {

@@ -120,6 +120,7 @@ private fun PlayerScreenRuntime.restartServerStream(
         externalSubtitles = playback.subtitles
         activeSourceUrl = playback.url
         activeSourceHeaders = playback.headers
+        activeStalkerMediaPolicy = null
         activeInitialPositionMs = positionMs
         activeInitialProgressFraction = null
         trackPreferenceRestoreApplied = false

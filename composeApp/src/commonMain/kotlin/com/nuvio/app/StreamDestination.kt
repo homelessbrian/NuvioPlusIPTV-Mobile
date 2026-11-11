@@ -89,6 +89,7 @@ internal fun StreamDestination(
     }
     val pauseDescription = launch.pauseDescription
     val streamRouteScope = rememberCoroutineScope()
+    var stalkerResolveJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var autoPlayNavigationStarted by remember(route.launchId) { mutableStateOf(false) }
     var resolvingDebridStream by rememberSaveable(route.launchId) { mutableStateOf(false) }
     var resolvingYouTubeStream by rememberSaveable(route.launchId) { mutableStateOf(false) }
@@ -211,6 +212,8 @@ internal fun StreamDestination(
                 contentLanguage = resolveLaunchContentLanguage(),
                 addonLogo = stream.addonLogo,
                 streamDescription = stream.streamSubtitle,
+                stalkerSourceId = stream.stalkerSourceId,
+                stalkerStreamJson = stream.stalkerStream?.encode(),
             )
         }
         val playerLaunch = PlayerLaunch(
@@ -340,14 +343,32 @@ internal fun StreamDestination(
                 reuseNavigated = true
                 return@LaunchedEffect
             }
+            val cachedStream = try {
+                com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.resolveStreamForPlayback(StreamItem(
+                    name = cached.streamName, description = cached.streamDescription, url = cached.url,
+                    infoHash = cached.infoHash, fileIdx = cached.fileIdx,
+                    addonName = cached.addonName, addonId = cached.addonId, addonLogo = cached.addonLogo,
+                    streamType = cached.streamType,
+                    stalkerSourceId = cached.stalkerSourceId,
+                    stalkerStream = cached.stalkerStreamJson?.let(com.nuvio.stalker.StalkerStreamRef::decode),
+                    behaviorHints = StreamBehaviorHints(filename = cached.filename, videoSize = cached.videoSize,
+                        bingeGroup = cached.bingeGroup, proxyHeaders = com.nuvio.app.features.streams.StreamProxyHeaders(request = cached.requestHeaders, response = cached.responseHeaders)),
+                ), effectiveVideoId)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                StreamLinkCacheRepository.remove(cacheKey)
+                NuvioToastController.show(com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.resolutionError(failure))
+                return@LaunchedEffect
+            }
             val playerLaunch = PlayerLaunch(
                 profileId = launch.profileId,
                 title = launch.title,
-                sourceUrl = cached.url,
-                sourceHeaders = sanitizePlaybackHeaders(cached.requestHeaders),
+                sourceUrl = cachedStream.playableDirectUrl ?: return@LaunchedEffect,
+                sourceHeaders = sanitizePlaybackHeaders(cachedStream.behaviorHints.proxyHeaders?.request),
+                stalkerMediaPolicy = cachedStream.stalkerMediaPolicy,
                 sourceResponseHeaders = sanitizePlaybackResponseHeaders(cached.responseHeaders),
                 externalSubtitles = emptyList(),
-                streamType = cached.streamType,
+                streamType = cachedStream.streamType,
                 logo = launch.logo,
                 poster = launch.poster,
                 background = launch.background,
@@ -372,22 +393,7 @@ internal fun StreamDestination(
                 ),
                 contentLanguage = resolveLaunchContentLanguage(cached.contentLanguage),
                 sourceFilename = cached.filename,
-                stream = StreamItem(
-                    name = cached.streamName,
-                    description = cached.streamDescription,
-                    url = cached.url,
-                    infoHash = cached.infoHash,
-                    fileIdx = cached.fileIdx,
-                    addonName = cached.addonName,
-                    addonId = cached.addonId,
-                    addonLogo = cached.addonLogo,
-                    streamType = cached.streamType,
-                    behaviorHints = StreamBehaviorHints(
-                        filename = cached.filename,
-                        videoSize = cached.videoSize,
-                        bingeGroup = cached.bingeGroup,
-                    ),
-                ),
+                stream = cachedStream,
             )
             if (playerSettings.externalPlayerEnabled) {
                 openExternalPlayback(playerLaunch)
@@ -439,7 +445,7 @@ internal fun StreamDestination(
         if (autoPlayHandled) return@LaunchedEffect
         if (streamsUiState.requestToken != expectedStreamsRequestToken) return@LaunchedEffect
         val selectedStream = streamsUiState.autoPlayStream ?: return@LaunchedEffect
-        val stream = if (selectedStream.needsServerPreparation) {
+        var stream = if (selectedStream.needsServerPreparation) {
             StreamsRepository.setOverlayVisible(true, getString(Res.string.player_loading_preparing))
             runCatching { ServerPlayback.prepare(selectedStream) }
                 .onFailure { if (it is CancellationException) throw it }
@@ -479,6 +485,13 @@ internal fun StreamDestination(
             }
         } else {
             selectedStream
+        }
+        stream = try { com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.resolveStreamForPlayback(stream, effectiveVideoId) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            NuvioToastController.show(com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.resolutionError(failure))
+            StreamsRepository.skipAutoPlayStream(selectedStream)
+            return@LaunchedEffect
         }
         val sourceUrl = stream.playableDirectUrl
         if (sourceUrl == null && stream.needsLocalDebridResolve && stream.p2pInfoHash != null) {
@@ -526,6 +539,8 @@ internal fun StreamDestination(
                 contentLanguage = resolveLaunchContentLanguage(),
                 addonLogo = stream.addonLogo,
                 streamDescription = stream.streamSubtitle,
+                stalkerSourceId = stream.stalkerSourceId,
+                stalkerStreamJson = stream.stalkerStream?.encode(),
             )
         }
         val playerLaunch = PlayerLaunch(
@@ -533,6 +548,7 @@ internal fun StreamDestination(
             title = launch.title,
             sourceUrl = sourceUrl,
             sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+            stalkerMediaPolicy = stream.stalkerMediaPolicy,
             sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
             externalSubtitles = stream.externalSubtitles,
             streamType = stream.streamType,
@@ -603,6 +619,18 @@ internal fun StreamDestination(
         forceInternal: Boolean,
         saveForReuse: Boolean = true,
     ) {
+        StreamsRepository.consumeAutoPlay()
+        if (stream.stalkerMediaPolicy == null) { stalkerResolveJob?.cancel(); stalkerResolveJob = null }
+        if (stream.stalkerStream != null && stream.stalkerMediaPolicy == null) {
+            stalkerResolveJob = streamRouteScope.launch {
+                try {
+                    val resolved = com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.resolveStreamForPlayback(stream, effectiveVideoId)
+                    openSelectedStream(resolved, resolvedResumePositionMs, resolvedResumeProgressFraction, forceExternal, forceInternal, saveForReuse)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { NuvioToastController.show(com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.resolutionError(failure)) }
+            }
+            return
+        }
         if (stream.needsServerPreparation) {
             if (preparingServerStream) return
             streamRouteScope.launch {
@@ -702,6 +730,10 @@ internal fun StreamDestination(
             return
         }
         val sourceUrl = stream.playableDirectUrl ?: return
+        if (com.nuvio.app.features.livetv.stalker.StalkerGateway.isLocator(sourceUrl)) {
+            NuvioToastController.show("This Stalker stream needs to be refreshed from its provider.")
+            return
+        }
         if (saveForReuse && playerSettings.streamReuseLastLinkEnabled && stream.serverTarget == null) {
             val cacheKey = StreamLinkCacheRepository.contentKey(
                 type = launch.type,
@@ -728,6 +760,8 @@ internal fun StreamDestination(
                 contentLanguage = resolveLaunchContentLanguage(),
                 addonLogo = stream.addonLogo,
                 streamDescription = stream.streamSubtitle,
+                stalkerSourceId = stream.stalkerSourceId,
+                stalkerStreamJson = stream.stalkerStream?.encode(),
             )
         }
         val playerLaunch = PlayerLaunch(
@@ -735,6 +769,7 @@ internal fun StreamDestination(
             title = launch.title,
             sourceUrl = sourceUrl,
             sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+            stalkerMediaPolicy = stream.stalkerMediaPolicy,
             sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
             externalSubtitles = stream.externalSubtitles,
             streamType = stream.streamType,

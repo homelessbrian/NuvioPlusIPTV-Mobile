@@ -10,6 +10,7 @@ import com.nuvio.app.features.livetv.data.strings
 import com.nuvio.app.features.livetv.model.CatchupInfo
 import com.nuvio.app.features.livetv.model.EpgProgram
 import com.nuvio.app.features.livetv.model.LiveChannel
+import com.nuvio.stalker.StalkerStreamRef
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -108,15 +109,17 @@ data class ChannelSnapshot(
     val url: String,
     val headers: Map<String, String>,
     val catchup: CatchupInfo?,
+    val stalker: StalkerStreamRef? = null,
 ) {
     fun toChannel(): LiveChannel = LiveChannel(
         key = key, sourceId = sourceId, sourceName = "", name = name, tvgId = null, tvgName = null,
-        logo = logo, groupId = "", group = "", number = 0, url = url, headers = headers, catchup = catchup
+        logo = logo, groupId = "", group = "", number = 0, url = url, headers = headers, catchup = catchup, stalker = stalker
     )
 
     fun toJson(): JsonObject = buildJsonObject {
         put("key", key); put("sourceId", sourceId); put("name", name); put("logo", logo ?: "")
         put("url", url)
+        stalker?.let { put("stalker", it.toJson()) }
         put("headers", buildJsonObject { headers.forEach { (k, v) -> put(k, v) } })
         catchup?.let { c ->
             put("catchup", buildJsonObject {
@@ -126,7 +129,9 @@ data class ChannelSnapshot(
     }
 
     companion object {
-        fun of(c: LiveChannel) = ChannelSnapshot(c.key, c.sourceId, c.name, c.logo, c.url, c.headers, c.catchup)
+        fun of(c: LiveChannel) = ChannelSnapshot(c.key, c.sourceId, c.name, c.logo,
+            c.stalker?.let { com.nuvio.app.features.livetv.stalker.StalkerGateway.locator(c.sourceId, it) } ?: c.url,
+            if (c.stalker == null) c.headers else emptyMap(), c.catchup, c.stalker)
 
         fun fromJson(o: JsonObject): ChannelSnapshot {
             val headers = HashMap<String, String>()
@@ -139,7 +144,7 @@ data class ChannelSnapshot(
             }
             return ChannelSnapshot(
                 o.optString("key"), o.optString("sourceId"), o.optString("name"), o.optString("logo").ifBlank { null },
-                o.optString("url"), headers, c
+                o.optString("url"), headers, c, o.optJSONObject("stalker")?.let(StalkerStreamRef::fromJson)
             )
         }
     }
@@ -164,6 +169,9 @@ data class RecordingSchedule(
     /** Extra time before and after, from the settings when it was set (-1: the usual 2 and 5 min). */
     val preMs: Long = -1L,
     val postMs: Long = -1L,
+    /** Stable archive programme id, so a cold-start alarm never depends on an expiring URL. */
+    val stalkerProgramId: String? = null,
+    val stalkerSourceIdentity: String? = null,
 ) {
     val pre: Long get() = if (preMs >= 0) preMs else RecordingRules.PRE_MS
     val post: Long get() = if (postMs >= 0) postMs else RecordingRules.POST_MS
@@ -174,6 +182,8 @@ data class RecordingSchedule(
         put("startMs", startMs); put("stopMs", stopMs); put("useCatchup", useCatchup)
         put("seriesId", seriesId ?: ""); put("attempts", attempts); put("nextTryMs", nextTryMs)
         put("preMs", preMs); put("postMs", postMs)
+        stalkerProgramId?.let { put("stalkerProgramId", it) }
+        stalkerSourceIdentity?.let { put("stalkerSourceIdentity", it) }
     }
 
     companion object {
@@ -191,6 +201,8 @@ data class RecordingSchedule(
             nextTryMs = o.optLong("nextTryMs"),
             preMs = o.optLong("preMs", -1L),
             postMs = o.optLong("postMs", -1L),
+            stalkerProgramId = o.optString("stalkerProgramId").ifBlank { null },
+            stalkerSourceIdentity = o.optString("stalkerSourceIdentity").ifBlank { null },
         )
     }
 }

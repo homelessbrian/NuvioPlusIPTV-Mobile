@@ -273,6 +273,7 @@ internal fun MainAppContent(
         val focusManager = LocalFocusManager.current
         val uriHandler = LocalUriHandler.current
         val coroutineScope = rememberCoroutineScope()
+        var liveChannelOpenJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
         var selectedTab by rememberSaveable(initialTab) { mutableStateOf(initialTab) }
         var searchFocusRequestCount by remember { mutableStateOf(0) }
         val homeScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
@@ -714,6 +715,7 @@ internal fun MainAppContent(
     var resumePromptItem by remember { mutableStateOf<ContinueWatchingItem?>(null) }
     var lastExternalPlayerLaunch by remember { mutableStateOf<PlayerLaunch?>(null) }
     val activePlaybackProfileId = profileState.activeProfile?.profileIndex ?: ProfileRepository.activeProfileId
+    LaunchedEffect(activePlaybackProfileId) { liveChannelOpenJob?.cancel() }
     val launchExternalPlayer = rememberExternalPlayerLauncher { result ->
         if (result != null) {
             val fallbackSession = lastExternalPlayerLaunch?.externalPlaybackSession()
@@ -814,6 +816,10 @@ internal fun MainAppContent(
         }
 
         suspend fun openExternalPlayback(launch: PlayerLaunch): Boolean {
+            if (launch.stalkerMediaPolicy != null) {
+                NuvioToastController.show(com.nuvio.app.features.livetv.stalker.StalkerPlaybackSupport.ENGINE)
+                return false
+            }
             lastExternalPlayerLaunch = launch
 
             val bingeGroup = launch.bingeGroup
@@ -909,8 +915,16 @@ internal fun MainAppContent(
         }
 
         fun openLiveChannel(channel: LiveChannel, nowTitle: String?) {
-            val launchId = LiveTvPlayback.prepare(channel, activePlaybackProfileId, nowTitle)
-            navController.navigate(PlayerRoute(launchId = launchId, title = channel.name))
+            liveChannelOpenJob?.cancel()
+            liveChannelOpenJob = coroutineScope.launch {
+                try {
+                    val launchId = LiveTvPlayback.prepare(channel, activePlaybackProfileId, nowTitle)
+                    navController.navigate(PlayerRoute(launchId = launchId, title = channel.name))
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (failure: com.nuvio.app.features.livetv.stalker.StalkerRoutingException) { NuvioToastController.show(failure.message.orEmpty()) }
+                catch (failure: com.nuvio.app.features.livetv.stalker.StalkerRouteMismatchException) { NuvioToastController.show(failure.message.orEmpty()) }
+                catch (_: Exception) { NuvioToastController.show("The provider could not open this channel. Check the source and VPN settings.") }
+            }
         }
 
         fun openOnDemandLaunch(playerLaunch: PlayerLaunch) {
@@ -954,13 +968,19 @@ internal fun MainAppContent(
         }
 
         fun openLiveCatchup(channel: LiveChannel, program: EpgProgram) {
-            coroutineScope.launch {
-                val launchId = LiveTvPlayback.prepareCatchup(channel, program, activePlaybackProfileId)
-                if (launchId == null) {
-                    NuvioToastController.show(liveTvCatchupUnavailable)
-                    return@launch
-                }
-                navController.navigate(PlayerRoute(launchId = launchId, title = program.title))
+            liveChannelOpenJob?.cancel()
+            liveChannelOpenJob = coroutineScope.launch {
+                try {
+                    val launchId = LiveTvPlayback.prepareCatchup(channel, program, activePlaybackProfileId)
+                    if (launchId == null) {
+                        NuvioToastController.show(liveTvCatchupUnavailable)
+                        return@launch
+                    }
+                    navController.navigate(PlayerRoute(launchId = launchId, title = program.title))
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (failure: com.nuvio.app.features.livetv.stalker.StalkerRoutingException) { NuvioToastController.show(failure.message.orEmpty()) }
+                catch (failure: com.nuvio.app.features.livetv.stalker.StalkerRouteMismatchException) { NuvioToastController.show(failure.message.orEmpty()) }
+                catch (_: Exception) { NuvioToastController.show("The provider could not open this archive. Check the source and VPN settings.") }
             }
         }
 

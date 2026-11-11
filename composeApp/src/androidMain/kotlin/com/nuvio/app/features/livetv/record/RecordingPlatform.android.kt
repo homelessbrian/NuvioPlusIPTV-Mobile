@@ -81,13 +81,13 @@ internal actual object RecordingPlatform {
 
     actual fun playUrl(path: String): String = File(path).toURI().toString()
 
-    actual suspend fun download(url: String, headers: Map<String, String>, path: String, append: Boolean, shouldStop: () -> Boolean, onProgress: (Long) -> Unit) =
+    actual suspend fun download(url: String, headers: Map<String, String>, path: String, append: Boolean, shouldStop: () -> Boolean, mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy?, onProgress: (Long) -> Unit) =
         withContext(Dispatchers.IO) {
             val request = Request.Builder().url(url).apply { headers.forEach { (k, v) -> if (k.isNotBlank() && v.isNotBlank()) header(k, v) } }.get().build()
             val target = File(path)
             target.parentFile?.mkdirs()
             try {
-                http.newCall(request).execute().use { response ->
+                (mediaPolicy?.let(com.nuvio.app.features.livetv.stalker.StalkerMediaHttp::calls) ?: com.nuvio.vpn.android.VpnHttpClient.wrap(http)).newCall(request).execute().use { response ->
                     if (!response.isSuccessful) throw RecordingHttpError(response.code)
                     val body = response.body ?: throw IllegalStateException("Empty response")
                     body.byteStream().use { input ->
@@ -114,10 +114,10 @@ internal actual object RecordingPlatform {
             }
         }
 
-    actual suspend fun fetchText(url: String, headers: Map<String, String>): String = withContext(Dispatchers.IO) {
+    actual suspend fun fetchText(url: String, headers: Map<String, String>, mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy?): String = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).apply { headers.forEach { (k, v) -> if (k.isNotBlank() && v.isNotBlank()) header(k, v) } }.get().build()
         try {
-            http.newCall(request).execute().use { response ->
+            (mediaPolicy?.let(com.nuvio.app.features.livetv.stalker.StalkerMediaHttp::calls) ?: com.nuvio.vpn.android.VpnHttpClient.wrap(http)).newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw RecordingHttpError(response.code)
                 response.body?.string() ?: throw IllegalStateException("Empty response")
             }
@@ -130,10 +130,10 @@ internal actual object RecordingPlatform {
         }
     }
 
-    actual suspend fun fetchTextAt(url: String, headers: Map<String, String>): Pair<String, String> = withContext(Dispatchers.IO) {
+    actual suspend fun fetchTextAt(url: String, headers: Map<String, String>, mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy?): Pair<String, String> = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).apply { headers.forEach { (k, v) -> if (k.isNotBlank() && v.isNotBlank()) header(k, v) } }.get().build()
         try {
-            http.newCall(request).execute().use { response ->
+            (mediaPolicy?.let(com.nuvio.app.features.livetv.stalker.StalkerMediaHttp::calls) ?: com.nuvio.vpn.android.VpnHttpClient.wrap(http)).newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw RecordingHttpError(response.code)
                 val body = response.body ?: throw IllegalStateException("Empty response")
                 body.string() to response.request.url.toString()
@@ -151,7 +151,7 @@ internal actual object RecordingPlatform {
         is UnknownHostException -> "Couldn't find the provider's server"
         is SocketTimeoutException -> "The provider stopped sending (timeout)"
         is java.net.ConnectException -> "Couldn't connect to the provider's server"
-        else -> e.message ?: e.javaClass.simpleName
+        else -> "The recording connection could not be opened"
     }
 
     actual fun keepAlive(active: Boolean) {

@@ -6,6 +6,9 @@ import com.nuvio.app.features.livetv.data.parseObject
 import com.nuvio.app.features.livetv.model.LiveChannel
 import com.nuvio.app.features.livetv.model.LiveTvClock
 import com.nuvio.app.features.livetv.model.LiveTvSettings
+import com.nuvio.app.features.livetv.stalker.StalkerGateway
+import com.nuvio.app.features.livetv.player.LivePlayRequest
+import com.nuvio.stalker.StalkerStreamRef
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
@@ -101,6 +104,8 @@ internal object LiveTvRecorder {
          * gets cut off carries on from there instead of stopping with part of the show.
          */
         resumeFrom: ((doneMs: Long) -> String?)? = null,
+        /** Stable original provider reference; each connection gets a new create_link result. */
+        portalRef: StalkerStreamRef? = channel.stalker,
     ): LiveTvRecording {
         ensureLoaded()
         if (!finite) activeFor(channel.key)?.let { return it }
@@ -144,7 +149,11 @@ internal object LiveTvRecorder {
         if (finite) synchronized(lock) { catchupSources[id] = channel.sourceId }
         val job = scope.launch {
             try {
-                record(rec, url, channel.headers, finite, fallbacks, onFinished, resumeFrom)
+                val refresh: (suspend () -> LivePlayRequest)? = portalRef?.let { ref -> {
+                    val resolved = StalkerGateway.resolve(channel.sourceId, ref)
+                    LivePlayRequest(resolved.url, resolved.headers, resolved.streamType, resolved.mediaPolicy)
+                } }
+                record(rec, url, channel.headers, finite, fallbacks, onFinished, resumeFrom, refresh)
             } finally {
                 synchronized(lock) { catchupSources.remove(id) }
             }
@@ -207,26 +216,31 @@ internal object LiveTvRecorder {
         fallbacks: List<String>,
         onFinished: (LiveTvRecording) -> Unit,
         resumeFrom: ((doneMs: Long) -> String?)?,
+        refresh: (suspend () -> LivePlayRequest)?,
     ) {
         val links = ArrayDeque((listOf(firstUrl) + fallbacks).distinct())
         var url = links.removeFirst()
         var rec = start
         var problem: String? = null
         val path = filePath(rec)
-        val hdrs = withUserAgent(headers)
+        var hdrs = withUserAgent(if (refresh == null) headers else emptyMap())
+        var mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null
+        var resolvedStreamType: String? = null
         fun looksHls(link: String) = link.substringBefore('?').endsWith(".m3u8", ignoreCase = true)
         // What's in the file so far is thrown away when the next download starts (a catch-up HLS
         // replay that sent nothing but a cut-off piece, before switching to its TS link).
         var discardFile = false
         try {
-            val isHls = looksHls(url)
+            refresh?.invoke()?.let { url = it.url; hdrs = withUserAgent(it.headers); mediaPolicy = it.mediaPolicy; resolvedStreamType = it.streamType }
+            check(!StalkerGateway.isLocator(url)) { "The provider link could not be resolved." }
+            val isHls = looksHls(url) || resolvedStreamType == "hls"
             var hls = isHls
             // Catch-up saved as HLS: the plain (TS) form to switch to if the HLS one sends nothing,
             // as the player does when watching (some providers' HLS replays never deliver).
             val tsLink = if (finite && isHls) links.firstOrNull { !looksHls(it) && it.contains("/timeshift/") } else null
             if (hls) {
                 problem = try {
-                    recordHls(rec, url, hdrs, finite, canGiveUp = tsLink != null) { secs, size -> rec = progress(rec, secs, size) }
+                    recordHls(rec, url, hdrs, finite, canGiveUp = tsLink != null, refresh = refresh, initialMediaPolicy = mediaPolicy) { secs, size -> rec = progress(rec, secs, size) }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -248,7 +262,7 @@ internal object LiveTvRecorder {
                 // if nothing was saved, try the same link as .ts once.
                 val plain = url.substringBefore('?').removeSuffix(".m3u8").takeIf { it != url.substringBefore('?') }
                     ?.let { it + ".ts" + url.substringAfter('?', "").let { q -> if (q.isEmpty()) "" else "?$q" } }
-                if (!finite && plain != null && RecordingPlatform.dirSize(rec.dir) <= 2_048L && !stopping(rec.id) && LiveTvClock.nowMs() < currentStop(rec.id)) {
+                if (refresh == null && !finite && plain != null && RecordingPlatform.dirSize(rec.dir) <= 2_048L && !stopping(rec.id) && LiveTvClock.nowMs() < currentStop(rec.id)) {
                     url = plain
                     hls = false
                     problem = null
@@ -270,6 +284,7 @@ internal object LiveTvRecorder {
                         } else {
                             // A live recording reconnects until its end.
                             delay(3_000)
+                            refresh?.invoke()?.let { url = it.url; hdrs = withUserAgent(it.headers); mediaPolicy = it.mediaPolicy; resolvedStreamType = it.streamType }
                         }
                     }
                     first = false
@@ -280,7 +295,7 @@ internal object LiveTvRecorder {
                         var lastSave = 0L
                         val before = if (append) RecordingPlatform.fileSize(path) else 0L
                         var got = 0L
-                        RecordingPlatform.download(url, hdrs, path, append, shouldStop = { stopping(rec.id) || LiveTvClock.nowMs() >= currentStop(rec.id) }) { total ->
+                        RecordingPlatform.download(url, hdrs, path, append, shouldStop = { stopping(rec.id) || LiveTvClock.nowMs() >= currentStop(rec.id) }, mediaPolicy = mediaPolicy) { total ->
                             got = total - before
                             val now = LiveTvClock.nowMs()
                             if (now - lastSave > 5_000) {
@@ -311,7 +326,7 @@ internal object LiveTvRecorder {
                         if (finite && links.isNotEmpty()) url = links.removeFirst()
                     } catch (e: Exception) {
                         recordedMs += LiveTvClock.nowMs() - segmentStart
-                        problem = "The connection dropped (${e.message ?: "unknown error"}); it reconnected where it could"
+                        problem = if (refresh != null) "The provider stream disconnected; it reconnected where it could" else "The connection dropped (${e.message ?: "unknown error"}); it reconnected where it could"
                         rec = noteProblem(rec, problem)
                     }
                 }
@@ -320,7 +335,7 @@ internal object LiveTvRecorder {
         } catch (e: CancellationException) {
             // Stopped by hand: finish below.
         } catch (e: Exception) {
-            problem = e.message ?: "unknown error"
+            problem = if (refresh != null) "The Stalker stream could not be recorded. Check the source and VPN settings." else e.message ?: "unknown error"
         } finally {
             finish(rec, path, problem, onFinished)
         }
@@ -395,16 +410,21 @@ internal object LiveTvRecorder {
         headers: Map<String, String>,
         finite: Boolean,
         canGiveUp: Boolean = false,
+        refresh: (suspend () -> LivePlayRequest)? = null,
+        initialMediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null,
         onProgress: (Double, Long) -> Unit,
     ): String? {
         val began = LiveTvClock.nowMs()
         var total = 0.0
         fun nothingYet() = canGiveUp && total <= 0.0 && LiveTvClock.nowMs() - began > HLS_GIVE_UP_MS
+        var hdrs = headers
+        var mediaPolicy = initialMediaPolicy
+        var refreshNeeded = false
         var mediaUrl = url
-        var text = RecordingPlatform.fetchTextAt(mediaUrl, headers).let { (t, at) -> mediaUrl = at; t }
+        var text = RecordingPlatform.fetchTextAt(mediaUrl, hdrs, mediaPolicy).let { (t, at) -> mediaUrl = at; t }
         if (STREAM_INF.containsMatchIn(text)) {
             mediaUrl = resolve(mediaUrl, pickVariant(text) ?: return "This channel's stream couldn't be read")
-            text = RecordingPlatform.fetchTextAt(mediaUrl, headers).let { (t, at) -> mediaUrl = at; t }
+            text = RecordingPlatform.fetchTextAt(mediaUrl, hdrs, mediaPolicy).let { (t, at) -> mediaUrl = at; t }
         }
         if (text.contains("#EXT-X-KEY") && !text.contains("METHOD=NONE")) return "This channel is encrypted and can't be recorded"
         var path = filePath(rec)
@@ -427,7 +447,7 @@ internal object LiveTvRecorder {
                     path = rec.dir + "/recording.mp4"
                     val withMp4 = (_recordings.value.firstOrNull { it.id == rec.id } ?: rec).copy(fileName = "recording.mp4")
                     save(withMp4); update(withMp4)
-                    runCatching { RecordingPlatform.download(resolve(mediaUrl, m), headers, path, append = false, shouldStop = { false }) {} }
+                    runCatching { RecordingPlatform.download(resolve(mediaUrl, m), hdrs, path, append = false, shouldStop = { false }, mediaPolicy = mediaPolicy) {} }
                 }
                 mapDone = true
             }
@@ -445,14 +465,14 @@ internal object LiveTvRecorder {
                                     // A stop (or an HLS replay that's sent nothing) cuts a piece part way
                                     // instead of waiting for it: some providers send a whole show as one
                                     // long piece, at viewing speed. What came in of it is kept.
-                                    RecordingPlatform.download(resolve(mediaUrl, l), headers, path, append = sizeBefore > 0, shouldStop = { stopping(rec.id) || nothingYet() }) {}
+                                    RecordingPlatform.download(resolve(mediaUrl, l), hdrs, path, append = sizeBefore > 0, shouldStop = { stopping(rec.id) || nothingYet() }, mediaPolicy = mediaPolicy) {}
                                     null
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: RecordingHttpError) {
                                     "The provider answered HTTP ${e.code} for the video pieces"
                                 } catch (e: Exception) {
-                                    e.message ?: "unknown error"
+                                    if (refresh != null) "The provider stream disconnected" else e.message ?: "unknown error"
                                 }
                                 // A catch-up show's list has every piece at once and isn't read again:
                                 // a piece that failed before any of it was saved gets a few more tries.
@@ -468,10 +488,11 @@ internal object LiveTvRecorder {
                                     shownAt = LiveTvClock.nowMs()
                                     onProgress(total, RecordingPlatform.dirSize(rec.dir))
                                 }
-                            } else if (total <= 0.0) {
+                            } else if (total <= 0.0 || refresh != null) {
                                 problem = failure
                                 noteProblem(rec, failure) // kept even if a stop cancels this loop
                             }
+                            if (failure != null && refresh != null) refreshNeeded = true
                         }
                         seq++
                     }
@@ -480,15 +501,30 @@ internal object LiveTvRecorder {
             if (nothingYet()) return HLS_SENT_NOTHING
             onProgress(total, RecordingPlatform.dirSize(rec.dir))
             if (!ensureSpace(protect = rec.id)) return "Storage ran out, so it stopped early"
+            if (finite && refresh != null && refreshNeeded)
+                return "The provider archive was interrupted; the saved recording is incomplete"
             // A finished playlist (a catch-up show): everything's saved.
             if (finite && text.contains("#EXT-X-ENDLIST")) break
             delay((target * 1000L / 2).coerceIn(1_000L, 6_000L))
             text = try {
-                RecordingPlatform.fetchTextAt(mediaUrl, headers).let { (t, at) -> mediaUrl = at; t }
+                if (refreshNeeded && refresh != null) {
+                    val renewed = refresh()
+                    mediaUrl = renewed.url; hdrs = withUserAgent(renewed.headers); mediaPolicy = renewed.mediaPolicy
+                    var renewedText = RecordingPlatform.fetchTextAt(mediaUrl, hdrs, mediaPolicy).let { (t, at) -> mediaUrl = at; t }
+                    if (STREAM_INF.containsMatchIn(renewedText)) {
+                        mediaUrl = resolve(mediaUrl, pickVariant(renewedText) ?: return "This channel's stream couldn't be read")
+                        renewedText = RecordingPlatform.fetchTextAt(mediaUrl, hdrs, mediaPolicy).let { (t, at) -> mediaUrl = at; t }
+                    }
+                    if (renewedText.contains("#EXT-X-KEY") && !renewedText.contains("METHOD=NONE"))
+                        return "This channel is encrypted and can't be recorded"
+                    refreshNeeded = false
+                    renewedText
+                } else RecordingPlatform.fetchTextAt(mediaUrl, hdrs, mediaPolicy).let { (t, at) -> mediaUrl = at; t }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                problem = "The connection dropped (${e.message ?: "unknown error"}); it reconnected where it could"
+                problem = if (refresh != null) "The provider stream disconnected; it reconnected where it could" else "The connection dropped (${e.message ?: "unknown error"}); it reconnected where it could"
+                if (refresh != null) refreshNeeded = true
                 // A live channel's list moves on while it's away, so it starts again at the newest
                 // pieces. A catch-up show's list is the same one: carry on from the last piece.
                 if (!finite) lastSeq = -1L

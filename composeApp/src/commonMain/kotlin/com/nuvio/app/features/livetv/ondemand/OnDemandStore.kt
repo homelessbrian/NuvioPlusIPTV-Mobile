@@ -17,7 +17,7 @@ internal expect object OnDemandStore {
      * are new or changed are written, titles the provider no longer lists are removed. Returns
      * how many titles the provider listed.
      */
-    fun replace(playlistId: String, kind: VodKind, categories: List<Pair<String, String>>, items: Sequence<VodItem>): Int
+    fun replace(playlistId: String, kind: VodKind, categories: List<Pair<String, String>>, items: Sequence<VodItem>, publication: ((() -> Unit) -> Unit)? = null): Int
 
     /** Drops every provider not in [keepPlaylistIds]; returns the ones it dropped. */
     fun removeExcept(keepPlaylistIds: Set<String>): Set<String>

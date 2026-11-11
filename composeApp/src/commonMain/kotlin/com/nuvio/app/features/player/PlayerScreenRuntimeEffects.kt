@@ -199,6 +199,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             if (activeTorrentInfoHash == infoHash && activeTorrentFileIdx == requestedFileIdx) {
                 activeSourceAudioUrl = null
                 activeSourceHeaders = emptyMap()
+                activeStalkerMediaPolicy = null
                 activeSourceResponseHeaders = emptyMap()
                 p2pResolvedSourceUrl = localUrl
             }
@@ -903,8 +904,15 @@ internal fun PlayerScreenRuntime.removeFailedStreamFromCache() {
 }
 
 internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message: String?): Boolean {
+    if (com.nuvio.app.features.livetv.stalker.StalkerPlaybackSupport.isRestriction(message)) {
+        errorMessage = message
+        controlsVisible = !playerControlsLocked
+        return true
+    }
     if (ServerStreams.isServerSourceId(activeProviderAddonId)) return retryServerSourceAfterError(message)
     if (LiveTvPlayback.owns(activeProviderAddonId)) return retryLiveTvSourceAfterError(message)
+    if (activeProviderAddonId == com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.PROVIDER_ID)
+        return retryOnDemandPortalAfterError(message)
     val failedUrl = activeSourceUrl
     if (!failedUrl.hasLikelyExpiringPlaybackCredentials()) return false
     if (credentialRefreshJob?.isActive == true) return true
@@ -978,6 +986,7 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
             activeSourceUrl = refreshedUrl
             activeSourceAudioUrl = null
             activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
+            activeStalkerMediaPolicy = null
             activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
             activeStreamType = stream.streamType
             activeStreamTitle = stream.streamLabel
@@ -1006,33 +1015,67 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
  * [LiveTvPlayback.fallbackFor]). Each link is tried once; when nothing is left the error shows,
  * in plain words.
  */
+private fun PlayerScreenRuntime.retryOnDemandPortalAfterError(message: String?): Boolean {
+    if (credentialRefreshJob?.isActive == true) return true
+    val failedUrl = activeSourceUrl
+    val position = playbackSnapshot.positionMs.coerceAtLeast(0)
+    credentialRefreshJob = scope.launch {
+        try {
+            val request = com.nuvio.app.features.livetv.ondemand.OnDemandPlayback.fallbackFor(failedUrl)
+            if (request == null) {
+                errorMessage = "This title could not be played."
+                controlsVisible = !playerControlsLocked
+                return@launch
+            }
+            activeSourceUrl = request.url
+            activeSourceHeaders = sanitizePlaybackHeaders(request.headers)
+            activeStalkerMediaPolicy = request.mediaPolicy
+            activeStreamType = request.streamType
+            activeStreamFilename = sourceFilenameFromUrl(request.url)
+            activeInitialPositionMs = position
+            activeInitialProgressFraction = null
+            errorMessage = null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { errorMessage = "The provider could not renew this stream. Check the source and VPN settings." }
+    }
+    return true
+}
+
 private fun PlayerScreenRuntime.retryLiveTvSourceAfterError(message: String?): Boolean {
     if (credentialRefreshJob?.isActive == true) return true
     val failedUrl = activeSourceUrl
-    val fallback = LiveTvPlayback.fallbackFor(failedUrl)
-    if (fallback == null) {
-        errorMessage = LiveTvPlayback.describeError(message, failedUrl)
-        controlsVisible = !playerControlsLocked
-        return true
-    }
-    errorMessage = null
+    val resumePosition = if (LiveTvPlayback.isPortalReplay(failedUrl)) playbackSnapshot.positionMs.coerceAtLeast(0) else 0L
     credentialRefreshJob = scope.launch {
-        fallback.switchedFrom?.let { from ->
-            NuvioToastController.show(getString(Res.string.livetv_switched_to_backup, from.name, fallback.channel.name))
+        try {
+            val fallback = LiveTvPlayback.fallbackFor(failedUrl)
+            if (fallback == null) {
+                errorMessage = LiveTvPlayback.describeError(message, failedUrl)
+                controlsVisible = !playerControlsLocked
+                return@launch
+            }
+            errorMessage = null
+            fallback.switchedFrom?.let { from ->
+                NuvioToastController.show(getString(Res.string.livetv_switched_to_backup, from.name, fallback.channel.name))
+            }
+            activeSourceUrl = fallback.request.url
+            activeSourceAudioUrl = null
+            activeSourceHeaders = sanitizePlaybackHeaders(fallback.request.headers)
+            activeStalkerMediaPolicy = fallback.request.mediaPolicy
+            activeStreamType = fallback.request.streamType
+            activeStreamFilename = sourceFilenameFromUrl(fallback.request.url)
+            if (fallback.switchedFrom != null) {
+                activeStreamTitle = fallback.channel.name
+                activeProviderName = fallback.channel.sourceName
+                activeVideoId = fallback.channel.key
+            }
+            activeInitialPositionMs = resumePosition
+            activeInitialProgressFraction = null
+            controlsVisible = true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            errorMessage = "The provider could not renew this stream. Check the source and VPN settings."
+            controlsVisible = !playerControlsLocked
         }
-        activeSourceUrl = fallback.request.url
-        activeSourceAudioUrl = null
-        activeSourceHeaders = sanitizePlaybackHeaders(fallback.request.headers)
-        activeStreamType = fallback.request.streamType
-        activeStreamFilename = sourceFilenameFromUrl(fallback.request.url)
-        if (fallback.switchedFrom != null) {
-            activeStreamTitle = fallback.channel.name
-            activeProviderName = fallback.channel.sourceName
-            activeVideoId = fallback.channel.key
-        }
-        activeInitialPositionMs = 0L
-        activeInitialProgressFraction = null
-        controlsVisible = true
     }
     return true
 }
@@ -1054,6 +1097,7 @@ private fun PlayerScreenRuntime.retryServerSourceAfterError(message: String?): B
         externalSubtitles = playback.subtitles
         activeSourceUrl = playback.url
         activeSourceHeaders = playback.headers
+        activeStalkerMediaPolicy = null
         activeInitialPositionMs = savedPositionMs
         activeInitialProgressFraction = null
     }

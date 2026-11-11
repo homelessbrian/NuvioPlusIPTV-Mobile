@@ -51,6 +51,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -163,14 +166,21 @@ fun LiveTvGuideScreen(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
 
-    var programs by remember { mutableStateOf<Map<String, List<EpgProgram>>>(emptyMap()) }
+    var cachedPrograms by remember { mutableStateOf<Map<String, List<EpgProgram>>>(emptyMap()) }
+    var archivePrograms by remember { mutableStateOf<Map<String, List<EpgProgram>>>(emptyMap()) }
+    val programs = remember(cachedPrograms, archivePrograms) {
+        if (archivePrograms.isEmpty()) cachedPrograms else cachedPrograms.toMutableMap().apply {
+            archivePrograms.forEach { (key, rows) -> this[key] = mergeGuideArchiveRows(this[key].orEmpty(), rows) }
+        }
+    }
     LaunchedEffect(channels, generation, gridStart) {
+        archivePrograms = emptyMap()
         val keys = channels.map { it.key }
         // The visible group in chunks, so a big group fills in as it's read.
         val out = HashMap<String, List<EpgProgram>>()
         keys.chunked(150).forEach { part ->
             out += LiveTvRepository.programsIn(part, gridStart, gridEnd)
-            programs = HashMap(out)
+            cachedPrograms = HashMap(out)
         }
     }
     var detail by remember { mutableStateOf<Pair<LiveChannel, EpgProgram>?>(null) }
@@ -185,6 +195,40 @@ fun LiveTvGuideScreen(
     // Jump to now only on first open; coming back from a channel keeps the guide where it was.
     var jumpedToNow by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (!jumpedToNow) { jumpedToNow = true; jumpToNow() } }
+
+    val channelsByKey = remember(channels) { channels.associateBy { it.key } }
+    LaunchedEffect(channels, gridStart, generation, now / HOUR_MS) {
+        snapshotFlow {
+            val rows = listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }
+            val offset = (hScroll.value / pxPerMs()).toLong()
+            val width = (listState.layoutInfo.viewportSize.width - with(density) { ChannelColumnWidth.toPx() }).coerceAtLeast(0f)
+            Triple(rows, (gridStart + offset) to minOf(gridEnd, gridStart + offset + (width / pxPerMs()).toLong()),
+                hScroll.isScrollInProgress || listState.isScrollInProgress || !jumpedToNow)
+        }.distinctUntilChanged().collectLatest { (keys, window, moving) ->
+            if (moving || window.first >= minOf(window.second, LiveTvClock.nowMs())) return@collectLatest
+            val visible = keys.mapNotNull { channelsByKey[it] }
+            // Render the existing cache first. Only missing historical data of on-screen rows uses the portal API.
+            val cached = LiveTvRepository.programsIn(keys, window.first, window.second)
+            for (channel in visible.filter { it.stalker != null }) {
+                val rows = cached[channel.key].orEmpty()
+                val current = LiveTvRepository.channels.value.firstOrNull { it.key == channel.key }
+                if (rows.isNotEmpty() && current?.stalker?.sourceIdentity == channel.stalker?.sourceIdentity && LiveTvRepository.isCurrentStalkerChannel(channel)) {
+                    archivePrograms = archivePrograms + (channel.key to mergeGuideArchiveRows(archivePrograms[channel.key].orEmpty(), rows))
+                }
+            }
+            val needed = archiveChannelsForViewport(visible, window.first, window.second, LiveTvClock.nowMs(), cached)
+            for (channel in needed) {
+                val history = LiveTvRepository.channelSchedule(channel.key, window.first, window.second)
+                val current = LiveTvRepository.channels.value.firstOrNull { it.key == channel.key }
+                if (current?.stalker?.sourceIdentity == channel.stalker?.sourceIdentity && LiveTvRepository.isCurrentStalkerChannel(channel)) {
+                    archivePrograms = archivePrograms + (channel.key to mergeGuideArchiveRows(archivePrograms[channel.key].orEmpty(), history))
+                    detail?.takeIf { it.first.key == channel.key }?.let { open ->
+                        history.firstOrNull { it.startMs == open.second.startMs }?.let { detail = channel to it }
+                    }
+                }
+            }
+        }
+    }
 
     Column(modifier = modifier.fillMaxSize().background(tokens.colors.background).statusBarsPadding().liveTvSideInsets()) {
         NuvioScreenHeader(

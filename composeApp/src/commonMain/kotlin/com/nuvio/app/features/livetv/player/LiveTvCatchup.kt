@@ -39,7 +39,9 @@ internal object LiveTvCatchup {
 
     /** Whether [program] on [channel] can be replayed at [now] (it has started and is still in the archive). */
     fun isReplayable(channel: LiveChannel, program: EpgProgram, now: Long): Boolean =
-        CatchupUrlBuilder.isAvailable(channel.catchup, program.startMs, now)
+        CatchupUrlBuilder.isAvailable(channel.catchup, program.startMs, now) &&
+            (channel.stalker == null || (program.stalkerArchiveAvailable && !program.stalkerProgramId.isNullOrBlank() &&
+                program.stalkerSourceIdentity != null && program.stalkerSourceIdentity == channel.stalker.sourceIdentity))
 
     /** A show on air now that can be restarted from its beginning. */
     fun canWatchFromStart(channel: LiveChannel, program: EpgProgram, now: Long): Boolean =

@@ -13,11 +13,11 @@ internal actual object RecordingPlatform {
     actual fun fileSize(path: String): Long = 0L
     actual fun usableSpace(): Long = 0L
     actual fun playUrl(path: String): String = path
-    actual suspend fun download(url: String, headers: Map<String, String>, path: String, append: Boolean, shouldStop: () -> Boolean, onProgress: (Long) -> Unit) {
+    actual suspend fun download(url: String, headers: Map<String, String>, path: String, append: Boolean, shouldStop: () -> Boolean, mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy?, onProgress: (Long) -> Unit) {
         error("Recording isn't available on this platform yet")
     }
-    actual suspend fun fetchText(url: String, headers: Map<String, String>): String = error("Recording isn't available on this platform yet")
-    actual suspend fun fetchTextAt(url: String, headers: Map<String, String>): Pair<String, String> = error("Recording isn't available on this platform yet")
+    actual suspend fun fetchText(url: String, headers: Map<String, String>, mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy?): String = error("Recording isn't available on this platform yet")
+    actual suspend fun fetchTextAt(url: String, headers: Map<String, String>, mediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy?): Pair<String, String> = error("Recording isn't available on this platform yet")
     actual fun keepAlive(active: Boolean) {}
     actual fun scheduleAlarm(id: String, atMs: Long) {}
     actual fun cancelAlarm(id: String) {}

@@ -40,6 +40,10 @@ internal expect object LiveTvFiles {
      */
     fun writeText(dir: String, name: String, text: String): Boolean
 
+    /** Stages streamed text, then atomically publishes it after [publish] validates its source. */
+    suspend fun writeTextStream(dir: String, name: String,
+        publish: (() -> Unit) -> Unit = { it() }, producer: suspend ((String) -> Unit) -> Unit): Boolean
+
     /**
      * Reads the stored file as text, in pieces of a few hundred KB (large guides are 50–200 MB,
      * so they're never held whole). Null when the file doesn't exist.
