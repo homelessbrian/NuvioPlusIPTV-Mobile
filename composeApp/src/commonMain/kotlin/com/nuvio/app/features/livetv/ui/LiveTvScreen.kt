@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.CalendarViewDay
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Movie
@@ -102,6 +103,7 @@ import com.nuvio.app.features.livetv.data.LiveTvRepository
 import com.nuvio.app.features.livetv.data.NowNext
 import com.nuvio.app.features.livetv.model.ChannelGroup
 import com.nuvio.app.features.livetv.model.LiveChannel
+import com.nuvio.app.features.livetv.multiview.isMultiviewSupported
 import com.nuvio.app.features.livetv.model.EpgProgram
 import com.nuvio.app.features.livetv.model.LiveTvClock
 import com.nuvio.app.features.livetv.ondemand.OnDemandRepository
@@ -163,6 +165,7 @@ fun LiveTvScreen(
     /** Opens Manage (reorder and show or hide groups and channels). */
     onOpenManage: () -> Unit = {},
     onOpenCalendar: () -> Unit = {},
+    onOpenMultiview: () -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
     // Restore the open groups and the scroll position when coming back from the player.
@@ -278,6 +281,7 @@ fun LiveTvScreen(
                     val headerActions = buildList {
                         add(HeaderAction(Icons.Filled.Search, stringResource(Res.string.livetv_search_hint), tokens.colors.textPrimary, short = stringResource(Res.string.livetv_header_search), showClose = searching) { searching = !searching; if (!searching) query = "" })
                         add(HeaderAction(Icons.Filled.CalendarViewDay, stringResource(Res.string.livetv_guide), tokens.colors.textPrimary, short = stringResource(Res.string.livetv_header_guide)) { onOpenGuide() })
+                        if (isMultiviewSupported) add(HeaderAction(Icons.Filled.GridView, "Multiview", tokens.colors.textPrimary, short = "Multiview") { onOpenMultiview() })
                         add(HeaderAction(Icons.Filled.CalendarMonth, stringResource(Res.string.livetv_calendar), tokens.colors.textPrimary, short = stringResource(Res.string.livetv_calendar)) { onOpenCalendar() })
                         if (showOnDemand) add(HeaderAction(Icons.Filled.Movie, stringResource(Res.string.livetv_on_demand), tokens.colors.textPrimary, short = stringResource(Res.string.livetv_on_demand)) { onOpenOnDemand() })
                         if (sportsOn) add(HeaderAction(Icons.Filled.SportsSoccer, stringResource(Res.string.livetv_sports), tokens.colors.textPrimary, short = stringResource(Res.string.livetv_sports)) { onOpenSports() })

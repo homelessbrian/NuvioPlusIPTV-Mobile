@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +61,8 @@ import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.livetv.data.LiveTvRepository
 import com.nuvio.app.features.livetv.model.EpgProgram
 import com.nuvio.app.features.livetv.model.LiveChannel
+import com.nuvio.app.features.livetv.multiview.isMultiviewSupported
+import com.nuvio.app.features.livetv.sports.SportsWatchSelection
 import com.nuvio.app.features.livetv.model.LiveTvClock
 import com.nuvio.app.features.livetv.sports.ChannelMatch
 import com.nuvio.app.features.livetv.sports.GameState
@@ -105,6 +108,7 @@ data class SportsActions(
     val onPlayCatchup: (LiveChannel, EpgProgram) -> Unit,
     val onOpenGame: (SportsEvent) -> Unit,
     val onOpenLeague: (League) -> Unit,
+    val onOpenMultiview: () -> Unit = {},
 )
 
 private enum class SportsTab { MINE, ALL, SEARCH, FOLLOWING, NETWORKS }
@@ -142,6 +146,9 @@ fun SportsScreen(
     }
     var tabIndex by rememberSaveable { mutableIntStateOf(if (follows.isEmpty) SportsTab.ALL.ordinal else SportsTab.MINE.ordinal) }
     val tab = SportsTab.entries[tabIndex]
+    androidx.compose.runtime.SideEffect {
+        if (tab == SportsTab.MINE) SportsWatchSelection.select(mine = true)
+    }
     var showSettings by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize().background(tokens.colors.background).statusBarsPadding().liveTvSideInsets()) {
@@ -152,6 +159,11 @@ fun SportsScreen(
             modifier = Modifier.padding(horizontal = NuvioTokens.Space.s8),
             actions = {
                 if (loading || matching) NuvioLoadingIndicator(size = NuvioTokens.Space.s16)
+                if (isMultiviewSupported) {
+                    IconButton(onClick = actions.onOpenMultiview) {
+                        Icon(Icons.Filled.GridView, contentDescription = "Open Multiview", tint = tokens.colors.textPrimary)
+                    }
+                }
                 IconButton(onClick = { repo.refreshNow() }) {
                     Icon(Icons.Filled.Refresh, contentDescription = null, tint = tokens.colors.textPrimary)
                 }
@@ -306,6 +318,7 @@ private fun AllEventsTab(
     val hasChannels = LiveTvRepository.channels.collectAsStateWithLifecycle().value.isNotEmpty()
     val filterToChannels = settings.onlyOnMyChannels && hasChannels && matches.isNotEmpty()
     val query = SportsDayQuery(day, sportFilter, dayStart, dayEnd, active, filterToChannels, follows)
+    androidx.compose.runtime.SideEffect { SportsWatchSelection.select(mine = false, day = day, sport = sportFilter) }
     val inputs = remember(events, follows, settings, matches, active, filterToChannels, dayStart, dayEnd, query, now / 60_000L) {
         SportsDayInputs(query, events, settings, matches, now)
     }

@@ -121,7 +121,12 @@ class LiveTvBackupTest {
     @Test
     fun exportMatchesTvFormatAfterRoundTrip() {
         val store = TestStore()
-        val incoming = tvExport()
+        val configuredEpg = epg.copy(shiftMinutes = 17)
+        val inheritedEpg = epg.copy(id = "epg-inherited", name = "Inherited guide shift")
+        val incoming = buildJsonObject {
+            tvExport().forEach { (key, value) -> put(key, value) }
+            put(LiveTvKeys.epgs, entry("str", JsonPrimitive(LiveTvCodec.encodeEpgs(listOf(configuredEpg, inheritedEpg)))))
+        }
 
         val changed = store.importFromSync(incoming)
         assertTrue(changed.isEmpty(), "nothing was here before, so nothing 'changed': $changed")
@@ -136,14 +141,18 @@ class LiveTvBackupTest {
         assertTrue(LiveTvKeys.SYNC_EXCLUDED.contains("recent_p17"))
         assertFalse(LiveTvKeys.SYNC_EXCLUDED.contains("favorites_p2"))
 
-        // Every synced key came through with the same type tag and value.
+        // The legacy global guide offset migrates to each unset source, resetting both old
+        // global offset keys to zero (including the previously absent catch-up key).
+        // Everything else still has to preserve its complete type tag and value.
         val expected = buildJsonObject {
             incoming.forEach { (k, v) -> if (k !in LiveTvKeys.SYNC_EXCLUDED) put(k, v) }
+            put(LiveTvKeys.epgOffset, entry("i", JsonPrimitive(0)))
+            put(LiveTvKeys.catchupShift, entry("i", JsonPrimitive(0)))
         }
         assertEquals(expected.keys, exported.keys)
         for (k in expected.keys) {
-            if (k == LiveTvKeys.playlists || k == LiveTvKeys.epgs) continue
             assertEquals(expected[k]!!.jsonObject["t"], exported[k]!!.jsonObject["t"], "type of $k")
+            if (k == LiveTvKeys.playlists || k == LiveTvKeys.epgs) continue
             val a = expected.value(k)
             val b = exported.value(k)
             if (a is JsonArray) assertEquals(a.map { it.jsonPrimitive.content }.toSet(), (b as JsonArray).map { it.jsonPrimitive.content }.toSet(), "set $k")
@@ -156,6 +165,10 @@ class LiveTvBackupTest {
 
         // Playlists and guides: the per-device download status is scrubbed on export...
         val exportedPlaylists = LiveTvCodec.decodePlaylists(exported.value(LiveTvKeys.playlists).jsonPrimitive.content)
+        assertEquals(listOf(m3u, xtream).map {
+            it.copy(lastUpdatedMs = 0, lastError = null, channelCount = 0, serverTimezone = "", catchupNoHlsSince = 0L,
+                guideShiftMinutes = -60)
+        }, exportedPlaylists, "The legacy guide offset is preserved on every playlist; only device status is scrubbed")
         assertEquals(2, exportedPlaylists.size)
         exportedPlaylists.forEach { p ->
             assertEquals(0L, p.lastUpdatedMs); assertNull(p.lastError); assertEquals(0, p.channelCount)
@@ -168,7 +181,10 @@ class LiveTvBackupTest {
         assertEquals("m3u8", xc.streamFormat)
         assertTrue(xc.importVod)
         val exportedEpgs = LiveTvCodec.decodeEpgs(exported.value(LiveTvKeys.epgs).jsonPrimitive.content)
-        assertEquals(listOf(epg.copy(lastUpdatedMs = 0, lastError = null, programCount = 0)), exportedEpgs)
+        assertEquals(listOf(
+            configuredEpg.copy(lastUpdatedMs = 0, lastError = null, programCount = 0),
+            inheritedEpg.copy(lastUpdatedMs = 0, lastError = null, programCount = 0, shiftMinutes = -60),
+        ), exportedEpgs, "An explicit guide shift survives; an unset guide inherits the legacy offset")
 
         // ...and what the device stores still has them (import keeps what the TV sent, since the
         // sources were new here).

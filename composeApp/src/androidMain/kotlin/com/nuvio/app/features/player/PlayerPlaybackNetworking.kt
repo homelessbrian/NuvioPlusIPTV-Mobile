@@ -78,6 +78,7 @@ internal object PlayerPlaybackNetworking {
         defaultHeaders: Map<String, String> = emptyMap(),
         useLongReadTimeout: Boolean = false,
         stalkerMediaPolicy: com.nuvio.app.features.livetv.stalker.StalkerMediaPolicy? = null,
+        recordDiagnostics: Boolean = true,
     ): DataSource.Factory {
         val requestHeaders = sanitizeHeaders(defaultHeaders)
         if (stalkerMediaPolicy != null) {
@@ -88,8 +89,11 @@ internal object PlayerPlaybackNetworking {
             }
         }
         val baseClient = if (useLongReadTimeout) loopbackPlaybackHttpClient else playbackHttpClient
+        val scopedClient = if (recordDiagnostics) baseClient else baseClient.newBuilder().apply {
+            interceptors().removeAll { it is SentryNetworkBreadcrumbInterceptor }
+        }.build()
         val client = requestHeaders.headerValue("Authorization")?.let { authorization ->
-            baseClient.newBuilder()
+            scopedClient.newBuilder()
                 .addNetworkInterceptor { chain ->
                     val request = chain.request()
                     if (request.header("Authorization") == null) {
@@ -103,7 +107,7 @@ internal object PlayerPlaybackNetworking {
                     }
                 }
                 .build()
-        } ?: baseClient
+        } ?: scopedClient
 
         return OkHttpDataSource.Factory(com.nuvio.vpn.android.VpnHttpClient.wrap(client)).apply {
             setDefaultRequestProperties(requestHeaders)
@@ -117,10 +121,11 @@ internal object PlayerPlaybackNetworking {
         context: Context,
         defaultHeaders: Map<String, String> = emptyMap(),
         useLongReadTimeout: Boolean = false,
+        recordDiagnostics: Boolean = true,
     ): DataSource.Factory {
         return DefaultDataSource.Factory(
             context,
-            createHttpDataSourceFactory(defaultHeaders, useLongReadTimeout),
+            createHttpDataSourceFactory(defaultHeaders, useLongReadTimeout, recordDiagnostics = recordDiagnostics),
         )
     }
 

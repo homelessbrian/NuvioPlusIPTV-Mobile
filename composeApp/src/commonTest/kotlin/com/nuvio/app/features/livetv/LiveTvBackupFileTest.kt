@@ -257,7 +257,14 @@ class LiveTvBackupFileTest {
     fun importThenExportKeepsEveryKey() = runTest {
         val store = TestStore()
         val reloads = ArrayList<Set<String>>()
-        val original = tvData()
+        // The older backup has global offsets; one playlist already has its own overrides.
+        val sourcePlaylists = playlists.mapIndexed { index, playlist ->
+            if (index == 0) playlist.copy(guideShiftMinutes = 9, catchupShiftMinutes = -7) else playlist
+        }
+        val original = buildJsonObject {
+            tvData().forEach { (key, value) -> put(key, value) }
+            put(LiveTvKeys.playlists, str(LiveTvCodec.encodePlaylists(sourcePlaylists)))
+        }
 
         val summary = importBackupFile(tvFile(original), store) { reloads += it }.getOrThrow()
         assertEquals(5, summary.playlistCount)
@@ -274,10 +281,16 @@ class LiveTvBackupFileTest {
         assertEquals("Pixel", env.optString("device"))
         val exported = assertNotNull(env.optJSONObject("data"))
 
-        // Every key came back with the same type tag and value (sets compared as sets).
-        assertEquals(original.keys, exported.keys)
-        for (k in original.keys) {
-            val a = original[k]!!.jsonObject
+        // Legacy global offsets migrate onto sources and reset to zero. Every other key and
+        // type tag must round-trip unchanged; source records are checked in full below.
+        val canonical = buildJsonObject {
+            original.forEach { (key, value) -> put(key, value) }
+            put(LiveTvKeys.epgOffset, int(0))
+            put(LiveTvKeys.catchupShift, int(0))
+        }
+        assertEquals(canonical.keys, exported.keys)
+        for (k in canonical.keys) {
+            val a = canonical[k]!!.jsonObject
             val b = exported[k]!!.jsonObject
             assertEquals(a["t"], b["t"], "type of $k")
             if (k == LiveTvKeys.playlists) continue
@@ -292,6 +305,9 @@ class LiveTvBackupFileTest {
         assertEquals("1234", exported.optJSONObject("parental_pin")!!.optString("v"))
 
         val outPlaylists = LiveTvCodec.decodePlaylists(exported.optJSONObject(LiveTvKeys.playlists)!!.optString("v"))
+        assertEquals(listOf(sourcePlaylists.first()) + sourcePlaylists.drop(1).map {
+            it.copy(guideShiftMinutes = 34, catchupShiftMinutes = 23)
+        }, outPlaylists, "Global shifts move to unset source fields, while existing overrides and all other source fields survive")
         assertEquals(playlists.map { it.id }, outPlaylists.map { it.id })
         playlists.zip(outPlaylists).forEach { (i, o) ->
             assertEquals(i.xtreamServer, o.xtreamServer)
@@ -305,6 +321,8 @@ class LiveTvBackupFileTest {
         val again = importBackupFile(exportedText, store) { reloads += it }.getOrThrow()
         assertTrue(again.changedPlaylists.isEmpty())
         assertEquals(1, reloads.size)
+        assertEquals(exported, parseObject(exportBackupFileText(store, deviceId = "phone-1", deviceName = "Pixel", nowMs = 42L)).optJSONObject("data"),
+            "Reimporting canonical offsets must not apply them a second time")
 
         // The same file into another device gives the same export.
         val other = TestStore()

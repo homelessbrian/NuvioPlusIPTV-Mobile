@@ -4,6 +4,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.livetv.model.LiveChannel
+import com.nuvio.app.features.livetv.multiview.LocalOpenSportsMultiview
+import com.nuvio.app.features.livetv.multiview.isMultiviewSupported
+import com.nuvio.app.features.livetv.sports.SportsRepository
 import com.nuvio.app.features.livetv.player.LiveTvPlayback
 import com.nuvio.app.features.livetv.ui.LiveTvPlayerOverlay
 import com.nuvio.app.features.livetv.ui.LiveTvViewState
@@ -74,11 +77,21 @@ internal fun PlayerScreenRuntime.switchLiveChannel(channel: LiveChannel, nowTitl
 internal fun PlayerScreenRuntime.RenderLiveTvChannels() {
     if (!isLiveTv) return
     val isInPip = rememberIsInPictureInPicture()
+    val openSportsMultiview = LocalOpenSportsMultiview.current
+    val sportsSettings by SportsRepository.settings.collectAsStateWithLifecycle()
     LiveTvPlayerOverlay(
         currentKey = activeVideoId,
         controlsVisible = controlsVisible,
         enabled = !isInPip && !playerControlsLocked,
         onPanelOpened = { controlsVisible = false },
         onSwitch = { channel, nowTitle -> switchLiveChannel(channel, nowTitle) },
+        onOpenMultiview = if (!isMultiviewSupported || openSportsMultiview == null || !sportsSettings.showInSidebar) null else {
+            {
+                // Release the single audible source before navigation creates any pane owners.
+                playerController?.setMuted(true)
+                playerController?.pause()
+                openSportsMultiview(activeVideoId)
+            }
+        },
     )
 }

@@ -39,6 +39,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -98,6 +99,7 @@ internal fun LiveTvPlayerOverlay(
     enabled: Boolean,
     onPanelOpened: () -> Unit,
     onSwitch: (LiveChannel, nowTitle: String?) -> Unit,
+    onOpenMultiview: (() -> Unit)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val state by remember { LiveTvRepository.ensureLoaded(); LiveTvViewState.list }.collectAsStateWithLifecycle()
@@ -171,6 +173,19 @@ internal fun LiveTvPlayerOverlay(
             enter = fadeIn(), exit = fadeOut(),
             modifier = Modifier.align(Alignment.CenterEnd).safeDrawingPadding().padding(end = NuvioTokens.Space.s16),
         ) {
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8)) {
+            if (onOpenMultiview != null) Row(
+                modifier = Modifier.clip(RoundedCornerShape(NuvioTokens.Radius.full))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(NuvioTokens.Radius.full))
+                    .clickable { onPanelOpened(); onOpenMultiview() }
+                    .padding(horizontal = NuvioTokens.Space.s14, vertical = NuvioTokens.Space.s10),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
+            ) {
+                Icon(Icons.Filled.GridView, contentDescription = null, tint = Color.White, modifier = Modifier.size(NuvioTokens.Icon.md))
+                Text("Multiview", style = MaterialTheme.typography.labelLarge, color = Color.White)
+            }
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(NuvioTokens.Radius.full))
@@ -183,6 +198,7 @@ internal fun LiveTvPlayerOverlay(
             ) {
                 Icon(Icons.Filled.LiveTv, contentDescription = null, tint = Color.White, modifier = Modifier.size(NuvioTokens.Icon.md))
                 Text(stringResource(Res.string.livetv_player_channels), style = MaterialTheme.typography.labelLarge, color = Color.White)
+            }
             }
         }
 

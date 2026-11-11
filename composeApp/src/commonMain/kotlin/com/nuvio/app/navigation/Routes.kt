@@ -179,6 +179,14 @@ data class LiveTvManageRoute(override val title: String = "") : AppRoute {
 }
 
 @Serializable
+data class LiveTvMultiviewRoute(override val title: String = "Multiview", val sportsMode: Boolean = false) : AppRoute {
+    override val preferredTabName: String
+        get() = "LiveTv"
+    override val hidesNavigationBar: Boolean
+        get() = true
+}
+
+@Serializable
 data class LiveTvSportsRoute(override val title: String = "") : AppRoute {
     override val preferredTabName: String
         get() = "LiveTv"
