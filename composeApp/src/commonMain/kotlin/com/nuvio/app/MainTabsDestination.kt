@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.SportsSoccer
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +35,7 @@ import com.nuvio.app.core.ui.FloatingNavigationItem
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.rememberNuvioNavBarScrollState
 import com.nuvio.app.features.livetv.data.LiveTvPreferences
+import com.nuvio.app.features.livetv.sports.SportsRepository
 import com.nuvio.app.features.profiles.NuvioProfile
 import com.nuvio.app.features.profiles.ProfileSwitcherTab
 import com.nuvio.app.features.settings.NavBarStyle
@@ -45,6 +48,7 @@ import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_profile
 import nuvio.composeapp.generated.resources.compose_nav_search
 import nuvio.composeapp.generated.resources.livetv_title
+import nuvio.composeapp.generated.resources.livetv_sports
 import nuvio.composeapp.generated.resources.sidebar_library
 import nuvio.composeapp.generated.resources.sidebar_search
 import org.jetbrains.compose.resources.stringResource
@@ -85,6 +89,13 @@ internal fun MainTabsDestination(
         val liveTvSettings by remember { LiveTvPreferences.settings }.collectAsStateWithLifecycle()
         val showLiveTvTab = liveTvSettings.showInSidebar
         val liveTvLabel = stringResource(Res.string.livetv_title)
+        val sportsSettings by remember { SportsRepository.settings }.collectAsStateWithLifecycle()
+        val showSportsTab = sportsSettings.showInSidebar && !useNativeNavigation
+        val sportsLabel = stringResource(Res.string.livetv_sports)
+        LaunchedEffect(rootRouteActive, selectedTab, showSportsTab, showLiveTvTab) {
+            val availableTab = sportsNavigationFallback(selectedTab, showSportsTab, showLiveTvTab)
+            if (rootRouteActive && availableTab != selectedTab) onTabSelected(availableTab)
+        }
         val floatingNavigationItems = listOfNotNull(
             FloatingNavigationItem(
                 selected = selectedTab == AppScreenTab.Home,
@@ -109,6 +120,12 @@ internal fun MainTabsDestination(
                 onClick = { onTabSelected(AppScreenTab.LiveTv) },
                 icon = Icons.Filled.LiveTv,
                 label = liveTvLabel,
+            ) else null,
+            if (showSportsTab) FloatingNavigationItem(
+                selected = selectedTab == AppScreenTab.Sports,
+                onClick = { onTabSelected(AppScreenTab.Sports) },
+                icon = Icons.Filled.SportsSoccer,
+                label = sportsLabel,
             ) else null,
             FloatingNavigationItem(
                 selected = selectedTab == AppScreenTab.Settings,
@@ -135,7 +152,7 @@ internal fun MainTabsDestination(
             contentWindowInsets = WindowInsets(0),
             bottomBar = {
                 if (!isTabletLayout && !useNativeBottomTabs && navBarStyleSetting == NavBarStyle.CLASSIC) {
-                    NuvioClassicNavigationBar {
+                    NuvioClassicNavigationBar(itemCount = floatingNavigationItems.size) {
                         NavItem(
                             selected = selectedTab == AppScreenTab.Home,
                             onClick = { onTabSelected(AppScreenTab.Home) },
@@ -160,6 +177,14 @@ internal fun MainTabsDestination(
                                 onClick = { onTabSelected(AppScreenTab.LiveTv) },
                                 icon = Icons.Filled.LiveTv,
                                 contentDescription = liveTvLabel,
+                            )
+                        }
+                        if (showSportsTab) {
+                            NavItem(
+                                selected = selectedTab == AppScreenTab.Sports,
+                                onClick = { onTabSelected(AppScreenTab.Sports) },
+                                icon = Icons.Filled.SportsSoccer,
+                                contentDescription = sportsLabel,
                             )
                         }
                         NavItem(

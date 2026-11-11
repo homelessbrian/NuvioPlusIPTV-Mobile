@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -396,22 +397,32 @@ private fun NavItemLabel(
 @Composable
 fun NuvioClassicNavigationBar(
     modifier: Modifier = Modifier,
+    itemCount: Int = 0,
     content: @Composable NuvioNavigationBarScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    Column(modifier.fillMaxWidth()) {
-        androidx.compose.material3.HorizontalDivider(
-            thickness = NuvioTokens.Space.hairline,
-            color = tokens.colors.borderDefault,
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(nuvioBottomNavigationBarInsets().asPaddingValues())
-                .padding(horizontal = NuvioTokens.Space.s4, vertical = nuvioBottomNavigationExtraVerticalPadding),
-            horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap, Alignment.CenterHorizontally),
-        ) {
-            NuvioClassicNavigationBarScopeImpl(this).content()
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val minItemWidth = maxOf(48.dp, tokens.components.navIconSize + NuvioTokens.Space.s10 * 2)
+        val gap = if (itemCount > 5) {
+            tokens.spacing.controlGap.coerceAtMost(
+                ((maxWidth - NuvioTokens.Space.s4 * 2 - minItemWidth * itemCount) / (itemCount - 1))
+                    .coerceAtLeast(0.dp),
+            )
+        } else tokens.spacing.controlGap
+        Column(Modifier.fillMaxWidth()) {
+            androidx.compose.material3.HorizontalDivider(
+                thickness = NuvioTokens.Space.hairline,
+                color = tokens.colors.borderDefault,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(nuvioBottomNavigationBarInsets().asPaddingValues())
+                    .padding(horizontal = NuvioTokens.Space.s4, vertical = nuvioBottomNavigationExtraVerticalPadding),
+                horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
+            ) {
+                NuvioClassicNavigationBarScopeImpl(this).content()
+            }
         }
     }
 }

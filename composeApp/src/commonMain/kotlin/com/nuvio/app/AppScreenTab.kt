@@ -7,6 +7,7 @@ enum class AppScreenTab {
     Search,
     Library,
     LiveTv,
+    Sports,
     Settings,
     ;
 
@@ -21,6 +22,7 @@ internal fun AppScreenTab.toNativeNavigationTab(): NativeNavigationTab = when (t
     AppScreenTab.Search -> NativeNavigationTab.Search
     AppScreenTab.Library -> NativeNavigationTab.Library
     AppScreenTab.LiveTv -> NativeNavigationTab.LiveTv
+    AppScreenTab.Sports -> NativeNavigationTab.Sports
     AppScreenTab.Settings -> NativeNavigationTab.Settings
 }
 
@@ -29,5 +31,15 @@ internal fun NativeNavigationTab.toAppScreenTab(): AppScreenTab = when (this) {
     NativeNavigationTab.Search -> AppScreenTab.Search
     NativeNavigationTab.Library -> AppScreenTab.Library
     NativeNavigationTab.LiveTv -> AppScreenTab.LiveTv
+    NativeNavigationTab.Sports -> AppScreenTab.Sports
     NativeNavigationTab.Settings -> AppScreenTab.Settings
 }
+
+/** Keep the root selection reachable when a synced Sports visibility setting changes. */
+internal fun sportsNavigationFallback(
+    selectedTab: AppScreenTab,
+    showSports: Boolean,
+    showLiveTv: Boolean,
+): AppScreenTab = if (selectedTab == AppScreenTab.Sports && !showSports) {
+    if (showLiveTv) AppScreenTab.LiveTv else AppScreenTab.Home
+} else selectedTab

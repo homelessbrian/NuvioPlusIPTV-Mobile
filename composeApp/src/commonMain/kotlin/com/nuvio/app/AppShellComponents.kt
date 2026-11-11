@@ -36,6 +36,8 @@ import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.livetv.model.EpgProgram
 import com.nuvio.app.features.livetv.model.LiveChannel
 import com.nuvio.app.features.livetv.ui.LiveTvScreen
+import com.nuvio.app.features.livetv.ui.sports.SportsScreen
+import com.nuvio.app.features.livetv.ui.sports.SportsActions
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySortOption
 import com.nuvio.app.features.profiles.NuvioProfile
@@ -128,6 +130,10 @@ internal data class AppTabActions(
     val onLiveTvSportsClick: () -> Unit = {},
     val onLiveTvManageClick: () -> Unit = {},
     val onLiveTvCalendarClick: () -> Unit = {},
+    val onSportsBack: () -> Unit = {},
+    val sportsActions: SportsActions = SportsActions(
+        onPlay = { _, _ -> }, onPlayCatchup = { _, _ -> }, onOpenGame = {}, onOpenLeague = {},
+    ),
 )
 
 @Composable
@@ -204,6 +210,14 @@ internal fun AppTabHost(
                     onOpenSports = actions.onLiveTvSportsClick,
                     onOpenManage = actions.onLiveTvManageClick,
                     onOpenCalendar = actions.onLiveTvCalendarClick,
+                )
+            }
+
+            AppScreenTab.Sports -> {
+                SportsScreen(
+                    onBack = actions.onSportsBack,
+                    actions = actions.sportsActions,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
 

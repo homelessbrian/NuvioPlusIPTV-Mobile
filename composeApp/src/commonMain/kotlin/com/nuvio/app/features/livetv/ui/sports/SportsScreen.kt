@@ -1,6 +1,8 @@
 package com.nuvio.app.features.livetv.ui.sports
 
 import com.nuvio.app.features.livetv.ui.liveTvSideInsets
+import com.nuvio.app.core.ui.LocalScreenActive
+import com.nuvio.app.core.ui.ScreenActivityEffect
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -120,11 +122,11 @@ fun SportsScreen(
 ) {
     val tokens = MaterialTheme.nuvio
     val repo = SportsRepository
-    LaunchedEffect(Unit) { SportsReminders.start(); LiveTvRepository.ensureLoaded() }
-    DisposableEffect(Unit) {
-        repo.setViewing(true)
-        onDispose { repo.setViewing(false) }
+    val screenActive = LocalScreenActive.current
+    ScreenActivityEffect { active ->
+        if (active) { SportsReminders.start(); LiveTvRepository.ensureLoaded() }
     }
+    SportsViewingEffect(repo::setViewing)
 
     val settings by repo.settings.collectAsStateWithLifecycle()
     val follows by repo.follows.collectAsStateWithLifecycle()
@@ -135,8 +137,8 @@ fun SportsScreen(
     val matching by repo.matching.collectAsStateWithLifecycle()
     val problem by repo.problem.collectAsStateWithLifecycle()
     val use24h = use24h()
-    val now by produceState(LiveTvClock.nowMs()) {
-        while (true) { value = LiveTvClock.nowMs(); delay(15_000) }
+    val now by produceState(LiveTvClock.nowMs(), screenActive) {
+        if (screenActive) while (true) { value = LiveTvClock.nowMs(); delay(15_000) }
     }
     var tabIndex by rememberSaveable { mutableIntStateOf(if (follows.isEmpty) SportsTab.ALL.ordinal else SportsTab.MINE.ordinal) }
     val tab = SportsTab.entries[tabIndex]
@@ -180,8 +182,18 @@ fun SportsScreen(
         }
     }
 
-    if (showSettings) SportsSettingsSheet(settings, onDismiss = { showSettings = false })
-    GameAlertsOffer()
+    if (screenActive && showSettings) SportsSettingsSheet(settings, onDismiss = { showSettings = false })
+    if (screenActive) GameAlertsOffer()
+}
+
+/** Cached root tabs remain composed; acquire a viewer only while this pane is active. */
+@Composable
+internal fun SportsViewingEffect(onViewingChanged: (Boolean) -> Unit) {
+    val active = LocalScreenActive.current
+    DisposableEffect(active, onViewingChanged) {
+        if (active) onViewingChanged(true)
+        onDispose { if (active) onViewingChanged(false) }
+    }
 }
 
 // ------------------------------------------------------------------ My Sports
@@ -359,7 +371,7 @@ private fun AllEventsTab(
             section(finishedTitle, sections.finished, follows, settings, matches, now, use24h, actions)
         }
     }
-    if (choosingLeagues) LeaguesSheet(onDismiss = { choosingLeagues = false })
+    if (LocalScreenActive.current && choosingLeagues) LeaguesSheet(onDismiss = { choosingLeagues = false })
 }
 
 private fun LazyListScope.section(

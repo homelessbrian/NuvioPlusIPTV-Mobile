@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.LocalScreenActive
 import com.nuvio.app.core.ui.DialogButton
 import com.nuvio.app.core.ui.DialogButtons
 import com.nuvio.app.core.ui.NuvioBottomSheetActionRow
@@ -66,14 +67,15 @@ import com.nuvio.app.features.livetv.ui.ChannelLogo
 internal fun SportsNetworksTab(actions: SportsActions) {
     val tokens = MaterialTheme.nuvio
     val repo = SportsRepository
+    val screenActive = LocalScreenActive.current
     val settings by repo.settings.collectAsStateWithLifecycle()
     val found by repo.leagueNetworks.collectAsStateWithLifecycle()
     val use24h = use24h()
     val byKey = remember(found) { found.values.flatten().associateBy { it.key } }
     val tiles = remember(found, settings, byKey) { LeagueNetworks.tiles(found, settings, byKey) }
     val leadKeys = remember(tiles) { tiles.mapNotNull { it.lead?.key } }
-    val onNow by produceState<Map<String, com.nuvio.app.features.livetv.data.NowNext>>(emptyMap(), leadKeys) {
-        while (true) {
+    val onNow by produceState<Map<String, com.nuvio.app.features.livetv.data.NowNext>>(emptyMap(), leadKeys, screenActive) {
+        if (screenActive) while (true) {
             value = runCatching { repo.nowAndNext(leadKeys) }.getOrDefault(emptyMap())
             kotlinx.coroutines.delay(60_000)
         }
@@ -125,10 +127,10 @@ internal fun SportsNetworksTab(actions: SportsActions) {
         }
     }
 
-    menu?.let { tile ->
+    menu?.takeIf { screenActive }?.let { tile ->
         NetworkMenuSheet(tile, onNow, actions, onChoose = { menu = null; choosing = tile }, onDismiss = { menu = null })
     }
-    choosing?.let { tile ->
+    choosing?.takeIf { screenActive }?.let { tile ->
         ChannelPickerDialog(
             title = tile.network.name,
             onPick = { ch ->

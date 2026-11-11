@@ -69,6 +69,7 @@ import com.nuvio.app.core.sync.ProfileSettingsSync
 import com.nuvio.app.core.sync.SyncManager
 import com.nuvio.app.core.ui.DisintegrationRequestController
 import com.nuvio.app.core.ui.NativeTabBridge
+import com.nuvio.app.features.livetv.sports.SportsRepository
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
 import com.nuvio.app.core.ui.NuvioContinueWatchingActionSheet
 import com.nuvio.app.core.ui.NuvioFloatingPrompt
@@ -453,6 +454,7 @@ internal fun MainAppContent(
             }
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.LiveTv -> liveTvScrollToTopRequests.tryEmit(Unit)
+            AppScreenTab.Sports -> Unit // Keep the chosen Sports filter and position on reselect.
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
     }
@@ -969,6 +971,13 @@ internal fun MainAppContent(
             onOpenLeague = { l -> navController.navigate(LiveTvSportsLeagueRoute(leagueId = l.id, title = l.name)) },
         )
 
+        fun openSportsRoot() = navController.openSportsRoot(
+            showSportsTab = SportsRepository.settings.value.showInSidebar,
+            useNativeNavigation = useNativeNavigation,
+            title = liveTvSportsTitle,
+            activateTab = ::activateTab,
+        )
+
         // Live TV hook: a reminder or game notification was tapped.
         LaunchedEffect(navController) {
             if (!ownsAppRuntime) return@LaunchedEffect
@@ -983,13 +992,17 @@ internal fun MainAppContent(
                         LiveTvDeepLinks.consume(link)
                     }
                     is LiveTvLink.SportsGame -> {
-                        activateTab(AppScreenTab.LiveTv)
-                        navController.navigate(LiveTvSportsGameRoute(eventId = link.eventId, title = liveTvSportsTitle)) { launchSingleTop = true }
+                        navController.openSportsGameNotification(
+                            eventId = link.eventId,
+                            title = liveTvSportsTitle,
+                            showSportsTab = SportsRepository.settings.value.showInSidebar,
+                            useNativeNavigation = useNativeNavigation,
+                            activateTab = ::activateTab,
+                        )
                         LiveTvDeepLinks.consume(link)
                     }
                     LiveTvLink.Sports -> {
-                        activateTab(AppScreenTab.LiveTv)
-                        navController.navigate(LiveTvSportsRoute(liveTvSportsTitle)) { launchSingleTop = true }
+                        openSportsRoot()
                         LiveTvDeepLinks.consume(link)
                     }
                     null -> Unit
@@ -1608,7 +1621,9 @@ internal fun MainAppContent(
                                 onLiveTvOnDemandClick = { navController.navigate(LiveTvOnDemandRoute(liveTvOnDemandTitle)) },
                                 onLiveTvRecordingsClick = { navController.navigate(LiveTvRecordingsRoute(liveTvRecordingsTitle)) },
                                 onLiveTvGuideClick = { navController.navigate(LiveTvGuideRoute(liveTvGuideTitle)) },
-                                onLiveTvSportsClick = { navController.navigate(LiveTvSportsRoute(liveTvSportsTitle)) },
+                                onLiveTvSportsClick = ::openSportsRoot,
+                                onSportsBack = { activateTab(AppScreenTab.Home) },
+                                sportsActions = sportsActions,
                                 onLiveTvManageClick = { navController.navigate(LiveTvManageRoute(liveTvManageTitle)) },
                                 onLiveTvCalendarClick = { navController.navigate(LiveTvCalendarRoute(liveTvCalendarTitle)) },
                                 onLiveTvSettingsClick = {

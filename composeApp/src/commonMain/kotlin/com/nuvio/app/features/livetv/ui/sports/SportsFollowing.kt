@@ -54,6 +54,7 @@ import com.nuvio.app.core.ui.DialogButtonStyle
 import com.nuvio.app.core.ui.DialogButtons
 import com.nuvio.app.core.ui.DialogOption
 import com.nuvio.app.core.ui.DialogSurface
+import com.nuvio.app.core.ui.LocalScreenActive
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioLoadingIndicator
 import com.nuvio.app.core.ui.NuvioModalBottomSheet
@@ -207,7 +208,7 @@ internal fun SportsSearchTab(known: List<SportsEvent>, follows: SportsFollows, a
             }
         }
     }
-    pickingLeague?.let { l -> TeamPickerSheet(l, follows, onOpenLeague = { actions.onOpenLeague(l) }, onDismiss = { pickingLeague = null }) }
+    pickingLeague?.let { l -> if (LocalScreenActive.current) TeamPickerSheet(l, follows, onOpenLeague = { actions.onOpenLeague(l) }, onDismiss = { pickingLeague = null }) }
 }
 
 @Composable
@@ -394,7 +395,7 @@ internal fun SportsFollowingTab(follows: SportsFollows, settings: SportsSettings
     }
     if (addingName) {
         var name by remember { mutableStateOf("") }
-        DialogSurface(onDismissRequest = { addingName = false }, title = stringResource(Res.string.livetv_sports_add_name), message = stringResource(Res.string.livetv_sports_add_name_hint)) {
+        if (LocalScreenActive.current) DialogSurface(onDismissRequest = { addingName = false }, title = stringResource(Res.string.livetv_sports_add_name), message = stringResource(Res.string.livetv_sports_add_name_hint)) {
             NuvioInputField(value = name, onValueChange = { name = it }, placeholder = "Luke Littler")
             DialogButtons {
                 DialogButton(text = stringResource(Res.string.action_cancel), onClick = { addingName = false })
@@ -402,7 +403,7 @@ internal fun SportsFollowingTab(follows: SportsFollows, settings: SportsSettings
             }
         }
     }
-    pickingLeague?.let { l -> TeamPickerSheet(l, follows, onOpenLeague = { actions.onOpenLeague(l) }, onDismiss = { pickingLeague = null }) }
+    pickingLeague?.let { l -> if (LocalScreenActive.current) TeamPickerSheet(l, follows, onOpenLeague = { actions.onOpenLeague(l) }, onDismiss = { pickingLeague = null }) }
 }
 
 // ------------------------------------------------------------------ settings sheet

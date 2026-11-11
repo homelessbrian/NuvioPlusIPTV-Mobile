@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -99,15 +100,18 @@ internal actual fun FloatingNavigationBar(
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .padding(contentPadding)
-            .padding(horizontal = horizontalPadding),
+            .padding(contentPadding),
         contentAlignment = Alignment.BottomCenter,
     ) {
+        val fittedPadding = if (items.size > 5) {
+            horizontalPadding.coerceAtMost(((maxWidth - (48.dp * items.size + 8.dp)) / 2).coerceAtLeast(0.dp))
+        } else horizontalPadding
         Box(
             modifier = Modifier
+                .padding(horizontal = fittedPadding)
                 .widthIn(max = 400.dp)
                 .fillMaxWidth()
                 .height(trackHeight)
