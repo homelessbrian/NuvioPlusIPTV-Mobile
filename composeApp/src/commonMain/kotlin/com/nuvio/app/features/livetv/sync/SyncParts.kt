@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 /** The parts of the Live TV setup that Setup Sync can leave out on one device. */
 internal enum class SyncPart(val label: String, val description: String, val defaultOn: Boolean) {
     LOGINS("Playlists and logins", "Your IPTV links, usernames and passwords. Stored encrypted.", true),
+    VPN("VPN profiles and protection", "VPN configurations, selected profile and automatic protection scope.", true),
     FAVORITES("Favorites and groups", "Favorite channels, hidden channels and group order.", true),
     SPORTS("Sports", "Followed teams and leagues, and Choose leagues.", true),
     CALENDAR("Calendar", "Followed and hidden shows.", true),
@@ -51,6 +52,7 @@ internal object SyncParts {
     fun partOf(key: String): SyncPart? {
         val base = key.replace(PROFILE_SUFFIX, "")
         return when {
+            base == "vpn_profiles_v1" -> SyncPart.VPN
             base in ALWAYS_KEYS -> null
             base in LOGIN_KEYS -> SyncPart.LOGINS
             base in FAVORITE_KEYS -> SyncPart.FAVORITES
