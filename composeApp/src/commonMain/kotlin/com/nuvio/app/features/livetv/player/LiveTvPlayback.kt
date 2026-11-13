@@ -194,6 +194,9 @@ internal object LiveTvPlayback {
 
     fun isPortalReplay(url: String): Boolean = synchronized(lock) { catchups[url]?.portal != null }
 
+    /** Whether [url] is a catch-up replay (not a live channel), for seek thumbnails. */
+    fun isCatchup(url: String): Boolean = synchronized(lock) { catchups.containsKey(url) }
+
     // ---------------------------------------------------------------- catch-up
 
     /**

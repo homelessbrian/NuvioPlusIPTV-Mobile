@@ -129,6 +129,7 @@ internal fun PlayerTimeline(
     sliderState.value = displayedPositionMs.coerceIn(0L, durationMs).toFloat()
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+      Box(modifier.fillMaxWidth()) {
         Slider(
             state = sliderState,
             onValueChange = { value ->
@@ -185,13 +186,22 @@ internal fun PlayerTimeline(
                         },
                 )
             },
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .height(24.dp)
                 .wrapContentHeight(Alignment.Bottom, unbounded = true)
                 .requiredHeight(48.dp)
                 .semantics { contentDescription = description },
         )
+        // Seek thumbnails: the picture at the point you're dragging to (when turned on).
+        val dragging = scrubPosition
+        com.nuvio.app.features.player.thumbs.SeekThumbAbove(
+            positionMs = dragging ?: 0L,
+            fraction = ((dragging ?: 0L) / rangeEnd).coerceIn(0f, 1f),
+            visible = dragging != null && durationMs > 0L,
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+      }
     }
 }
 

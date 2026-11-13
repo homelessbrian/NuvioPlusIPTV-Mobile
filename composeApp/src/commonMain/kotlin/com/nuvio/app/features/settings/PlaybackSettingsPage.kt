@@ -8,6 +8,7 @@ import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.isIos
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.unit.dp
 
 internal fun LazyListScope.playbackSettingsContent(
     isTablet: Boolean,
@@ -41,7 +42,12 @@ internal fun LazyListScope.playbackSettingsContent(
             SettingsPage.PlaybackInterface -> PlaybackInterfaceSettings(isTablet, settings)
             SettingsPage.PlaybackAudio -> PlaybackAudioSettings(isTablet, settings)
             SettingsPage.PlaybackSubtitles -> PlaybackSubtitleSettings(isTablet, settings)
-            SettingsPage.PlaybackVideo -> PlaybackVideoSettings(isTablet, settings)
+            SettingsPage.PlaybackVideo -> androidx.compose.foundation.layout.Column(
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(if (isTablet) 18.dp else 12.dp),
+            ) {
+                PlaybackVideoSettings(isTablet, settings)
+                PlaybackSeekThumbnailSettings(isTablet)
+            }
             SettingsPage.PlaybackBuffer -> if (!isIos) PlaybackBufferSettings(isTablet, settings)
             SettingsPage.PlaybackP2p -> if (P2pSettingsRepository.isVisible) PlaybackP2pSettings(isTablet)
             else -> Unit

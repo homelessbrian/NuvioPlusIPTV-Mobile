@@ -191,6 +191,7 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
             videoSize = videoSize,
         )
         runtime.BindPlayerRuntimeEffects()
+        runtime.BindSeekThumbs()
         runtime.RenderPlayerRuntimeUi(
             partyPanelWidth = partyPanelWidth,
             partyPanelInset = partyPanelInset,
