@@ -1036,7 +1036,8 @@ internal object LiveTvRepository {
         runCatching { EpgStore.replaceAll(guideFingerprint(settings, targets), programs, auto) }
         _autoMatches.value = auto
         _epgLogos.value = logos
-        _epgSources.value = sourceLists
+        // Every guide's channel list is only kept while Assign EPG or the logo picker is open.
+        if (listsWanted > 0) _epgSources.value = sourceLists
         val (from, to) = defaultWindow(now)
         val copies = GuideWindowCopies(from, to)
         val window = HashMap<String, List<EpgProgram>>(best.size)
@@ -1071,8 +1072,24 @@ internal object LiveTvRepository {
 
     private fun isPlaceholderListing(list: List<EpgProgram>): Boolean = list.all { isPlaceholderTitle(it.title) }
 
-    /** Assign EPG opened: make sure every guide's channel list is there (built with the guide). */
+    /** How many pickers (Assign EPG, Change logo) are open and want every guide's channel list. */
+    @kotlin.concurrent.Volatile private var listsWanted = 0
+
+    /**
+     * Assign EPG or the logo picker closed: once none is open, the guides' channel lists (which
+     * can hold tens of thousands of channels) are let go; they're read again the next time.
+     */
+    fun releaseSourceLists() {
+        listsWanted = (listsWanted - 1).coerceAtLeast(0)
+        if (listsWanted == 0) _epgSources.value = emptyList()
+    }
+
+    /**
+     * Assign EPG (or the logo picker) opened: make sure every guide's channel list is there.
+     * Each call is matched by one [releaseSourceLists] when the picker closes.
+     */
     fun ensureSourceLists() {
+        listsWanted++
         if (_epgSources.value.isNotEmpty() || _epgListsLoading.value) return
         _epgListsLoading.value = true
         scope.launch {
@@ -1095,7 +1112,8 @@ internal object LiveTvRepository {
                     val used = _autoMatches.value.values.filter { it.sourceId == t.fileId }.mapTo(HashSet()) { it.xmltvId }
                     lists += EpgSourceChannels(t.fileId, t.name, hostOf(t.url) ?: t.name, listed.values.map { EpgChannelEntry(it.id, it.displayNames, it.icon) }, used)
                 }
-                _epgSources.value = lists
+                // Only if a picker is still open (and an update didn't put fresher lists there meanwhile).
+                if (listsWanted > 0 && _epgSources.value.isEmpty()) _epgSources.value = lists
             }
             _epgListsLoading.value = false
         }

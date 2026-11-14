@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -221,7 +222,10 @@ private fun AssignEpgDialog(channel: LiveChannel, onDismiss: () -> Unit) {
     val loading by LiveTvRepository.epgListsLoading.collectAsStateWithLifecycle()
     val user by LiveTvPreferences.userState.collectAsStateWithLifecycle()
     val auto by LiveTvRepository.autoMatches.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { LiveTvRepository.ensureSourceLists() }
+    DisposableEffect(Unit) {
+        LiveTvRepository.ensureSourceLists()
+        onDispose { LiveTvRepository.releaseSourceLists() }
+    }
     var query by remember { mutableStateOf("") }
     val current = user.epgOverrides[channel.key]
     val matched = auto[channel.key]

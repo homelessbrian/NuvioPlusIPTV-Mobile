@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,7 +96,10 @@ internal fun ChangeLogoDialog(channel: LiveChannel, onDismiss: () -> Unit) {
     var link by remember { mutableStateOf("") }
 
     // The guides' channel lists (for the logos they carry) are read once, when first needed.
-    LaunchedEffect(Unit) { LiveTvRepository.ensureSourceLists() }
+    DisposableEffect(Unit) {
+        LiveTvRepository.ensureSourceLists()
+        onDispose { LiveTvRepository.releaseSourceLists() }
+    }
     val guideLists by LiveTvRepository.epgSources.collectAsStateWithLifecycle()
 
     LaunchedEffect(channel.key, query.trim(), settings.logoSourcesOff, guideLists.sumOf { it.channels.size }) {
