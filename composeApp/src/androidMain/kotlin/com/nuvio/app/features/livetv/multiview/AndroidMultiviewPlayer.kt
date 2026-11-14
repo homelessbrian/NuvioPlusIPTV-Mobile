@@ -215,10 +215,12 @@ internal class AndroidMultiviewPlayer(
         }
         if (engine != null || prepareJob?.isActive == true) return
         val token = generation
-        val request = requestOverride ?: LiveTvPlayback.requestFor(selected)
+        val override = requestOverride
         mutableState.value = MultiviewTileState(isLoading = !reconnecting, isReconnecting = reconnecting)
         prepareJob = scope.launch {
             try {
+                // Some providers (Stalker portals) look the link up first, so this waits for it here.
+                val request = override ?: LiveTvPlayback.requestFor(selected)
                 val source = multiviewMediaSource(context, selected, request)
                 // Re-check when profile/scope settings change while the connection is prepared.
                 do {

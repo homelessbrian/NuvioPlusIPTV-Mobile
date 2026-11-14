@@ -21,6 +21,7 @@ import com.nuvio.app.features.livetv.player.LiveTvPlayback
 import com.nuvio.app.features.player.PlayerPlaybackNetworking
 import com.nuvio.vpn.android.VpnHttpClient
 import io.sentry.Breadcrumb
+import kotlinx.coroutines.runBlocking
 import io.sentry.NoOpTransportFactory
 import io.sentry.Sentry
 import okhttp3.Call
@@ -92,7 +93,7 @@ class MultiviewAndroidPlayerTest {
         for (scheme in listOf("rtsp", "udp", "rtmp", "file", "content")) {
             val selected = channel("$scheme://test-user:test-password@stream.example.invalid/live?token=test-token")
             val failure = assertFailsWith<MultiviewSourceException> {
-                multiviewMediaSource(context, selected, LiveTvPlayback.requestFor(selected))
+                multiviewMediaSource(context, selected, runBlocking { LiveTvPlayback.requestFor(selected) })
             }
             assertEquals(if (scheme == "rtsp") "RTSP streams are unavailable in Multiview."
                 else "This stream format is unavailable in Multiview.", failure.tileMessage)
@@ -109,7 +110,7 @@ class MultiviewAndroidPlayerTest {
             drm = DrmInfo("unknown", "https://license.example.invalid/?token=test-token"),
         )
         val failure = assertFailsWith<MultiviewSourceException> {
-            multiviewMediaSource(context, selected, LiveTvPlayback.requestFor(selected))
+            multiviewMediaSource(context, selected, runBlocking { LiveTvPlayback.requestFor(selected) })
         }
         assertEquals("This DRM scheme is unavailable in Multiview.", failure.tileMessage)
         assertNull(failure.message)
