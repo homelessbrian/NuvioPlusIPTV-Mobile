@@ -62,9 +62,12 @@ import nuvio.composeapp.generated.resources.livetv_action_rename
 import nuvio.composeapp.generated.resources.livetv_manage
 import nuvio.composeapp.generated.resources.livetv_manage_channels
 import nuvio.composeapp.generated.resources.livetv_manage_groups
+import nuvio.composeapp.generated.resources.livetv_manage_hide_all_groups
+import nuvio.composeapp.generated.resources.livetv_manage_hide_all_in_group
 import nuvio.composeapp.generated.resources.livetv_manage_hint
 import nuvio.composeapp.generated.resources.livetv_manage_reset_order
 import nuvio.composeapp.generated.resources.livetv_manage_show_all
+import nuvio.composeapp.generated.resources.livetv_manage_show_all_in_group
 import nuvio.composeapp.generated.resources.livetv_rename_hint
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableItem
@@ -85,6 +88,8 @@ fun LiveTvManageScreen(
     val tokens = MaterialTheme.nuvio
     var tab by rememberSaveable { mutableStateOf(if (startWithChannels) "channels" else "groups") }
     var menu by remember { mutableStateOf(false) }
+    // The group open on the Channels tab (null = the first one).
+    var channelGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     val channels by LiveTvRepository.displayChannels.collectAsStateWithLifecycle()
     val user by LiveTvPreferences.userState.collectAsStateWithLifecycle()
     val settings by LiveTvPreferences.settings.collectAsStateWithLifecycle()
@@ -115,6 +120,26 @@ fun LiveTvManageScreen(
                         menu = false
                         if (tab == "groups") LiveTvPreferences.clearHiddenGroups() else LiveTvPreferences.clearHiddenChannels()
                     })
+                    // Bulk choices, so keeping only a few groups (or channels) doesn't take a tap each.
+                    if (tab == "groups") {
+                        MenuItem(text = stringResource(Res.string.livetv_manage_hide_all_groups), onClick = {
+                            menu = false
+                            LiveTvPreferences.updateHiddenGroups(emptySet(), all.sections.map { it.group }.filter { !it.special }.mapTo(HashSet()) { it.id })
+                        })
+                    } else {
+                        val open = manageChannelsSection(all, channelGroupId)
+                        val keys = open?.channels.orEmpty().mapTo(HashSet()) { it.key }
+                        if (keys.isNotEmpty()) {
+                            MenuItem(text = stringResource(Res.string.livetv_manage_hide_all_in_group), onClick = {
+                                menu = false
+                                LiveTvPreferences.updateHiddenChannels(emptySet(), keys)
+                            })
+                            MenuItem(text = stringResource(Res.string.livetv_manage_show_all_in_group), onClick = {
+                                menu = false
+                                LiveTvPreferences.updateHiddenChannels(keys, emptySet())
+                            })
+                        }
+                    }
                 }
             },
         )
@@ -127,9 +152,13 @@ fun LiveTvManageScreen(
         }
         Text(stringResource(Res.string.livetv_manage_hint), style = MaterialTheme.typography.bodySmall, color = tokens.colors.textMuted, modifier = Modifier.padding(horizontal = NuvioTokens.Space.s16, vertical = NuvioTokens.Space.s4))
         if (tab == "groups") ManageGroups(all.sections.map { it.group }.filter { !it.special }, user.hiddenGroups)
-        else ManageChannels(all, user.hiddenChannels)
+        else ManageChannels(all, user.hiddenChannels, channelGroupId) { channelGroupId = it }
     }
 }
+
+/** The group open on the Channels tab: the one picked, else the first one (Recently watched left out). */
+private fun manageChannelsSection(all: LiveTvListState, groupId: String?) =
+    all.sections.firstOrNull { it.group.id == groupId } ?: all.sections.firstOrNull { it.group.id != ChannelGroup.RECENT }
 
 // ------------------------------------------------------------------ groups
 
@@ -188,12 +217,11 @@ private fun ManageGroups(groups: List<ChannelGroup>, hidden: Set<String>) {
 // ------------------------------------------------------------------ channels
 
 @Composable
-private fun ManageChannels(all: LiveTvListState, hidden: Set<String>) {
+private fun ManageChannels(all: LiveTvListState, hidden: Set<String>, groupId: String?, onGroup: (String) -> Unit) {
     val tokens = MaterialTheme.nuvio
     val haptics = LocalHapticFeedback.current
     val groups = all.sections.map { it.group }.filter { it.id != ChannelGroup.RECENT }
-    var groupId by rememberSaveable { mutableStateOf<String?>(null) }
-    val selected = all.sections.firstOrNull { it.group.id == groupId } ?: all.sections.firstOrNull { it.group.id != ChannelGroup.RECENT }
+    val selected = manageChannelsSection(all, groupId)
     val source: List<LiveChannel> = selected?.channels.orEmpty()
     var order by remember(source) { mutableStateOf(source) }
     val listState = rememberLazyListState()
@@ -217,7 +245,7 @@ private fun ManageChannels(all: LiveTvListState, hidden: Set<String>) {
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = NuvioTokens.Space.s16, vertical = NuvioTokens.Space.s4),
             horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
         ) {
-            groups.forEach { g -> Chip(g.title, selected = selected?.group?.id == g.id, onClick = { groupId = g.id }) }
+            groups.forEach { g -> Chip(g.title, selected = selected?.group?.id == g.id, onClick = { onGroup(g.id) }) }
         }
         LazyColumn(
             state = listState,

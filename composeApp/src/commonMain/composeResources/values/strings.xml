@@ -2976,6 +2976,9 @@
     <string name="livetv_manage_hint">Drag the handle to reorder. The eye shows or hides. Tap a group to rename it.</string>
     <string name="livetv_manage_reset_order">Reset order</string>
     <string name="livetv_manage_show_all">Show everything again</string>
+    <string name="livetv_manage_hide_all_groups">Hide all groups</string>
+    <string name="livetv_manage_hide_all_in_group">Hide all in this group</string>
+    <string name="livetv_manage_show_all_in_group">Show all in this group</string>
     <string name="livetv_channel_gone">That channel isn't in your playlists any more.</string>
     <string name="compose_settings_page_livetv">Live TV</string>
     <string name="compose_settings_root_livetv_description">Playlists, TV guide and channel options</string>
