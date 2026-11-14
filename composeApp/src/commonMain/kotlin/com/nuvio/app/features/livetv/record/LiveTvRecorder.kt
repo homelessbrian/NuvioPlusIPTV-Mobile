@@ -442,17 +442,26 @@ internal object LiveTvRecorder {
             // newest piece, the way players do, instead of at the start of its look-back window.
             if (!finite && lastSeq < 0) lastSeq = liveStartSeq(text, seq, target)
             if (!mapDone) {
-                MAP_URI.find(text)?.groupValues?.get(1)?.let { m ->
+                val m = MAP_URI.find(text)?.groupValues?.get(1)
+                if (m == null) mapDone = true
+                else {
                     // Fragmented MP4: the init part first, then the pieces, all in one .mp4.
                     path = rec.dir + "/recording.mp4"
                     val withMp4 = (_recordings.value.firstOrNull { it.id == rec.id } ?: rec).copy(fileName = "recording.mp4")
                     save(withMp4); update(withMp4)
-                    runCatching { RecordingPlatform.download(resolve(mediaUrl, m), hdrs, path, append = false, shouldStop = { false }, mediaPolicy = mediaPolicy) {} }
+                    for (t in 1..3) {
+                        mapDone = runCatching {
+                            RecordingPlatform.download(resolve(mediaUrl, m), hdrs, path, append = false, shouldStop = { false }, mediaPolicy = mediaPolicy) {}
+                        }.isSuccess && RecordingPlatform.fileSize(path) > 0
+                        if (mapDone || stopping(rec.id)) break
+                        if (t < 3) delay(1_000L * t)
+                    }
+                    // Without its start piece nothing saved after it can play: save nothing yet
+                    // and try again on the next read of the channel's list.
                 }
-                mapDone = true
             }
             var dur = 0.0
-            for (l in lines) {
+            if (mapDone) for (l in lines) {
                 when {
                     l.startsWith("#EXTINF:") -> dur = l.removePrefix("#EXTINF:").substringBefore(',').toDoubleOrNull() ?: target.toDouble()
                     l.isNotBlank() && !l.startsWith("#") -> {
@@ -504,7 +513,7 @@ internal object LiveTvRecorder {
             if (finite && refresh != null && refreshNeeded)
                 return "The provider archive was interrupted; the saved recording is incomplete"
             // A finished playlist (a catch-up show): everything's saved.
-            if (finite && text.contains("#EXT-X-ENDLIST")) break
+            if (finite && mapDone && text.contains("#EXT-X-ENDLIST")) break
             delay((target * 1000L / 2).coerceIn(1_000L, 6_000L))
             text = try {
                 if (refreshNeeded && refresh != null) {
