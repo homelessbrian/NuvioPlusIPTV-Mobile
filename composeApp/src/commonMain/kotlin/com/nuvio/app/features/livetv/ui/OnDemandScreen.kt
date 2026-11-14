@@ -204,7 +204,7 @@ internal fun OnDemandScreen(
                 modifier = Modifier.padding(horizontal = NuvioTokens.Space.s16, vertical = NuvioTokens.Space.s4),
             )
         }
-        status.message?.takeIf { !status.loading || settings.showImportProgress || !hasContent }?.let { msg ->
+        status.message?.takeIf { !status.loading || (settings.showImportProgress && !status.silent) || !hasContent }?.let { msg ->
             Text(
                 text = msg,
                 style = MaterialTheme.typography.bodySmall,

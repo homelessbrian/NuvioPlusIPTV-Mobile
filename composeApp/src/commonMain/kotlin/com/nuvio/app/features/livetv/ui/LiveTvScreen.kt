@@ -321,7 +321,7 @@ fun LiveTvScreen(
                         )
                     }
                     if (status.loading && status.message != null &&
-                        (settings.showImportProgress || sections.none { it.channels.isNotEmpty() })
+                        ((settings.showImportProgress && !status.silent) || sections.none { it.channels.isNotEmpty() })
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(bottom = NuvioTokens.Space.s8),

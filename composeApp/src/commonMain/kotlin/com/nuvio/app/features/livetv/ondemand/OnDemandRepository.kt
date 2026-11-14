@@ -152,7 +152,10 @@ internal object OnDemandRepository {
             if (onlyId != null && pl.id != onlyId) continue
             val last = stamps[pl.id] ?: 0L
             if (!force && now - last < REFRESH_MS) continue
-            _status.value = OnDemandStatus(true, "Importing movies and series from ${pl.name}…")
+            // The daily re-import of a catalog that's already there happens without a progress line
+            // (people took it for the app reloading everything); a first import still shows it.
+            quietImport = !force && last > 0L
+            _status.value = OnDemandStatus(true, "Importing movies and series from ${pl.name}…", silent = quietImport)
             var problem: String? = null
             if (pl.isStalker) {
                 runCatching { importStalker(pl, VodKind.MOVIE) }
@@ -178,8 +181,12 @@ internal object OnDemandRepository {
         }
         _hasContent.value = runCatching { withContext(Dispatchers.Default) { OnDemandStore.hasAny() } }.getOrDefault(_hasContent.value)
         problemByPlaylist.keys.retainAll(keep)
+        quietImport = false
         _status.value = OnDemandStatus(false, problemByPlaylist.values.joinToString("\n").ifBlank { null })
     }
+
+    /** The import running now is a routine re-import (see [OnDemandStatus.silent]). */
+    @kotlin.concurrent.Volatile private var quietImport = false
 
     private suspend fun importStalker(pl: PlaylistSource, kind: VodKind) {
         val client = StalkerGateway.client(pl)
@@ -229,10 +236,10 @@ internal object OnDemandRepository {
         val series = kind == VodKind.SERIES
         val what = if (series) "series" else "movies"
         val categories = xtream.vodCategories(pl, series)
-        _status.value = OnDemandStatus(true, "Importing $what from ${pl.name}…")
+        _status.value = OnDemandStatus(true, "Importing $what from ${pl.name}…", silent = quietImport)
         val latest = VodTitles.latestYear()
         val raw = xtream.vodItems(pl, series)
-        _status.value = OnDemandStatus(true, "Storing ${raw.size} $what from ${pl.name}…")
+        _status.value = OnDemandStatus(true, "Storing ${raw.size} $what from ${pl.name}…", silent = quietImport)
         val items = raw.asSequence().map { x ->
             VodItem(
                 playlistId = pl.id,
@@ -290,7 +297,7 @@ internal object OnDemandRepository {
                 url = e.url,
             )
         }
-        _status.value = OnDemandStatus(true, "Storing ${items.size} titles from ${pl.name}…")
+        _status.value = OnDemandStatus(true, "Storing ${items.size} titles from ${pl.name}…", silent = quietImport)
         OnDemandStore.replace(pl.id, VodKind.MOVIE, categories.entries.map { it.key to it.value }, items.asSequence())
         OnDemandStore.replace(pl.id, VodKind.SERIES, emptyList(), emptySequence())
     }

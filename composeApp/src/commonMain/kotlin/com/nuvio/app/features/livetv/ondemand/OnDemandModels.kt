@@ -122,7 +122,8 @@ data class VodInfo(
     val episodes: List<VodEpisode> = emptyList(),
 )
 
-data class OnDemandStatus(val loading: Boolean = false, val message: String? = null)
+/** [silent]: a routine re-import of a catalog that's already there (no progress line on screen for it). */
+data class OnDemandStatus(val loading: Boolean = false, val message: String? = null, val silent: Boolean = false)
 
 /** A poster (and the proper title and TMDB id) found for a title, remembered between app starts. */
 data class VodMatch(

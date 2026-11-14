@@ -43,6 +43,8 @@ data class LiveTvStatus(
     val message: String? = null,
     val error: String? = null,
     val loadedOnce: Boolean = false,
+    /** A routine update (scheduled check, start-up, after a sync): no "working on it" line while channels are on screen. */
+    val silent: Boolean = false,
 )
 
 /**
@@ -137,7 +139,7 @@ internal object LiveTvRepository {
 
     /** An automatic check for anything past its update time; remembers when it finished. */
     private suspend fun autoCheck() {
-        try { runCatching { refreshInternal(forcePlaylists = false, forceEpg = false) } }
+        try { runCatching { refreshInternal(forcePlaylists = false, forceEpg = false, routine = true) } }
         finally { lastAutoCheckAt = LiveTvClock.nowMs() }
     }
 
@@ -162,7 +164,8 @@ internal object LiveTvRepository {
                 }
                 rebuildLocked()
             } }
-            runCatching { refreshInternal(forcePlaylists = false, forceEpg = false, forceIds = changedPlaylists) }
+            // Channels already on screen: the update that follows a sync isn't announced.
+            runCatching { refreshInternal(forcePlaylists = false, forceEpg = false, forceIds = changedPlaylists, routine = _channels.value.isNotEmpty()) }
         }
     }
 
@@ -341,18 +344,23 @@ internal object LiveTvRepository {
 
     // ---------------------------------------------------------------- refresh
 
+    /** True while a routine update runs (see [refreshInternal], [rebuildLocked]): its progress isn't announced. */
+    @kotlin.concurrent.Volatile private var routineRun = false
+
     private fun setStatus(loading: Boolean, message: String?, error: String? = null) {
-        _status.value = _status.value.copy(loading = loading, message = message, error = error)
+        _status.value = _status.value.copy(loading = loading, message = message, error = error, silent = routineRun)
     }
 
-    private suspend fun refreshInternal(forcePlaylists: Boolean, forceEpg: Boolean, forceIds: Set<String> = emptySet()) {
+    private suspend fun refreshInternal(forcePlaylists: Boolean, forceEpg: Boolean, forceIds: Set<String> = emptySet(), routine: Boolean = false) {
         mutex.withLock {
+            // A scheduled check works without the progress line; an update you asked for (or a new playlist) shows it.
+            routineRun = routine
             try {
                 refreshBody(forcePlaylists, forceEpg, forceIds)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 _status.value = LiveTvStatus(loading = false, loadedOnce = true, error = e.message ?: "Update failed")
-            }
+            } finally { routineRun = false }
             runCatching { sweepLeftoverFiles() }
         }
     }
@@ -431,19 +439,38 @@ internal object LiveTvRepository {
         _status.value = LiveTvStatus(loading = false, loadedOnce = true, error = firstError)
     }
 
-    /** Reads the saved channels and guide (nothing downloaded). */
+    /**
+     * Reads the saved channels and guide (nothing downloaded). The stored guide goes on screen
+     * straight away, even when something it depends on changed since (an update cut short, a
+     * changed playlist or guide file): it stays there while the guide is matched again, so the
+     * guide is never empty at start-up just because it's being brought up to date.
+     */
     private suspend fun rebuildLocked() {
-        buildChannels()
-        val settings = prefs.currentSettings()
-        val targets = collectEpgTargets()
-        if (_channels.value.isNotEmpty() && EpgStore.fingerprint() == guideFingerprint(settings, targets)) {
-            loadGuideWindow()
-            _autoMatches.value = withContext(Dispatchers.Default) { EpgStore.autoMatches() }
-        } else if (_channels.value.isNotEmpty() && targets.any { LiveTvFiles.exists(LiveTvDirs.EPG, epgFile(it.fileId)) }) {
-            setStatus(loading = true, message = "Matching guide data…")
-            buildPrograms(settings, targets)
-        }
-        _status.value = _status.value.copy(loading = false, loadedOnce = true)
+        // Channels already on screen (a rebuild after a change): reading the guide again isn't announced.
+        val hadChannels = _channels.value.isNotEmpty()
+        routineRun = hadChannels
+        try {
+            buildChannels()
+            val settings = prefs.currentSettings()
+            val targets = collectEpgTargets()
+            val stored = runCatching { EpgStore.fingerprint() }.getOrNull()
+            if (_channels.value.isNotEmpty() && stored == guideFingerprint(settings, targets)) {
+                loadGuideWindow()
+                _autoMatches.value = withContext(Dispatchers.Default) { EpgStore.autoMatches() }
+            } else if (_channels.value.isNotEmpty() && targets.any { LiveTvFiles.exists(LiveTvDirs.EPG, epgFile(it.fileId)) }) {
+                if (stored != null) {
+                    // The guide as it was last stored, shown as it is while it's brought up to date.
+                    runCatching {
+                        loadGuideWindow()
+                        _autoMatches.value = withContext(Dispatchers.Default) { EpgStore.autoMatches() }
+                    }
+                    routineRun = true
+                }
+                setStatus(loading = true, message = "Matching guide data…")
+                buildPrograms(settings, targets)
+            }
+        } finally { routineRun = false }
+        _status.value = _status.value.copy(loading = false, loadedOnce = true, silent = false)
     }
 
     private suspend fun sweepLeftoverFiles() = withContext(Dispatchers.Default) {
