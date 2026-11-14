@@ -476,8 +476,8 @@ private fun MultiviewPane(
                 }
                 if (state.isLoading) NuvioLoadingIndicator(modifier = Modifier.align(Alignment.Center))
                 // Out of tries on this channel: a backup copy (or the game's next stream) if there is one.
-                LaunchedEffect(state.error) {
-                    if (state.error != null) {
+                LaunchedEffect(state.failed) {
+                    if (state.failed) {
                         backupTried += channel.key
                         onBackup(channel, backupTried.toSet())
                     }

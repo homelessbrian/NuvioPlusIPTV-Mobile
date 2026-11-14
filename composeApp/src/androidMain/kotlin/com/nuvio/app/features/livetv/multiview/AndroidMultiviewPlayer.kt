@@ -242,7 +242,7 @@ internal class AndroidMultiviewPlayer(
                             // A live stream never really ends: the provider closed the connection.
                             if (scheduleReconnect()) return
                             stopEngine()
-                            mutableState.value = MultiviewTileState(error = "Lost the connection to this stream. Select Retry or choose another channel.")
+                            mutableState.value = MultiviewTileState(error = "Lost the connection to this stream. Select Retry or choose another channel.", failed = true)
                             return
                         }
                         mutableState.value = MultiviewTileState(
@@ -267,7 +267,7 @@ internal class AndroidMultiviewPlayer(
                         } else if (!multiviewRetryable(error) || !scheduleReconnect()) {
                             stopEngine()
                             reconnecting = false
-                            mutableState.value = MultiviewTileState(error = multiviewPlaybackError(error))
+                            mutableState.value = MultiviewTileState(error = multiviewPlaybackError(error), failed = true)
                         }
                     }
                 })
@@ -285,6 +285,7 @@ internal class AndroidMultiviewPlayer(
                 mutableState.value = MultiviewTileState(error =
                     (failure as? MultiviewSourceException)?.tileMessage
                         ?: "Playback could not start. Check the channel and VPN settings.",
+                    failed = true,
                 )
             }
         }

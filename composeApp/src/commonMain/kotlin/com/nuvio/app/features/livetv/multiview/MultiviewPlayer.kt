@@ -24,6 +24,8 @@ data class MultiviewTileState(
     val error: String? = null,
     /** The stream dropped and is being reconnected (no spinner; a quiet mark if it takes a while). */
     val isReconnecting: Boolean = false,
+    /** The channel itself wouldn't play (not a pause for a call or another app): a backup may be tried. */
+    val failed: Boolean = false,
 )
 
 @Composable
