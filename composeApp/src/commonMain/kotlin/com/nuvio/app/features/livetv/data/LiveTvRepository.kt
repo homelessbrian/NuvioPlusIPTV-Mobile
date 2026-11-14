@@ -603,9 +603,12 @@ internal object LiveTvRepository {
             }
             if (!pl.isM3u && !pl.isXtream) continue
             val parsed = runCatching {
-                LiveTvFiles.readChunks(LiveTvDirs.PLAYLISTS, file) { chunks -> M3uParser.parse(linesOf(chunks)) }
+                // Movies and episodes are left out while reading (see the check below).
+                LiveTvFiles.readChunks(LiveTvDirs.PLAYLISTS, file) { chunks -> M3uParser.parse(linesOf(chunks)) { url -> isVodEntry(url) } }
             }.getOrNull() ?: continue
             embeddedEpgUrls[pl.id] = parsed.epgUrls
+            // The playlist's own User-Agent: one shared copy for every channel with no headers of its own.
+            val agentOnly = if (pl.userAgent.isNotBlank()) mapOf("User-Agent" to pl.userAgent) else emptyMap()
             var count = 0
             for (e in parsed.entries) {
                 // Many providers' M3U links also list every movie and episode: not TV channels.
@@ -619,7 +622,7 @@ internal object LiveTvRepository {
                 val number = e.chno ?: counter
                 counter = maxOf(counter, number) + 1
                 val headers = if (pl.userAgent.isNotBlank() && e.headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
-                    e.headers + ("User-Agent" to pl.userAgent)
+                    if (e.headers.isEmpty()) agentOnly else e.headers + ("User-Agent" to pl.userAgent)
                 } else e.headers
                 out += LiveChannel(
                     key = key,
