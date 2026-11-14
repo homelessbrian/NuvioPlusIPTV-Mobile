@@ -176,9 +176,60 @@ internal object LiveTvViewState {
     }
 
     /** Channels whose name or number matches [query], from the visible list. */
+    /**
+     * Every channel whose name (or number) matches, best match first: the exact name, then names
+     * that start with it, then a word that starts with it, then the rest. At the same match,
+     * names A to Z, and each name's copies best quality first (4K, FHD, HD, no tag, SD, backups).
+     */
     fun search(visible: List<LiveChannel>, query: String): List<LiveChannel> {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
-        return visible.filter { it.name.contains(q, ignoreCase = true) || it.number.toString() == q }
+        val matched = visible.filter { it.name.contains(q, ignoreCase = true) || it.number.toString() == q }
+        if (matched.size < 2) return matched
+        val tiers = HashMap<String, Int>(matched.size)
+        val clean = HashMap<String, String>(matched.size)
+        for (c in matched) {
+            tiers[c.key] = if (c.number.toString() == q) 0 else nameMatchTier(c.name, q)
+            clean[c.key] = cleanChannelName(c.name)
+        }
+        return matched.sortedWith(compareBy<LiveChannel>({ tiers[it.key] ?: 3 }, { clean[it.key].orEmpty() }, { qualityRank(it.name) }))
+    }
+
+    /** Words after a channel's name that only say which copy it is (its quality). */
+    private val QUALITY_WORDS = setOf("hd", "fhd", "uhd", "sd", "4k", "hevc", "h265", "backup", "1080p", "720p")
+
+    /** The channel's name without its region prefix and quality tags: "US: TNT HD" -> "tnt". */
+    private fun cleanWords(name: String): List<String> =
+        name.substringAfterLast(':').substringAfterLast('|').trim().lowercase()
+            .split(' ', '-', '_').filter { it.isNotEmpty() && it !in QUALITY_WORDS }
+
+    private fun cleanChannelName(name: String): String = cleanWords(name).joinToString(" ")
+
+    /** How good this copy is, best first: 4K, then FHD, HD, no tag, SD, and backups last. */
+    private fun qualityRank(name: String): Int {
+        val words = name.lowercase().split(' ', '-', '_', '|', ':', '(', ')', '[', ']').filter { it.isNotEmpty() }.toSet()
+        return when {
+            "backup" in words -> 5
+            words.any { it == "4k" || it == "uhd" || it == "2160p" } -> 0
+            words.any { it == "fhd" || it == "1080p" } -> 1
+            words.any { it == "hd" || it == "720p" || it == "hevc" || it == "h265" } -> 2
+            "sd" in words -> 4
+            else -> 3
+        }
+    }
+
+    /** 0 = the channel's name is exactly [q], 1 = starts with it, 2 = a word in it starts with it, 3 = contains it. */
+    private fun nameMatchTier(name: String, q: String): Int {
+        val words = cleanWords(name)
+        val clean = words.joinToString(" ")
+        // Quality words typed in the search ("tnt hd") are dropped like the ones in channel names.
+        val query = q.lowercase().split(' ').filter { it.isNotEmpty() && it !in QUALITY_WORDS }.joinToString(" ")
+            .ifEmpty { q.lowercase() }
+        return when {
+            clean == query -> 0
+            clean.startsWith(query) -> 1
+            words.any { it.startsWith(query) } -> 2
+            else -> 3
+        }
     }
 }

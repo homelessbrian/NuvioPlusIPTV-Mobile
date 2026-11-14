@@ -148,6 +148,7 @@ internal object LiveTvRecordingScheduler {
         scope.launch {
             mutex.withLock {
                 val gone = _schedules.value.filter { it.channel.key == channelKey && it.startMs == startMs }
+                gone.forEach { markSeenLocked(it) }
                 gone.forEach { RecordingPlatform.cancelAlarm(it.id) }
                 _schedules.value = _schedules.value - gone.toSet()
                 save()
@@ -158,7 +159,7 @@ internal object LiveTvRecordingScheduler {
     fun cancel(id: String) {
         scope.launch {
             mutex.withLock {
-                _schedules.value.firstOrNull { it.id == id }?.let { RecordingPlatform.cancelAlarm(it.id) }
+                _schedules.value.firstOrNull { it.id == id }?.let { markSeenLocked(it); RecordingPlatform.cancelAlarm(it.id) }
                 _schedules.value = _schedules.value.filterNot { it.id == id }
                 save()
             }
@@ -223,6 +224,8 @@ internal object LiveTvRecordingScheduler {
         if (rules.isEmpty()) return
         val now = LiveTvClock.nowMs()
         for (rule in rules) {
+            // Episodes set in this pass: a repeat later in the same listing would otherwise be set as well.
+            val setNow = mutableSetOf<String>()
             val listings = runCatching { LiveTvRepository.channelSchedule(rule.channel.key, now, now + 7L * 24 * 3_600_000L) }.getOrDefault(emptyList())
             val channel = freshChannel(rule.channel)
             listings.filter { RecordingRules.normalizeTitle(it.title) == rule.norm && it.stopMs > now }.forEach { p ->
@@ -239,7 +242,7 @@ internal object LiveTvRecordingScheduler {
                             (it.seriesId == rule.id || it.channelKey == rule.channel.key) && RecordingRules.episodeKey(it.episode) == ep &&
                                 RecordingRules.normalizeTitle(it.title) == rule.norm
                         }))
-                if (!already && p.startMs > now) add(channel, p, seriesId = rule.id)
+                if (!already && p.startMs > now && (ep == null || setNow.add(ep))) add(channel, p, seriesId = rule.id)
             }
         }
     }
@@ -408,6 +411,16 @@ internal object LiveTvRecordingScheduler {
         if (saved.stalker != null && fresh.stalker?.sourceIdentity != saved.stalker.sourceIdentity)
             return saved.toChannel() // Resolve refuses an old recording against a replacement portal.
         return fresh
+    }
+
+    /**
+     * A series episode you cancelled by hand: remember it, so the next guide refresh doesn't set
+     * it again. Call with the lock held.
+     */
+    private fun markSeenLocked(s: RecordingSchedule) {
+        val id = s.seriesId ?: return
+        val ep = RecordingRules.episodeKey(s.episode) ?: return
+        _series.value = _series.value.map { r -> if (r.id == id && ep !in r.seen) r.copy(seen = (r.seen + ep).takeLast(500)) else r }
     }
 
     /** A series episode is being recorded: remember it, so its repeats are skipped from now on. */

@@ -60,7 +60,7 @@ internal data class LiveSearchHit(
     val live: Boolean,
 )
 
-private const val MAX_HITS = 40
+private const val MAX_HITS = 200
 private const val AHEAD_MS = 6L * 60 * 60 * 1000
 
 /** Channels whose name/number match first, then channels with a matching show in the next 6 hours. */

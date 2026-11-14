@@ -321,7 +321,7 @@ private fun pastHoursLabel(h: Int): String = when {
     else -> "${h / 24} days"
 }
 /** Time shifts in minutes, half an hour apart, a day either way (the TV app's choices). */
-private val EPG_OFFSETS = (-24..24).map { it * 30 }
+private val EPG_OFFSETS = (-48..48).map { it * 30 }
 
 /** Time zones offered for a playlist's catch-up (the common ones IPTV servers run on), as on the TV app. */
 private val CATCHUP_ZONES = listOf(
