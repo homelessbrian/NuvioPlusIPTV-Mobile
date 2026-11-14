@@ -1,5 +1,6 @@
 package com.nuvio.app.features.livetv.sports
 
+import com.nuvio.app.features.livetv.ForkService
 import com.nuvio.app.features.livetv.model.LiveTvClock
 import com.nuvio.app.features.profiles.ProfilePinCrypto
 import kotlinx.coroutines.sync.Mutex
@@ -16,7 +17,11 @@ data class ScoringPlay(val clock: String, val teamAbbr: String?, val text: Strin
  */
 internal class SportsFeeds {
 
-    private suspend fun get(url: String): String = SportsPlatform.get(url)
+    /** Our builds read the nuvio-data sports files through our own service (see [ForkService]). */
+    private suspend fun get(url: String): String {
+        val data = ForkService.dataUrl(url) ?: return SportsPlatform.get(url)
+        return SportsPlatform.get(data, mapOf(ForkService.HEADER to ForkService.appKey))
+    }
 
     // ------------------------------------------------------------------ ESPN
 

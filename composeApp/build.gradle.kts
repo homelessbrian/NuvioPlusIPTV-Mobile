@@ -52,6 +52,9 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
     @get:Input
     abstract val testerKey: Property<String>
 
+    @get:Input
+    abstract val appKey: Property<String>
+
     @TaskAction
     fun generate() {
         val props = Properties()
@@ -221,6 +224,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |    const val IS_TEST_BUILD = ${testBuild.get()}
                 |    const val TEST_UPDATES_URL = "https://livetv-cloud.nuvioplusiptv.workers.dev"
                 |    const val TESTER_KEY = "${testerKey.get()}"
+                |    const val APP_KEY = "${appKey.get()}"
                 |}
                 """.trimMargin()
             )
@@ -370,6 +374,8 @@ val generateRuntimeConfigs = tasks.register<GenerateRuntimeConfigsTask>("generat
     val isTestBuild = providers.gradleProperty("nuvio.app.testBuild").orNull == "true"
     testBuild.set(isTestBuild)
     testerKey.set(if (isTestBuild) runtimeConfigValue("LIVETV_TESTER_KEY") else "")
+    // Our own builds carry the app key (secret LIVETV_APP_KEY) for cloud sync and the sports files.
+    appKey.set(runtimeConfigValue("LIVETV_APP_KEY"))
     sentryEnvironment.set(
         when {
             requestedGradleTasks.any { "benchmark" in it } -> "benchmark"

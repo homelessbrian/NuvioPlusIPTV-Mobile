@@ -98,7 +98,10 @@ jobs:
         env:
           TAG: ${{ steps.ver.outputs.tag }}
           CODE: ${{ steps.ver.outputs.code }}
+          # The app key for cloud sync and the sports files (same as APP_KEY in the Worker).
+          LIVETV_APP_KEY: ${{ secrets.LIVETV_APP_KEY }}
         run: |
+          [ -n "$LIVETV_APP_KEY" ] || { echo "::error::Add the LIVETV_APP_KEY secret first (cloud sync and Sports need it)."; exit 1; }
           chmod +x gradlew
           # Upstream's gradle.properties asks for 12 GB + 8 GB on a 16 GB runner; the VM gets
           # killed at the packaging peak. Fit the build into the runner.

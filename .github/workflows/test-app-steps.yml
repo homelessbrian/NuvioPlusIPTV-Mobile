@@ -105,6 +105,8 @@ jobs:
           NAME: ${{ steps.ver.outputs.name }}
           CODE: ${{ steps.ver.outputs.code }}
           LIVETV_TESTER_KEY: ${{ secrets.LIVETV_TESTER_KEY }}
+          # The app key for cloud sync and the sports files (same as APP_KEY in the Worker).
+          LIVETV_APP_KEY: ${{ secrets.LIVETV_APP_KEY }}
         run: |
           [ -n "$LIVETV_TESTER_KEY" ] || { echo "::error::Add the LIVETV_TESTER_KEY secret first (the same key the TV repo uses)."; exit 1; }
           chmod +x gradlew

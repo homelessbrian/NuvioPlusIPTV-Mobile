@@ -1,5 +1,6 @@
 package com.nuvio.app.features.livetv.sync
 
+import com.nuvio.app.features.livetv.ForkService
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.ServerConfigurationRepository
@@ -543,10 +544,11 @@ internal object LiveTvCloudSync {
             put("apikey", ServerConfigurationRepository.active.value.publishableKey)
             put("Accept", "application/json")
             if (body != null) put("Content-Type", "application/json; charset=utf-8")
+            if (ForkService.hasKey) put(ForkService.HEADER, ForkService.appKey)
         }
         val response = httpRequestRaw(
             method = method,
-            url = CLOUD_URL + path,
+            url = CLOUD_URL + ForkService.syncPath(path),
             headers = headers,
             body = body?.toString().orEmpty(),
             followRedirects = false,

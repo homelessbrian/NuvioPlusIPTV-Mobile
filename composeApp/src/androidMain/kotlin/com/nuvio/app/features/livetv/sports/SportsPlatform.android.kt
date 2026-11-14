@@ -23,10 +23,11 @@ internal actual object SportsPlatform {
             .build()
     }
 
-    actual suspend fun get(url: String): String = withContext(Dispatchers.IO) {
+    actual suspend fun get(url: String, headers: Map<String, String>): String = withContext(Dispatchers.IO) {
         val req = Request.Builder().url(url)
             .header("Accept", "application/json")
             .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36")
+            .apply { headers.forEach { (k, v) -> header(k, v) } }
             .build()
         try {
             http.newCall(req).execute().use { r ->

@@ -2,8 +2,8 @@ package com.nuvio.app.features.livetv.sports
 
 /** What the Sports hub needs from the device: plain HTTP GETs of JSON feeds, and the device's locale. */
 internal expect object SportsPlatform {
-    /** GET [url] as text (JSON). Throws with a plain message on failure ("HTTP 404", "timed out"). */
-    suspend fun get(url: String): String
+    /** GET [url] as text (JSON), with any extra [headers]. Throws with a plain message on failure ("HTTP 404", "timed out"). */
+    suspend fun get(url: String, headers: Map<String, String> = emptyMap()): String
 
     /** The device's country ("US", "GB"), upper case; "" when unknown. */
     fun countryCode(): String
