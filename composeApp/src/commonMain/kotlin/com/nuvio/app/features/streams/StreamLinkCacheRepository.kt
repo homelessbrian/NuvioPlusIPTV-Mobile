@@ -75,10 +75,6 @@ object StreamLinkCacheRepository {
             remove(contentKey)
             return
         }
-        if (!isPortal && url.isNotBlank() && url.hasLikelyExpiringPlaybackCredentials()) {
-            remove(contentKey)
-            return
-        }
 
         val entry = CachedStreamLink(
             url = if (isPortal) com.nuvio.app.features.livetv.stalker.StalkerGateway.locator(stalkerSourceId!!, portalRef!!) else url,
@@ -126,10 +122,6 @@ object StreamLinkCacheRepository {
             return null
         }
         if (entry.cachedAtMs <= 0L || age > maxAgeMs) {
-            StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
-            return null
-        }
-        if (entry.url.isNotBlank() && entry.url.hasLikelyExpiringPlaybackCredentials()) {
             StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
             return null
         }

@@ -394,6 +394,7 @@ internal fun StreamDestination(
                 contentLanguage = resolveLaunchContentLanguage(cached.contentLanguage),
                 sourceFilename = cached.filename,
                 stream = cachedStream,
+                sourceFromLinkCache = true,
             )
             if (playerSettings.externalPlayerEnabled) {
                 openExternalPlayback(playerLaunch)
