@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
@@ -18,6 +19,7 @@ import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import com.nuvio.app.core.vpn.awaitVpnForPlayback
+import com.nuvio.app.features.livetv.data.LiveTvPreferences
 import com.nuvio.app.features.livetv.model.LiveChannel
 import com.nuvio.app.features.livetv.player.LivePlayRequest
 import com.nuvio.app.features.livetv.player.LiveTvPlayback
@@ -31,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,6 +61,11 @@ internal class AndroidMultiviewPlayer(
     private var prepareJob: Job? = null
     private var generation = 0L
     private var engine: ExoPlayer? = null
+    private var reconnectJob: Job? = null
+    private var reconnectAttempt = 0
+    /** When the stream last started playing; a stream that keeps going a while earns fresh tries. */
+    private var playingSince = 0L
+    private var reconnecting = false
     private var surface: MultiviewVideoView? = null
     private val focus = MultiviewAudioFocus.session(this.context)
     private val vpnSubscription = VpnPlaybackProtection.observeSettings {
@@ -78,8 +86,38 @@ internal class AndroidMultiviewPlayer(
         requestOverride = null
         triedTs = false
         focusSuspended = false
+        reconnectJob?.cancel()
+        reconnectJob = null
+        reconnectAttempt = 0
+        playingSince = 0L
+        reconnecting = false
         mutableState.value = MultiviewTileState()
         startIfVisible()
+    }
+
+    /**
+     * A dropped stream (a network blip, the provider closing the connection) tries the channel
+     * again after a short wait, like the full-screen player, while Auto-reconnect is on.
+     * False when out of tries.
+     */
+    private fun scheduleReconnect(): Boolean {
+        val selected = channel ?: return false
+        if (!LiveTvPreferences.currentSettings().autoReconnect) return false
+        // Playing for a while since the last drop counts as recovered: start the tries over.
+        if (playingSince > 0L && SystemClock.elapsedRealtime() - playingSince >= RECOVERED_AFTER_MS) reconnectAttempt = 0
+        playingSince = 0L
+        if (reconnectAttempt >= MAX_RECONNECTS) return false
+        val attempt = ++reconnectAttempt
+        stopEngine()
+        reconnecting = true
+        mutableState.value = MultiviewTileState(isReconnecting = true)
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            delay((attempt * 2_000L).coerceAtMost(10_000L))
+            if (released || channel != selected) return@launch
+            startIfVisible()
+        }
+        return true
     }
 
     override fun setMuted(muted: Boolean) {
@@ -134,6 +172,7 @@ internal class AndroidMultiviewPlayer(
     override fun release() {
         if (released) return
         released = true
+        reconnectJob?.cancel()
         stopEngine()
         surface = null
         channel = null
@@ -177,7 +216,7 @@ internal class AndroidMultiviewPlayer(
         if (engine != null || prepareJob?.isActive == true) return
         val token = generation
         val request = requestOverride ?: LiveTvPlayback.requestFor(selected)
-        mutableState.value = MultiviewTileState(isLoading = true)
+        mutableState.value = MultiviewTileState(isLoading = !reconnecting, isReconnecting = reconnecting)
         prepareJob = scope.launch {
             try {
                 val source = multiviewMediaSource(context, selected, request)
@@ -195,9 +234,21 @@ internal class AndroidMultiviewPlayer(
                 player.addListener(object : Player.Listener {
                     override fun onEvents(player: Player, events: Player.Events) {
                         if (engine !== player) return
+                        if (player.isPlaying) {
+                            if (playingSince == 0L) playingSince = SystemClock.elapsedRealtime()
+                            reconnecting = false
+                        }
+                        if (player.playbackState == Player.STATE_ENDED) {
+                            // A live stream never really ends: the provider closed the connection.
+                            if (scheduleReconnect()) return
+                            stopEngine()
+                            mutableState.value = MultiviewTileState(error = "Lost the connection to this stream. Select Retry or choose another channel.")
+                            return
+                        }
                         mutableState.value = MultiviewTileState(
-                            isLoading = player.isLoading || player.playbackState == Player.STATE_BUFFERING,
+                            isLoading = !reconnecting && (player.isLoading || player.playbackState == Player.STATE_BUFFERING),
                             isPlaying = player.isPlaying,
+                            isReconnecting = reconnecting,
                         )
                     }
 
@@ -213,8 +264,9 @@ internal class AndroidMultiviewPlayer(
                             requestOverride = request.copy(url = ts, streamType = null)
                             stopEngine()
                             startIfVisible()
-                        } else {
+                        } else if (!multiviewRetryable(error) || !scheduleReconnect()) {
                             stopEngine()
+                            reconnecting = false
                             mutableState.value = MultiviewTileState(error = multiviewPlaybackError(error))
                         }
                     }
@@ -327,6 +379,29 @@ internal fun multiviewHttpStatus(failure: Throwable): Int? {
         current = cause.cause?.takeUnless { it === cause }
     }
     return null
+}
+
+private const val MAX_RECONNECTS = 6
+private const val RECOVERED_AFTER_MS = 60_000L
+
+/**
+ * Worth reconnecting: dropped connections, timeouts, provider hiccups and connection limits
+ * (another stream may free up). Not refused/missing streams, protected channels or decoders.
+ */
+internal fun multiviewRetryable(error: PlaybackException): Boolean {
+    multiviewHttpStatus(error)?.let { return it !in listOf(401, 403, 404, 410) }
+    return when (error.errorCode) {
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+        PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+        PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW,
+        PlaybackException.ERROR_CODE_TIMEOUT,
+        PlaybackException.ERROR_CODE_UNSPECIFIED,
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> true
+        else -> false
+    }
 }
 
 internal fun multiviewPlaybackError(failure: Throwable): String = when (multiviewHttpStatus(failure)) {

@@ -22,6 +22,8 @@ data class MultiviewTileState(
     val isPlaying: Boolean = false,
     /** Only a fixed, credential-free description may cross this boundary. */
     val error: String? = null,
+    /** The stream dropped and is being reconnected (no spinner; a quiet mark if it takes a while). */
+    val isReconnecting: Boolean = false,
 )
 
 @Composable

@@ -371,11 +371,25 @@ internal object LiveTvPlayback {
 
     private fun backupFor(failed: LiveChannel): LiveChannel? {
         if (!LiveTvPreferences.currentSettings().autoBackupChannel) return null
-        val index = indexNow()
         synchronized(lock) { backupTried += failed.key }
+        val tried = synchronized(lock) { backupTried.toSet() }
+        return backupAmong(failed, tried)
+    }
+
+    /**
+     * A copy of [failed] (same channel, another stream: other playlists first) that isn't in
+     * [tried], for a Multiview pane whose channel won't play. Follows the "Backup channel"
+     * setting; doesn't touch the full-screen player's own list of channels tried.
+     */
+    fun backupChannel(failed: LiveChannel, tried: Set<String>): LiveChannel? {
+        if (!LiveTvPreferences.currentSettings().autoBackupChannel) return null
+        return backupAmong(failed, tried)
+    }
+
+    private fun backupAmong(failed: LiveChannel, tried: Set<String>): LiveChannel? {
+        val index = indexNow()
         val name = backupName(failed.name)
         if (name.length < 2) return null
-        val tried = synchronized(lock) { backupTried.toSet() }
         val hidden = LiveTvPreferences.currentUserState()
         return index[name].orEmpty().asSequence()
             .filter { it.key !in tried && it.key != failed.key }

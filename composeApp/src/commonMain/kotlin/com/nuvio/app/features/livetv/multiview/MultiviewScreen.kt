@@ -53,6 +53,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,9 +81,11 @@ import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
+import com.nuvio.app.features.livetv.data.LiveTvPreferences
 import com.nuvio.app.features.livetv.data.LiveTvRepository
 import com.nuvio.app.features.livetv.data.VideoPlaying
 import com.nuvio.app.features.livetv.model.LiveChannel
+import com.nuvio.app.features.livetv.player.LiveTvPlayback
 import com.nuvio.app.features.livetv.sports.ChannelMatch
 import com.nuvio.app.features.livetv.sports.ChannelPickerSearchResult
 import com.nuvio.app.features.livetv.sports.channelPickerSearchResults
@@ -241,6 +244,31 @@ fun MultiviewScreen(
         val at = streams.indexOfFirst { it.channel.key == channelKey }
         return eventId to streams.drop(at + 1)
     }
+    /**
+     * A pane whose channel won't play (out of reconnect tries): the game's next stream (a game
+     * pane), else a copy of the channel from another playlist. Follows the "Backup channel"
+     * setting like the full-screen player; the pane keeps its sound choice.
+     */
+    fun switchToBackup(pane: Int, failed: LiveChannel, tried: Set<String>): Boolean {
+        if (!profileIsCurrent()) return false
+        nextStreams(pane)?.let { (eventId, candidates) ->
+            if (LiveTvPreferences.currentSettings().autoBackupChannel) {
+                val watch = sports
+                val next = candidates.asSequence().filter { it.channel.key !in tried }
+                    .mapNotNull { watch?.resolve(eventId, it.channel.key)?.channel }
+                    .firstOrNull { it.key !in tried && playerPermission?.invoke(it) != false }
+                if (next != null) {
+                    sportsEvents[pane] = eventId
+                    session.assign(pane, next)
+                    return true
+                }
+            }
+        }
+        val backup = LiveTvPlayback.backupChannel(failed, tried)
+            ?.takeIf { c -> playerPermission?.invoke(c) ?: LiveTvViewState.list.value.visible.any { it == c } } ?: return false
+        session.assign(pane, backup)
+        return true
+    }
     PlatformBackHandler(enabled = sportsControlsOpen) { sportsControlsOpen = false }
 
     LaunchedEffect(audio, playbackActive, permittedSelection.focusedOwnerId) {
@@ -313,6 +341,7 @@ fun MultiviewScreen(
                                 if (showingSports && sportsControlsOpen) openSportsPane(pane)
                             },
                             onEdit = { openPicker(pane) },
+                            onBackup = { failed, tried -> switchToBackup(pane, failed, tried) },
                             modifier = Modifier.offset(x = paneWidth * columnIndex, y = paneHeight * rowIndex)
                                 .width(paneWidth).height(paneHeight).padding(NuvioTokens.Space.s4),
                         )
@@ -415,10 +444,13 @@ private fun MultiviewPane(
     onNextStream: () -> Unit,
     onFocus: () -> Unit,
     onEdit: () -> Unit,
+    onBackup: (failed: LiveChannel, tried: Set<String>) -> Boolean,
     modifier: Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
     var attempt by remember(ownerId, channel) { mutableIntStateOf(0) }
+    // Channels this pane already moved off because they wouldn't play (a run of backups).
+    val backupTried = remember(ownerId) { HashSet<String>() }
     Box(
         modifier.clip(tokens.shapes.compactCard).background(tokens.colors.surfaceCard)
             .border(if (focused) 2.dp else 1.dp, if (focused) tokens.colors.accent else tokens.colors.borderDefault, tokens.shapes.compactCard),
@@ -443,6 +475,32 @@ private fun MultiviewPane(
                     onDispose { audio.unregister(ownerId, player) }
                 }
                 if (state.isLoading) NuvioLoadingIndicator(modifier = Modifier.align(Alignment.Center))
+                // Out of tries on this channel: a backup copy (or the game's next stream) if there is one.
+                LaunchedEffect(state.error) {
+                    if (state.error != null) {
+                        backupTried += channel.key
+                        onBackup(channel, backupTried.toSet())
+                    }
+                }
+                // Reconnecting: nothing for the first few seconds (most drops are back by then), then a quiet mark.
+                var showReconnecting by remember { mutableStateOf(false) }
+                LaunchedEffect(state.isReconnecting) {
+                    showReconnecting = false
+                    if (state.isReconnecting) {
+                        delay(RECONNECT_MARK_AFTER_MS)
+                        showReconnecting = true
+                    }
+                }
+                if (showReconnecting && state.isReconnecting) {
+                    Text(
+                        "Reconnecting…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.colors.textSecondary,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(NuvioTokens.Space.s8)
+                            .clip(tokens.shapes.compactCard).background(tokens.colors.surface.copy(alpha = 0.8f))
+                            .padding(horizontal = NuvioTokens.Space.s6, vertical = NuvioTokens.Space.s2),
+                    )
+                }
                 if (state.error != null) {
                     Column(
                         modifier = Modifier.align(Alignment.Center).padding(NuvioTokens.Space.s12).zIndex(1f),
@@ -722,3 +780,5 @@ private fun MultiviewPickerControls(
         ) { sources() }
     }
 }
+
+private const val RECONNECT_MARK_AFTER_MS = 4_000L
