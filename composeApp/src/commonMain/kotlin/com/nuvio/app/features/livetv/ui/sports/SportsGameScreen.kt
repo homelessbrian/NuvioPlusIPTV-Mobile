@@ -257,6 +257,14 @@ private fun GameBody(ev: SportsEvent, actions: SportsActions) {
                 if (ev.state != GameState.POST && ev.hasTime) {
                     Chip(label = stringResource(if (reminded) Res.string.livetv_sports_reminded else Res.string.livetv_sports_remind), selected = reminded, onClick = { repo.toggleReminder(ev) })
                 }
+                // Score alerts for just this game (its scores and the final result), when its teams aren't followed.
+                if ((ev.state == GameState.PRE || ev.state == GameState.LIVE) && ev.sides.size == 2 && !hide && !repo.alertsFromFollows(ev, follows)) {
+                    val alertsOn = follows.alertGames.any { it.eventId == ev.id }
+                    Chip(label = if (alertsOn) "📣 Score alerts on" else "📣 Score alerts", selected = alertsOn, onClick = {
+                        repo.toggleGameAlerts(ev)
+                        NuvioToastController.show(if (alertsOn) "Score alerts off for this game" else "You'll get this game's scores and the final result")
+                    })
+                }
                 if (ev.state != GameState.POST && ev.hasTime && hasChannels && ownChannels.isNotEmpty()) {
                     Chip(
                         label = if (recording != null) "● Recording set" else stringResource(Res.string.livetv_sports_record),

@@ -56,7 +56,7 @@ internal object SportsLiveWatch {
         scope.launch {
             runCatching {
                 val s = repo.storedSettings()
-                if (!s.scoringAlerts || s.hideScores || !GameAlerts.notificationsAllowed()) return@launch
+                if (s.hideScores || !GameAlerts.notificationsAllowed()) return@launch
                 // Started inside the alarm's few seconds, when Android allows it from the background.
                 val ev = repo.eventById(eventId)
                 showing = SportsLivePlatform.show(ev?.title ?: "Your game", "Starting now", ev?.let { LiveTvDeepLinks.sportsGameUrl(it.id) })
@@ -75,11 +75,11 @@ internal object SportsLiveWatch {
         SportsLivePlatform.stop()
     }
 
-    /** Your teams' games to watch: on now, or due to start any minute. */
+    /** Your teams' games (and single games with score alerts on) to watch: on now, or due to start any minute. */
     fun games(events: List<SportsEvent>, f: SportsFollows, s: SportsSettings, now: Long = LiveTvClock.nowMs()): List<SportsEvent> {
-        if (!s.scoringAlerts || s.hideScores) return emptyList()
+        if (s.hideScores) return emptyList()
         return events.filter { ev ->
-            ev.id !in stopped && isMine(ev, f) && when (ev.state) {
+            ev.id !in stopped && wanted(ev, f, s) && when (ev.state) {
                 GameState.LIVE -> true
                 GameState.PRE -> ev.hasTime && ev.startMs in (now - WAIT_FOR_START)..(now + 2 * MINUTE)
                 else -> false
@@ -90,6 +90,10 @@ internal object SportsLiveWatch {
     /** A game of a team (or a whole league) you follow: the same ones Scoring alerts are for. */
     fun isMine(ev: SportsEvent, f: SportsFollows): Boolean =
         ev.leagueId in f.leagues || ev.sides.any { f.followsTeam(ev.leagueId, it.team.id) }
+
+    /** A game whose scores come as alerts: yours (with Scores for my teams on), or one with Score alerts set on its page. */
+    fun wanted(ev: SportsEvent, f: SportsFollows, s: SportsSettings): Boolean =
+        f.alertGames.any { it.eventId == ev.id } || (s.scoringAlerts && isMine(ev, f))
 
     private fun refresh(events: List<SportsEvent>, f: SportsFollows, s: SportsSettings) {
         val list = games(events, f, s)

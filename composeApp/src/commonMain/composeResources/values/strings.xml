@@ -2914,7 +2914,7 @@
     <string name="livetv_game_alerts_starting_description">A notification before each game of a team or league you follow (games you tap Remind me on always get one)</string>
     <string name="livetv_game_alerts_how_early">How early</string>
     <string name="livetv_game_alerts_scores">Scores for my teams</string>
-    <string name="livetv_game_alerts_scores_description">A notification when a team you follow scores, and the live score at the top of your screen while they play</string>
+    <string name="livetv_game_alerts_scores_description">A notification when a team you follow scores and when the game ends, and the live score at the top of your screen while they play</string>
     <string name="livetv_game_alerts_scores_hidden">Scores are hidden (Sports settings), so there are no score alerts</string>
     <string name="livetv_game_alerts_blocked">Notifications are off for Nuvio + IPTV, so game alerts can't show.</string>
     <string name="livetv_game_alerts_turn_on">Turn on</string>

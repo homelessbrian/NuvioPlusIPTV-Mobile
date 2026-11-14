@@ -11,7 +11,6 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
@@ -45,7 +44,7 @@ internal object SportsReminders {
                 .collect { runCatching { rearm() } }
         }
         scope.launch {
-            SportsLive.alerts.filterNotNull().collect { a -> runCatching { noticeScore(a) } }
+            SportsLive.alerts.collect { a -> runCatching { noticeScore(a) } }
         }
         SportsLiveWatch.start()
     }
@@ -105,8 +104,8 @@ internal object SportsReminders {
     private fun rearmKickOffs(now: Long) {
         val s = repo.settings.value
         val f = repo.follows.value
-        val wanted = if (!s.scoringAlerts || s.hideScores) emptyList() else repo.events.value
-            .filter { it.state == GameState.PRE && it.hasTime && it.source != EventSource.GUIDE && it.startMs > now && it.startMs < now + 3 * DAY && SportsLiveWatch.isMine(it, f) }
+        val wanted = if (s.hideScores) emptyList() else repo.events.value
+            .filter { it.state == GameState.PRE && it.hasTime && it.source != EventSource.GUIDE && it.startMs > now && it.startMs < now + 3 * DAY && SportsLiveWatch.wanted(it, f, s) }
             .sortedBy { it.startMs }
             .take(40)
         val keep = wanted.mapTo(HashSet()) { it.id }
@@ -191,11 +190,10 @@ internal object SportsReminders {
             Sport.BASEBALL -> "RUN"
             else -> "SCORE"
         }
-        val heading = "$what · ${a.team.name}"
-        val text = score + (ev.status?.let { " · $it" } ?: "")
+        val heading = if (a.final) (if (sport == Sport.FOOTBALL) "FULL TIME" else "FINAL") else "$what · ${a.team.name}"
+        val text = if (a.final) score else score + (ev.status?.let { " · $it" } ?: "")
         NuvioToastController.show("$heading  $text", durationMillis = 4_000L)
         RecordingPlatform.notifyReminder("sport-alert:${ev.id}", heading, text, LiveTvDeepLinks.sportsGameUrl(ev.id), important = false)
-        if (SportsLive.alerts.value == a) SportsLive.alerts.value = null
     }
 
     private const val MINUTE = 60_000L
