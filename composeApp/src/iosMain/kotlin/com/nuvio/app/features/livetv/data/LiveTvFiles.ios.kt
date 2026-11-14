@@ -13,6 +13,7 @@ internal actual object LiveTvFiles {
         dir: String,
         name: String,
         userAgent: String,
+        checkPlaylist: Boolean,
         onProgress: ((bytes: Long) -> Unit)?,
     ): Boolean = error("Live TV isn't available on this platform yet")
 

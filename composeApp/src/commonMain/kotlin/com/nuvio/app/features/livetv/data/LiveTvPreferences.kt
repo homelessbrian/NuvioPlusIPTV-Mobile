@@ -341,6 +341,7 @@ internal object LiveTvCodec {
                     url = o.optString("url"),
                     enabled = o.optBoolean("enabled", true),
                     userAgent = o.optString("userAgent"),
+                    fallbackUserAgent = o.optString("fallbackUserAgent"),
                     useEmbeddedEpg = o.optBoolean("useEmbeddedEpg", true),
                     xtreamServer = o.optString("xtreamServer"),
                     xtreamUsername = o.optString("xtreamUsername"),
@@ -372,6 +373,7 @@ internal object LiveTvCodec {
             add(buildJsonObject {
                 put("id", s.id); put("name", s.name); put("url", s.url)
                 put("enabled", s.enabled); put("userAgent", s.userAgent)
+                put("fallbackUserAgent", s.fallbackUserAgent)
                 put("useEmbeddedEpg", s.useEmbeddedEpg)
                 put("xtreamServer", s.xtreamServer); put("xtreamUsername", s.xtreamUsername)
                 put("xtreamPassword", s.xtreamPassword)

@@ -17,6 +17,12 @@ data class PlaylistSource(
     val url: String,
     val enabled: Boolean = true,
     val userAgent: String = "",
+    /**
+     * Found automatically: a media-player user agent this M3U link needed because it sent
+     * a web page or video (not channels) to the app's default one. Used only while
+     * [userAgent] is blank; "" = the default works.
+     */
+    val fallbackUserAgent: String = "",
     /** Also load the EPG URL advertised in the playlist header (url-tvg / x-tvg-url). */
     val useEmbeddedEpg: Boolean = true,
     val xtreamServer: String = "",
@@ -67,6 +73,9 @@ data class PlaylistSource(
     /** Configured identity only; portal sessions and temporary playback links are never saved. */
     val stalker: StalkerConfig? = null
 ) {
+    /** The user agent requests for this playlist go out with ("" = the app default). */
+    val effectiveUserAgent: String get() = userAgent.ifBlank { fallbackUserAgent }
+
     val isStalker: Boolean get() = providerKind == "stalker" || stalker != null
     val isXtream: Boolean get() = !isStalker && (providerKind == "xtream" || (providerKind.isBlank() && xtreamServer.isNotBlank()))
     val isM3u: Boolean get() = !isStalker && (providerKind == "m3u" || (providerKind.isBlank() && xtreamServer.isBlank()))
@@ -191,7 +200,9 @@ data class LiveChannel(
     /** The playlist's "tvg-shift" for this channel, in minutes: moves its guide listings. */
     val tvgShiftMinutes: Int = 0,
     /** A provider command, resolved afresh only when playback/recording starts. */
-    val stalker: StalkerStreamRef? = null
+    val stalker: StalkerStreamRef? = null,
+    /** No number in the playlist: numbered in order, so it follows when playlists before it change. */
+    val autoNumber: Boolean = false
 )
 
 /**

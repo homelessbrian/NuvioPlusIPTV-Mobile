@@ -24,13 +24,16 @@ internal expect object LiveTvFiles {
     /**
      * Downloads [url] into [dir]/[name] (compressed on disk), returning true when the content
      * differs from what was stored before (or there was nothing before). Throws on failure, with
-     * a plain-English message; the previous file is kept then.
+     * a plain-English message; the previous file is kept then. With [checkPlaylist] (M3U links),
+     * a reply that is clearly not a channel list (a video, a web page, a "forbidden" answer)
+     * throws [NotAPlaylistException] and isn't saved.
      */
     suspend fun download(
         url: String,
         dir: String,
         name: String,
         userAgent: String,
+        checkPlaylist: Boolean = false,
         onProgress: ((bytes: Long) -> Unit)? = null,
     ): Boolean
 
@@ -69,3 +72,6 @@ internal object LiveTvDirs {
     /** The Calendar's saved shows, movie dates and ids. */
     const val CALENDAR = "calendar"
 }
+
+/** An M3U link answered with something other than channels; [what] says what came back. */
+internal class NotAPlaylistException(val what: String) : Exception(what)

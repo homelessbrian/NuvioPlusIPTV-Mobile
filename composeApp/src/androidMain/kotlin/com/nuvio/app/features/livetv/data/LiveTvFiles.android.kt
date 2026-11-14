@@ -61,6 +61,7 @@ internal actual object LiveTvFiles {
         dir: String,
         name: String,
         userAgent: String,
+        checkPlaylist: Boolean,
         onProgress: ((bytes: Long) -> Unit)?,
     ): Boolean = withContext(Dispatchers.IO) {
         val target = file(dir, name)
@@ -74,13 +75,18 @@ internal actual object LiveTvFiles {
                 .get()
                 .build()
             http.newCall(request).execute().use { response ->
+                if (checkPlaylist && (response.code == 403 || response.code == 406)) {
+                    throw NotAPlaylistException("an error (${XtreamClient.httpError(response.code)})")
+                }
                 if (!response.isSuccessful) error(XtreamClient.httpError(response.code))
                 val body = response.body ?: error("Empty response")
                 val raw: InputStream = body.byteStream()
                 // Whatever came down (gzip from the server, a .gz file, or plain text) is stored
                 // compressed, so reading it back is always the same.
                 val input = BufferedInputStream(raw, 64 * 1024)
-                val plain = unzipIfNeeded(input)
+                // Peeking needs a stream that can go back (a zipped one is wrapped for it).
+                val plain = unzipIfNeeded(input).let { if (checkPlaylist && !it.markSupported()) BufferedInputStream(it, 64 * 1024) else it }
+                if (checkPlaylist) notAPlaylist(plain)?.let { throw NotAPlaylistException(it) }
                 var total = 0L
                 GZIPOutputStream(tmp.outputStream().buffered(64 * 1024), 64 * 1024).use { out ->
                     val buf = ByteArray(64 * 1024)
@@ -105,9 +111,35 @@ internal actual object LiveTvFiles {
             changed
         } catch (e: Exception) {
             tmp.delete()
-            if (e is kotlinx.coroutines.CancellationException) throw e
+            if (e is kotlinx.coroutines.CancellationException || e is NotAPlaylistException) throw e
             throw IllegalStateException(describe(e), e)
         }
+    }
+
+    /**
+     * Looks at the start of a (plain, unzipped) download, leaving it unread, and says what it is
+     * when it's clearly not an M3U: a video or other binary file, or a web page. Anything else,
+     * including lists without the usual header, is let through as before.
+     */
+    private fun notAPlaylist(plain: InputStream): String? {
+        val input = if (plain.markSupported()) plain else return null
+        val peekSize = 16 * 1024
+        input.mark(peekSize + 1)
+        val raw = ByteArray(peekSize)
+        var n = 0
+        while (n < peekSize) {
+            val r = input.read(raw, n, peekSize - n)
+            if (r < 0) break
+            n += r
+        }
+        input.reset()
+        if (n == 0) return null // empty: reported as an empty response as before
+        val text = String(raw, 0, n, Charsets.UTF_8)
+        if (text.contains("#EXTM3U", ignoreCase = true) || text.contains("#EXTINF", ignoreCase = true)) return null
+        val binary = (0 until minOf(n, 1024)).any { val c = raw[it].toInt() and 0xff; c == 0 || c < 0x09 }
+        if (binary) return "a video or other file"
+        if (text.trimStart('\uFEFF', ' ', '\t', '\r', '\n').startsWith("<")) return "a web page"
+        return null
     }
 
     private fun describe(e: Exception): String = when (e) {

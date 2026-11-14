@@ -99,7 +99,8 @@ internal object LiveTvBackup {
                                 if (!l.sameConnection(r)) changed += r.id
                                 r.copy(
                                     lastUpdatedMs = l.lastUpdatedMs, lastError = l.lastError, channelCount = l.channelCount,
-                                    serverTimezone = l.serverTimezone, catchupNoHlsSince = l.catchupNoHlsSince
+                                    serverTimezone = l.serverTimezone, catchupNoHlsSince = l.catchupNoHlsSince,
+                                    fallbackUserAgent = l.fallbackUserAgent.ifBlank { r.fallbackUserAgent }
                                 )
                             } ?: r
                         })
