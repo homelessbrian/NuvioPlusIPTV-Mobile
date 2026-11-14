@@ -30,7 +30,9 @@ internal class SportsMatcher(private val db: GuideSearch = GuideSearch.Store) {
         val settings: SportsSettings,
         val now: Long,
         /** Nobody is on the Sports page: take short breaks while reading the guide so the phone stays smooth. */
-        val gentle: Boolean = false
+        val gentle: Boolean = false,
+        /** False: only names, listed networks and your picks (quick channels before the guide search). */
+        val readGuide: Boolean = true
     )
 
     class Result(val matches: Map<String, List<ChannelMatch>>, val summary: String)
@@ -209,7 +211,8 @@ internal class SportsMatcher(private val db: GuideSearch = GuideSearch.Store) {
                 words = words
             )
         }
-        val slotHits = runCatching { guideHitsBySlot(guideSlots, input.gentle) }.getOrDefault(guideSlots.map { emptyList() })
+        val slotHits = if (!input.readGuide) guideSlots.map { emptyList() }
+            else runCatching { guideHitsBySlot(guideSlots, input.gentle) }.getOrDefault(guideSlots.map { emptyList() })
         guideSlots.forEachIndexed { slotIndex, gs ->
             val slot = gs.slot
             val hits = slotHits[slotIndex]
@@ -505,9 +508,15 @@ internal class SportsMatcher(private val db: GuideSearch = GuideSearch.Store) {
             byFirst.getOrPut(w.substringBefore(' ')) { ArrayList() } += w
         }
         val seen = List(slots.size) { HashSet<String>() }
+        // Quiet reading: every 1000 shows, rest about as long as the last stretch of work took (at
+        // most 80 ms), so the search uses about half a core instead of a whole one while nobody waits on it.
         var rows = 0
+        var since = kotlin.time.TimeSource.Monotonic.markNow()
         db.scanListings(slots.minOf { it.fromMs }, slots.maxOf { it.toMs }, slots.minOf { it.minStopMs }) { ch, start, stop, title, descr, cat ->
-            if (gentle && ++rows % 1000 == 0) SportsPlatform.pause(3)
+            if (gentle && ++rows % 1000 == 0) {
+                SportsPlatform.pause(since.elapsedNow().inWholeMilliseconds.coerceIn(3L, 80L))
+                since = kotlin.time.TimeSource.Monotonic.markNow()
+            }
             val nt = norm(title)
             val nd = if (descr.isNullOrEmpty()) "" else norm(descr)
             var matched: HashSet<String>? = null

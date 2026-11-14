@@ -13,6 +13,7 @@ import com.nuvio.app.features.livetv.player.LiveTvPlayback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -471,26 +472,29 @@ internal object SportsRepository {
         var lastKick = -1
         var lastFixtures = 0L
         var lastTv = 0L
+        var extrasJob: Job? = null
         while (true) {
             val full = foreground.value && (settings.value.showInSidebar || viewers.value > 0)
             // Watching your teams' games in the background: only the scores, nothing else.
             val active = full || watching.value
             if (active) runCatching { updateOnce(LiveTvClock.nowMs()) }
-            if (full) {
+            // Week, past and non-league requests can take minutes: the live-score round keeps its
+            // own clock while they're still going.
+            if (full && extrasJob?.isActive != true) extrasJob = scope.launch {
                 val force = forceExtras.also { forceExtras = false }
                 runCatching { updateWeek(LiveTvClock.nowMs(), force) }
                 runCatching { updateAhead(LiveTvClock.nowMs(), force) }
                 runCatching { updatePast(LiveTvClock.nowMs()) }
                 runCatching { updateTsdb(LiveTvClock.nowMs(), force) }
                 runCatching { updateSchedules(LiveTvClock.nowMs(), force) }
-            }
-            if (full && LiveTvClock.nowMs() - lastTv > 4 * HOUR) {
-                lastTv = LiveTvClock.nowMs()
-                runCatching { updateTv() }
-            }
-            if (full && LiveTvClock.nowMs() - lastFixtures > 12 * HOUR) {
-                lastFixtures = LiveTvClock.nowMs()
-                runCatching { updateFixtures() }
+                if (LiveTvClock.nowMs() - lastTv > 4 * HOUR) {
+                    lastTv = LiveTvClock.nowMs()
+                    runCatching { updateTv() }
+                }
+                if (LiveTvClock.nowMs() - lastFixtures > 12 * HOUR) {
+                    lastFixtures = LiveTvClock.nowMs()
+                    runCatching { updateFixtures() }
+                }
             }
             val wait = if (viewers.value > 0) 10_000L else 30_000L
             lastKick = kick.value
@@ -516,9 +520,12 @@ internal object SportsRepository {
             val d = data[l.id]
             val age = now - (d?.fetchedAt ?: 0L)
             val live = d?.events?.any { it.state == GameState.LIVE || (it.state == GameState.PRE && it.startMs in (now - 15 * MINUTE)..(now + 10 * MINUTE)) } == true
+            // A game within a few hours of now: kept as fresh as the hub's own leagues while you're looking.
+            val nearNow = d?.events?.any { it.startMs in (now - 6 * HOUR)..(now + 6 * HOUR) } == true
             val mine = isMine(l, f)
             when {
                 force -> age > 15_000
+                viewing && (live || nearNow) -> age > (if (live) 30_000 else 5 * MINUTE)
                 viewing && fastLeague(l) -> age > (if (live) 30_000 else 5 * MINUTE)
                 l.id in playingLeagues && s.scoreOnInfoBar -> age > 60_000
                 mine && live -> age > (if (s.scoringAlerts) 45_000 else 90_000)
@@ -526,7 +533,17 @@ internal object SportsRepository {
                 d == null -> age > 6 * HOUR
                 else -> age > 45 * MINUTE
             }
-        }
+        }.sortedWith(compareByDescending<League> { l ->
+            // Fetched in this order: the game on screen and yours first, then live ones, then ones about to start.
+            val evs = data[l.id]?.events.orEmpty()
+            when {
+                l.id in playingLeagues || isMine(l, f) -> 4
+                evs.any { it.state == GameState.LIVE } -> 3
+                evs.any { it.startMs in (now - HOUR)..(now + HOUR) } -> 2
+                SportsCatalog.shown(l, s) -> 1
+                else -> 0
+            }
+        })
         if (due.isEmpty()) return
         _loading.value = true
         try {
@@ -537,7 +554,8 @@ internal object SportsRepository {
             val failLock = Mutex()
             coroutineScopeFetch(due) { l ->
                 gate.withPermit {
-                    val useDirect = isMine(l, f) || l.id in playingLeagues || (viewing && SportsCatalog.shown(l, s))
+                    val nearNow = data[l.id]?.events?.any { it.startMs in (now - 6 * HOUR)..(now + 6 * HOUR) } == true
+                    val useDirect = isMine(l, f) || l.id in playingLeagues || (viewing && (SportsCatalog.shown(l, s) || nearNow))
                     // Leagues nobody is looking at: nuvio-data's ready-made file when it's fresh
                     // (already read, and only downloaded when it changed); otherwise as before.
                     val compact = if (useDirect) null else runCatching {
@@ -1195,6 +1213,21 @@ internal object SportsRepository {
             val f = follows.value
             val guideLeagues = SportsCatalog.all.filter { it.guideOnly }
             val keys = channels.associateBy { it.key }
+            // Channels found from names, listed networks and your picks go on live (and about to
+            // start) game cards before the much longer guide search; its results replace them.
+            val quickEvents = events.value.filter { ev ->
+                ev.state == GameState.LIVE || (ev.state == GameState.PRE && ev.startMs in now..(now + 3 * HOUR))
+            }
+            if (quickEvents.isNotEmpty()) runCatching {
+                matcher.match(SportsMatcher.Input(events = quickEvents, channels = channels, quality = user.channelQuality,
+                    shiftMs = shift, settings = s, now = now, readGuide = false))
+            }.onSuccess { quick ->
+                val fresh = quick.matches.filterKeys { it !in _matches.value }
+                if (fresh.isNotEmpty()) {
+                    _matches.value = _matches.value + fresh
+                    rebuildLiveScores()
+                }
+            }
             val days = HashMap<Long, List<SportsEvent>>()
             for (offset in -1..1) {
                 val start = dayStart(offset)
