@@ -532,7 +532,7 @@ internal class SportsMatcher(private val db: GuideSearch = GuideSearch.Store) {
     /** Group only surviving airings, so hidden copies cannot donate their time, channel or description. */
     fun guideEvents(candidates: List<GuideCandidate>, excluded: SportsGuideTitleExclusions, now: Long): List<SportsEvent> {
         val groups = candidates.asSequence().filterNot { excluded.matches(it.program.title) }.groupBy { it.group }
-        return groups.map { (g, list) ->
+        return mergeSameSession(groups.map { (g, list) ->
             val p = list.first().program
             val league = list.firstNotNullOfOrNull { it.league }
             val word = list.firstNotNullOfOrNull { it.word }
@@ -555,6 +555,77 @@ internal class SportsMatcher(private val db: GuideSearch = GuideSearch.Store) {
                 endMs = p.stopMs,
                 word = word
             )
+        }, now)
+    }
+
+    /**
+     * One session listed under different names by different channels ("MotoGP: Malaysia
+     * Warm-Up", "MotoGP - Malaysia Practice 3", "(L) MotoGP Malaysia: Warm Up, Round 20"):
+     * one entry with every channel. Same sport, on at the same time, and the titles share a
+     * word that isn't the sport's own or a session word (here "Malaysia"), so two different
+     * games on at once ("Wigan v Leeds", "Hull v Warrington") stay separate. Wrestling has its
+     * own merging (SportsRepository) and names you follow are left as they are.
+     *
+     * Event sports (snooker, darts, golf…) are often listed with nothing but the sport and the
+     * tournament ("Snooker: UK Championship", "World Snooker Tour - UK Championship"), which
+     * leaves no word to compare. Those plain listings, on at the same time, are one event; a
+     * plain one also joins a named one when that's the only one of the sport on then.
+     */
+    private fun mergeSameSession(events: List<SportsEvent>, now: Long): List<SportsEvent> {
+        if (events.size < 2) return events
+        class Run(val league: League, first: SportsEvent) {
+            val items = arrayListOf(first)
+            val words = HashSet(sessionWords(first.title, league))
+            var end = first.endMs ?: first.startMs
+        }
+        val out = ArrayList<SportsEvent>(events.size)
+        val runs = ArrayList<Run>()
+        for (ev in events.sortedBy { it.startMs }) {
+            val league = SportsCatalog.league(ev.leagueId)
+            if (league == null || ev.word != null || league.sport == Sport.WRESTLING) { out += ev; continue }
+            val words = sessionWords(ev.title, league)
+            fun onWith(r: Run) = r.league.id == league.id &&
+                (ev.startMs < r.end || ev.startMs - r.items.first().startMs <= 30 * MINUTE) &&
+                ev.startMs - r.items.first().startMs <= 60 * MINUTE
+            val run = if (words.isNotEmpty()) runs.firstOrNull { r -> onWith(r) && words.any { it in r.words } }
+            else if (league.kind != LeagueKind.EVENT) null
+            else runs.firstOrNull { r -> onWith(r) && r.words.isEmpty() }
+                ?: runs.filter { r -> onWith(r) }.singleOrNull()
+            if (run == null) {
+                runs += Run(league, ev)
+            } else {
+                run.items += ev
+                run.words += words
+                run.end = maxOf(run.end, ev.endMs ?: ev.startMs)
+            }
+        }
+        for (r in runs) {
+            if (r.items.size == 1) { out += r.items.first(); continue }
+            // The first listing (earliest, then by name) names it, so its id stays the same
+            // between updates (a channel you picked for it is kept).
+            val first = r.items.minWith(compareBy<SportsEvent>({ it.startMs }, { it.title }))
+            val start = r.items.minOf { it.startMs }
+            val end = r.items.mapNotNull { it.endMs }.maxOrNull()
+            out += first.copy(
+                startMs = start,
+                endMs = end,
+                state = when {
+                    end != null && now >= end -> GameState.POST
+                    now >= start -> GameState.LIVE
+                    else -> GameState.PRE
+                },
+                subtitle = first.subtitle ?: r.items.firstNotNullOfOrNull { it.subtitle },
+                guideHits = r.items.flatMap { it.guideHits }.distinctBy { (key, p) -> key + "|" + p.startMs }
+            )
+        }
+        return out.sortedBy { it.startMs }
+    }
+
+    /** A title's words that tell one session or game from another (not the sport's own words, session words or numbers). */
+    private fun sessionWords(title: String, league: League): Set<String> {
+        val own = league.guideWords.flatMapTo(HashSet()) { norm(it).trim().split(' ') }
+        return norm(title).trim().split(' ').filterTo(HashSet()) { w ->
+            w.length >= 3 && w.any { it.isLetter() } && w !in own && w !in GENERIC_TOURNAMENT_WORDS && w !in SESSION_WORDS
         }
     }
 
@@ -795,6 +866,13 @@ internal class SportsMatcher(private val db: GuideSearch = GuideSearch.Store) {
 
         /** Shows found in the guide for a followed name that isn't one of the listed sports. */
         const val OTHER_ID = "guide/other"
+
+        /** Words in a show's title that name its session, not which one it is. */
+        private val SESSION_WORDS = setOf(
+            "warm", "practise", "session", "day", "night", "coverage", "from", "with", "matches", "match",
+            "game", "games", "league", "super", "premier", "full", "main", "event", "stage", "leg", "heat", "heats",
+            "pre", "post", "show", "build", "studio", "uncut", "only", "action", "free"
+        )
 
         /** Words too common to tell one tournament or race from another ("Hall of Fame Open" is hall/fame, never open). */
         private val GENERIC_TOURNAMENT_WORDS = setOf(
