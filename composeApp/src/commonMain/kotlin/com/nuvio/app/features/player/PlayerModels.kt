@@ -307,6 +307,7 @@ data class PlayerPlaybackSnapshot(
     val playbackSpeed: Float = 1f,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
+    val isSeekable: Boolean = false,
 )
 
 data class PlayerNowPlayingInfo(

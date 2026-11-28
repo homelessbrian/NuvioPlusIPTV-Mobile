@@ -86,6 +86,7 @@ import com.nuvio.app.features.autosync.rememberAutoSyncCoordinator
 import com.nuvio.app.features.autosync.rememberLibmpvAutoSyncCoordinator
 import com.nuvio.app.R
 import com.nuvio.app.features.streams.normalizeStreamType
+import com.nuvio.vpn.android.VpnPlaybackProtection
 import `is`.xyz.mpv.MPV
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
@@ -161,37 +162,51 @@ actual fun PlatformPlayerSurface(
     }
 
     val vpnContext = LocalContext.current
-    var vpnRevision by remember { mutableStateOf(com.nuvio.vpn.android.VpnPlaybackProtection.settingsRevision()) }
+    var vpnRevision by remember { mutableStateOf(VpnPlaybackProtection.settingsRevision()) }
     DisposableEffect(Unit) {
-        val subscription = com.nuvio.vpn.android.VpnPlaybackProtection.observeSettings {
-            vpnRevision = com.nuvio.vpn.android.VpnPlaybackProtection.settingsRevision()
+        val subscription = VpnPlaybackProtection.observeSettings {
+            vpnRevision = VpnPlaybackProtection.settingsRevision()
         }
+        vpnRevision = VpnPlaybackProtection.settingsRevision()
         onDispose { subscription.close() }
+    }
+    val surfaceRevision = vpnRevision
+    val vpnPlaybackPosition = remember(playerSourceKey, activeEngine, stalkerMediaPolicy, continuousLive) {
+        VpnPlaybackPosition()
+    }
+    val vpnResumeMs = remember(vpnPlaybackPosition, surfaceRevision) {
+        vpnPlaybackPosition.forReload(surfaceRevision)
+    }
+    fun isCurrentVpnSurface() = surfaceRevision == VpnPlaybackProtection.settingsRevision() &&
+        !VpnPlaybackProtection.isRestoringProfiles()
+    fun publishSnapshot(snapshot: PlayerPlaybackSnapshot) {
+        if (!isCurrentVpnSurface()) return
+        if (!continuousLive) vpnPlaybackPosition.record(surfaceRevision, snapshot)
+        onSnapshot(snapshot)
+    }
+    fun publishError(message: String?) {
+        if (isCurrentVpnSurface()) onError(message)
     }
     var vpnReady by remember(sourceUrl, sourceAudioUrl, activeEngine, vpnRevision) { mutableStateOf(false) }
     var nativeVpnProxy by remember(sourceUrl, sourceAudioUrl, activeEngine, vpnRevision) {
-        mutableStateOf<com.nuvio.vpn.android.VpnPlaybackProtection.NativeProxy?>(null)
+        mutableStateOf<VpnPlaybackProtection.NativeProxy?>(null)
     }
     LaunchedEffect(sourceUrl, sourceAudioUrl, activeEngine, vpnRevision) {
-        var held: com.nuvio.vpn.android.VpnPlaybackProtection.NativeProxy? = null
+        var held: VpnPlaybackProtection.NativeProxy? = null
         try {
-            while (true) {
-                val revision = com.nuvio.vpn.android.VpnPlaybackProtection.settingsRevision()
-                com.nuvio.app.core.vpn.awaitVpnForPlayback(vpnContext, sourceUrl)
-                sourceAudioUrl?.let { com.nuvio.app.core.vpn.awaitVpnForPlayback(vpnContext, it) }
-                if (activeEngine == ResolvedAndroidPlaybackEngine.Libmpv)
-                    held = com.nuvio.app.core.vpn.awaitNativeVpnProxy(vpnContext)
-                if (revision == com.nuvio.vpn.android.VpnPlaybackProtection.settingsRevision()) break
-                held?.close()
-                held = null
-            }
+            com.nuvio.app.core.vpn.awaitVpnForPlayback(vpnContext, sourceUrl)
+            sourceAudioUrl?.let { com.nuvio.app.core.vpn.awaitVpnForPlayback(vpnContext, it) }
+            if (activeEngine == ResolvedAndroidPlaybackEngine.Libmpv)
+                held = com.nuvio.app.core.vpn.awaitNativeVpnProxy(vpnContext)
+            if (!isCurrentVpnSurface()) return@LaunchedEffect
             nativeVpnProxy = held
             vpnReady = true
             kotlinx.coroutines.awaitCancellation()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            onError(failure.message ?: "VPN connection could not be verified. Playback was not started.")
+            // Profile restore deliberately rejects requests. Its final revision will reopen playback.
+            publishError(failure.message ?: "VPN connection could not be verified. Playback was not started.")
         } finally {
             held?.close()
         }
@@ -214,19 +229,21 @@ actual fun PlatformPlayerSurface(
             useYoutubeChunkedPlayback = useYoutubeChunkedPlayback,
             modifier = modifier,
             playWhenReady = playWhenReady,
-            initialPositionMs = initialPositionMs,
+            initialPositionMs = vpnResumeMs ?: initialPositionMs,
             initialPositionRequestKey = initialPositionRequestKey,
             resizeMode = resizeMode,
             useNativeController = useNativeController,
-            onInitialPositionHandled = onInitialPositionHandled,
-            onControllerReady = onControllerReady,
-            onSnapshot = onSnapshot,
-            onError = onError,
+            onInitialPositionHandled = { key, handled ->
+                if (isCurrentVpnSurface()) onInitialPositionHandled(key, handled || vpnResumeMs != null)
+            },
+            onControllerReady = { if (isCurrentVpnSurface()) onControllerReady(it) },
+            onSnapshot = ::publishSnapshot,
+            onError = ::publishError,
         )
         ResolvedAndroidPlaybackEngine.Libmpv -> {
             LaunchedEffect(initialPositionRequestKey) {
                 initialPositionRequestKey?.let { key ->
-                    onInitialPositionHandled(key, false)
+                    if (isCurrentVpnSurface()) onInitialPositionHandled(key, vpnResumeMs != null)
                 }
             }
             LibmpvPlayerSurface(
@@ -237,14 +254,15 @@ actual fun PlatformPlayerSurface(
                 externalSubtitles = externalSubtitles,
                 modifier = modifier,
                 playWhenReady = playWhenReady,
+                vpnResumeMs = vpnResumeMs,
                 resizeMode = resizeMode,
                 videoOutput = playerSettings.androidLibmpvVideoOutput,
                 hardwareDecodingEnabled = playerSettings.androidLibmpvHardwareDecodingEnabled,
                 yuv420pEnabled = playerSettings.androidLibmpvYuv420pEnabled,
                 preferredSubtitleLanguage = playerSettings.preferredSubtitleLanguage,
-                onControllerReady = onControllerReady,
-                onSnapshot = onSnapshot,
-                onError = onError,
+                onControllerReady = { if (isCurrentVpnSurface()) onControllerReady(it) },
+                onSnapshot = ::publishSnapshot,
+                onError = ::publishError,
             )
         }
     }
@@ -757,6 +775,7 @@ private fun ExoPlayerSurface(
     }
 
     DisposableEffect(exoPlayer) {
+        var mimeProbeJob: Job? = null
         PlayerPictureInPictureManager.registerPausePlaybackCallback {
             exoPlayer.pause()
         }
@@ -833,11 +852,18 @@ private fun ExoPlayerSurface(
 
                 if (isSourceError && !stallSession.probeAttempted) {
                     stallSession.markMimeProbe()
-                    coroutineScope.launch {
+                    val retryPositionMs = exoPlayer.contentPosition
+                    val retryDurationMs = exoPlayer.contentDuration
+                    val seekableOnDemand = !continuousLive && !exoPlayer.isCurrentMediaItemLive &&
+                        exoPlayer.isCurrentMediaItemSeekable
+                    mimeProbeJob = coroutineScope.launch {
                         val probedMime = withContext(Dispatchers.IO) {
                             probeMimeType(sourceUrl, sanitizedSourceHeaders, stalkerMediaPolicy)
                         }
-                        if (probedMime != null) {
+                        if (exoPlayer.playerError !== error) return@launch
+                        if (probedMime != null && probedMime != resolvedMediaItem.localConfiguration?.mimeType) {
+                            stallSession.onMimeProbeSucceeded(retryPositionMs, retryDurationMs, seekableOnDemand)
+                            if (stallSession.isReopening()) preserveAudioSelectionForReload("MIME retry")
                             Log.d(TAG, "Playback failed with source error. Probed MIME type: $probedMime. Retrying...")
                             resolvedMediaItem = resolvedMediaItem.buildUpon()
                                 .setMimeType(probedMime)
@@ -987,6 +1013,7 @@ private fun ExoPlayerSurface(
         }
         exoPlayer.addListener(listener)
         onDispose {
+            mimeProbeJob?.cancel()
             PlayerPictureInPictureManager.registerPausePlaybackCallback(null)
             PlayerPictureInPictureManager.registerTogglePlaybackCallback(null)
             exoPlayer.removeListener(listener)
@@ -1427,6 +1454,7 @@ private fun LibmpvPlayerSurface(
     externalSubtitles: List<com.nuvio.app.features.streams.StreamSubtitle>,
     modifier: Modifier,
     playWhenReady: Boolean,
+    vpnResumeMs: Long?,
     resizeMode: PlayerResizeMode,
     videoOutput: AndroidLibmpvVideoOutput,
     hardwareDecodingEnabled: Boolean,
@@ -1702,7 +1730,8 @@ private fun LibmpvPlayerSurface(
         Log.i(
             PLAYER_DIAGNOSTIC_TAG,
             "mpv_prepare_begin attempt=${playbackDiagnostics.attempt} " +
-                "source=${diagnosticPlaybackSource(sourceUrl)} audioSource=${!sourceAudioUrl.isNullOrBlank()}",
+                "source=${diagnosticPlaybackSource(sourceUrl)} audioSource=${!sourceAudioUrl.isNullOrBlank()} " +
+                "startPositionMs=${vpnResumeMs ?: 0L}",
         )
         val snapshot = PlayerPlaybackSnapshot()
         latestOnSnapshot.value(snapshot)
@@ -1714,6 +1743,7 @@ private fun LibmpvPlayerSurface(
             requestHeaders = sanitizedSourceHeaders,
             externalSubtitles = externalSubtitles,
             playWhenReady = latestPlayWhenReady.value,
+            startPositionMs = vpnResumeMs,
         )
     }
 
@@ -1895,6 +1925,7 @@ private class NuvioLibmpvView(
         requestHeaders: Map<String, String>,
         externalSubtitles: List<com.nuvio.app.features.streams.StreamSubtitle>,
         playWhenReady: Boolean,
+        startPositionMs: Long?,
     ) {
         surfaceReady.await()
         withContext(mpvDispatcher) {
@@ -1923,7 +1954,7 @@ private class NuvioLibmpvView(
                 currentRequestHeaders = requestHeaders
                 currentExternalSubtitles = externalSubtitles
                 if (!sameSource) {
-                    loadCurrentSourceNow(playWhenReady = playWhenReady)
+                    loadCurrentSourceNow(playWhenReady = playWhenReady, startPositionMs = startPositionMs)
                 } else {
                     applyRequestHeadersNow(requestHeaders)
                     setPausedNow(!playWhenReady)
@@ -1932,13 +1963,17 @@ private class NuvioLibmpvView(
         }
     }
 
-    private fun loadCurrentSourceNow(playWhenReady: Boolean) {
+    private fun loadCurrentSourceNow(playWhenReady: Boolean, startPositionMs: Long? = null) {
         val sourceUrl = currentSourceUrl ?: return
         applyRequestHeadersNow(currentRequestHeaders)
         setPausedNow(!playWhenReady)
         mpv.setPropertyString("aid", "auto")
         fileLoaded = false
-        mpv.command("loadfile", sourceUrl.toMpvSource(), "replace")
+        if (startPositionMs == null) {
+            mpv.command("loadfile", sourceUrl.toMpvSource(), "replace")
+        } else {
+            mpv.command("loadfile", sourceUrl.toMpvSource(), "replace", "-1", "start=${startPositionMs / 1000.0}")
+        }
         currentSourceAudioUrl?.takeIf { it.isNotBlank() }?.let { sourceAudioUrl ->
             mpv.command("audio-add", sourceAudioUrl.toMpvSource(), "auto")
         }
@@ -2058,6 +2093,7 @@ private class NuvioLibmpvView(
             positionMs = positionMs,
             bufferedPositionMs = maxOf(positionMs, cachePositionMs),
             playbackSpeed = (mpv.getPropertyDouble("speed") ?: 1.0).toFloat(),
+            isSeekable = mpv.getPropertyBoolean("seekable") == true,
             videoWidth = videoWidth,
             videoHeight = videoHeight,
         )
@@ -2443,6 +2479,7 @@ private fun ExoPlayer.snapshot(): PlayerPlaybackSnapshot {
         positionMs = currentPosition.coerceAtLeast(0L),
         bufferedPositionMs = bufferedPosition.coerceAtLeast(0L),
         playbackSpeed = playbackParameters.speed,
+        isSeekable = isCurrentMediaItemSeekable && !isCurrentMediaItemLive,
         videoWidth = videoWidth,
         videoHeight = videoHeight,
     )

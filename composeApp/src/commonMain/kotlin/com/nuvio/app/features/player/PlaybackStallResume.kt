@@ -19,9 +19,11 @@ internal class PlaybackReopenSession(
         private set
     var resumeGeneration: Int = 0
         private set
+    private var hasReachedReady: Boolean = false
     private var resumeAlreadyAttempted: Boolean = false
 
     fun onReady() {
+        hasReachedReady = true
         fallbackStartPositionMs = null
         resumeAlreadyAttempted = false
     }
@@ -41,13 +43,20 @@ internal class PlaybackReopenSession(
         ) ?: return false
         resumeAlreadyAttempted = true
         probeAttempted = true
-        fallbackStartPositionMs = reopenAtMs
+        // If a format retry never reached READY, keep the position from the last playable source.
+        fallbackStartPositionMs = fallbackStartPositionMs ?: reopenAtMs
         resumeGeneration += 1
         return true
     }
 
     fun markMimeProbe() {
         probeAttempted = true
+    }
+
+    fun onMimeProbeSucceeded(positionMs: Long, durationMs: Long, seekableOnDemand: Boolean) {
+        if (!hasReachedReady || !seekableOnDemand || positionMs < 0L) return
+        if (durationMs > 0L && positionMs >= durationMs) return
+        fallbackStartPositionMs = positionMs
     }
 }
 

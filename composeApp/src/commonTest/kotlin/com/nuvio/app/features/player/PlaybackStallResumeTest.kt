@@ -58,4 +58,51 @@ class PlaybackStallResumeTest {
         assertEquals(1_193_023L, session.prepareStartPositionMs())
         assertFalse(session.probeAttempted)
     }
+
+    @Test
+    fun formatRetryKeepsTheCurrentPositionNearTheEndOfAnEpisode() {
+        val positionMs = 2_680_000L
+        for (initialPositionMs in listOf(null, 1_200_000L)) {
+            val session = PlaybackReopenSession(initialPositionMs)
+            session.onReady()
+
+            assertFalse(session.onFailure(PlaybackSourceFailure.None, positionMs, 2_700_000L))
+            session.markMimeProbe()
+            session.onMimeProbeSucceeded(positionMs, 2_700_000L, seekableOnDemand = true)
+
+            assertEquals(positionMs, session.prepareStartPositionMs())
+            assertTrue(session.isReopening())
+            assertTrue(session.onFailure(PlaybackSourceFailure.ClosedStream, 0L, 2_700_000L))
+            assertEquals(positionMs, session.prepareStartPositionMs())
+            session.onReady()
+            assertFalse(session.isReopening())
+        }
+    }
+
+    @Test
+    fun formatRetryKeepsTheInitialPositionAtStartupAndForNonSeekableOrEndedPlayback() {
+        val initialPositionMs = 1_200_000L
+        val session = PlaybackReopenSession(initialPositionMs)
+        session.markMimeProbe()
+        session.onMimeProbeSucceeded(0L, 2_700_000L, seekableOnDemand = true)
+        assertEquals(initialPositionMs, session.prepareStartPositionMs())
+
+        session.onReady()
+        session.onMimeProbeSucceeded(2_500_000L, 2_700_000L, seekableOnDemand = false)
+        session.onMimeProbeSucceeded(2_700_000L, 2_700_000L, seekableOnDemand = true)
+        assertEquals(initialPositionMs, session.prepareStartPositionMs())
+        assertFalse(session.isReopening())
+    }
+
+    @Test
+    fun formatRetryCanKeepThePositionOfSeekablePlaybackWithAnUnknownDuration() {
+        val session = PlaybackReopenSession(initialPositionMs = null)
+        session.onReady()
+
+        assertFalse(session.onFailure(PlaybackSourceFailure.ClosedStream, 1_200_000L, 0L))
+        session.markMimeProbe()
+        session.onMimeProbeSucceeded(1_200_000L, 0L, seekableOnDemand = true)
+
+        assertEquals(1_200_000L, session.prepareStartPositionMs())
+    }
 }
